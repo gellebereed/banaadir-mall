@@ -18,6 +18,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { isSupabaseConfigured } from "./supabase/storage";
 import type {
   Employee,
   FlashDeal,
@@ -142,21 +143,42 @@ export async function getDB(): Promise<DB> {
   }
 }
 
-async function saveDB(db: DB): Promise<void> {
+/** Writes to disk. Returns false when the filesystem is read-only. */
+async function saveDB(db: DB): Promise<boolean> {
   cache = { data: db, mtimeMs: Date.now() };
   try {
     await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
     await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
+    return true;
   } catch {
-    // Netlify / Vercel serverless read-only filesystem fallback — stored safely in memory.
+    // Serverless platforms (Netlify / Vercel) have a read-only filesystem.
+    return false;
   }
 }
 
-/** Read-modify-write helper used by every server action. */
+/**
+ * Read-modify-write helper used by every server action.
+ *
+ * Throws when the change cannot outlive the request — a read-only
+ * filesystem AND no Supabase to fall back on. That combination happens on
+ * Netlify when the Supabase env vars are missing: the write lands in a
+ * per-Lambda in-memory object, so the dashboard reports success and the
+ * change is gone on the very next request. Failing loudly is the only
+ * honest outcome. Visit /api/health to see which piece is missing.
+ */
 export async function mutateDB(fn: (db: DB) => void): Promise<void> {
   const db = structuredClone(await getDB());
   fn(db);
-  await saveDB(db);
+  const persisted = await saveDB(db);
+
+  if (!persisted && !isSupabaseConfigured()) {
+    throw new Error(
+      "This change could not be saved. The server's filesystem is read-only and " +
+        "Supabase is not configured, so nothing would survive the next request. " +
+        "Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your " +
+        "hosting environment and redeploy — see /api/health.",
+    );
+  }
 }
 
 /** Resolved orders don't exist in db.ts — re-exported type convenience. */

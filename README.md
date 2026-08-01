@@ -47,6 +47,29 @@ Examples: `karaca-home@seller.banaadirmall.com`, `us-polo-assn@seller.banaadirma
 `/login` unless the right role is signed in. The session is a plain cookie —
 demo only; replace with real auth before launch.
 
+## Deploying to Netlify — check this first
+
+Open **`/api/health`** on the deployed site. It answers "is this environment
+actually saving my changes?" in one request and names the fix.
+
+Two settings must be right, and the second one catches people out:
+
+1. **Netlify → Site configuration → Environment variables** must contain
+   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. **You must redeploy after adding them** — Deploys → *Trigger deploy* →
+   **Clear cache and deploy site**.
+
+Step 2 is not optional. `NEXT_PUBLIC_*` variables are **inlined into the
+bundle when the app is built**, not read at runtime. Adding them in the
+Netlify UI does nothing to an already-built deploy, so the site keeps
+running with Supabase effectively unconfigured.
+
+When that happens the symptoms are exactly "I can't update products":
+Netlify's filesystem is read-only and each request runs in a fresh Lambda,
+so the app falls back to the built-in seed catalog and an in-memory store —
+saves report success and vanish on the next request. `mutateDB` now throws a
+clear error in that situation instead of pretending to succeed.
+
 ## ⚠️ Supabase: run the migration first
 
 ```bash
