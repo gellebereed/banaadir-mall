@@ -287,9 +287,9 @@ function FlashDeals({
             See all deals →
           </Link>
         </div>
-        <div className="flex snap-x gap-4 overflow-x-auto pb-2 rail-scroll">
+        <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
           {deals.map((p) => (
-            <div key={p.id} className="w-44 shrink-0 snap-start sm:w-52">
+            <div key={p.id} className="flex h-full w-44 shrink-0 flex-col snap-start sm:w-52">
               <ProductCard product={p} />
             </div>
           ))}

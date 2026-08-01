@@ -53,7 +53,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const mainImage = previewImage ?? primaryImage(product);
 
   return (
-    <div className="group card relative flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10">
+    <div className="group card relative flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10">
       <Link href={`/product/${product.slug}`} className="block">
         {mainImage ? (
           <div className="relative aspect-square w-full overflow-hidden bg-sand-100">
@@ -90,53 +90,58 @@ export default function ProductCard({ product }: { product: Product }) {
         {wished ? "♥" : "♡"}
       </button>
 
-      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
+      <div className="flex flex-1 flex-col p-3.5">
         <Link
           href={`/product/${product.slug}`}
-          className="line-clamp-2 text-sm font-semibold text-slate-800 hover:text-ocean-700"
+          className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-slate-800 hover:text-ocean-700"
         >
           {product.name}
         </Link>
-        <Rating value={product.rating} />
+        
+        <div className="mt-1">
+          <Rating value={product.rating} />
+        </div>
 
-        {/* Variant options at a glance */}
-        {colors.length > 0 && (
-          <div className="flex items-center gap-1.5 pt-0.5">
-            {colors.slice(0, MAX_SWATCHES).map((c) => (
-              <button
-                key={c.color}
-                title={`${c.color}${c.inStock ? "" : " — out of stock"}`}
-                aria-label={`Preview ${c.color}`}
-                onMouseEnter={() => c.image && setPreviewImage(c.image)}
-                onFocus={() => c.image && setPreviewImage(c.image)}
-                onMouseLeave={() => setPreviewImage(undefined)}
-                onBlur={() => setPreviewImage(undefined)}
-                onClick={() => c.image && setPreviewImage(c.image)}
-                className={`h-4 w-4 rounded-full border transition hover:scale-125 ${
-                  c.inStock ? "border-slate-300" : "border-slate-200 opacity-40"
-                }`}
-                style={{ background: c.swatch ?? "#e2e8f0" }}
-              />
-            ))}
-            {colors.length > MAX_SWATCHES && (
-              <span className="text-[10px] font-bold text-slate-400">
-                +{colors.length - MAX_SWATCHES}
-              </span>
-            )}
-            {sizes.length > 0 && (
-              <span className="ml-auto text-[10px] font-medium text-slate-400">
-                {sizes.length} size{sizes.length === 1 ? "" : "s"}
-              </span>
-            )}
-          </div>
-        )}
-        {withVariants && colors.length === 0 && sizes.length > 0 && (
-          <p className="text-[10px] font-medium text-slate-400">
-            {sizes.length} size{sizes.length === 1 ? "" : "s"} available
-          </p>
-        )}
+        {/* Variant options at a glance — reserved slot for uniform height */}
+        <div className="mt-1.5 flex min-h-[1.5rem] items-center gap-1.5">
+          {colors.length > 0 && (
+            <>
+              {colors.slice(0, MAX_SWATCHES).map((c) => (
+                <button
+                  key={c.color}
+                  title={`${c.color}${c.inStock ? "" : " — out of stock"}`}
+                  aria-label={`Preview ${c.color}`}
+                  onMouseEnter={() => c.image && setPreviewImage(c.image)}
+                  onFocus={() => c.image && setPreviewImage(c.image)}
+                  onMouseLeave={() => setPreviewImage(undefined)}
+                  onBlur={() => setPreviewImage(undefined)}
+                  onClick={() => c.image && setPreviewImage(c.image)}
+                  className={`h-4 w-4 rounded-full border transition hover:scale-125 ${
+                    c.inStock ? "border-slate-300" : "border-slate-200 opacity-40"
+                  }`}
+                  style={{ background: c.swatch ?? "#e2e8f0" }}
+                />
+              ))}
+              {colors.length > MAX_SWATCHES && (
+                <span className="text-[10px] font-bold text-slate-400">
+                  +{colors.length - MAX_SWATCHES}
+                </span>
+              )}
+              {sizes.length > 0 && (
+                <span className="ml-auto text-[10px] font-medium text-slate-400">
+                  {sizes.length} size{sizes.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </>
+          )}
+          {withVariants && colors.length === 0 && sizes.length > 0 && (
+            <p className="text-[10px] font-medium text-slate-400">
+              {sizes.length} size{sizes.length === 1 ? "" : "s"} available
+            </p>
+          )}
+        </div>
 
-        <div className="mt-auto flex items-end justify-between gap-2 pt-1">
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <div>
             <div className="flex items-baseline gap-1.5">
               {showFrom && <span className="text-[11px] text-slate-400">from</span>}
