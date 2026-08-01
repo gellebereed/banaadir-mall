@@ -53,7 +53,7 @@ export async function signIn(
         };
 
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -95,7 +95,7 @@ export async function signIn(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
@@ -146,7 +146,7 @@ export async function signUpCustomer(
           role: "customer",
         };
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -168,7 +168,7 @@ export async function signUpCustomer(
     role: "customer",
   };
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
@@ -197,7 +197,8 @@ export async function signUpSeller(
     return { error: "Password must be at least 6 characters long." };
   }
 
-  const storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  let storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!storeSlug) storeSlug = `store-${Date.now()}`;
 
   if (isSupabaseConfigured()) {
     try {
@@ -241,7 +242,7 @@ export async function signUpSeller(
           store: storeSlug,
         };
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -264,7 +265,7 @@ export async function signUpSeller(
     store: storeSlug,
   };
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",

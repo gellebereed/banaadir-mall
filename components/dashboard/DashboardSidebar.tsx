@@ -1,6 +1,6 @@
 "use client";
 
-import Link, { useLinkStatus } from "next/link";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 export interface SidebarItem {
@@ -16,11 +16,6 @@ export interface SidebarItem {
 /**
  * Shared navigation for the admin panel and the seller dashboard —
  * dark sidebar on desktop, horizontal tab bar on mobile.
- *
- * Dashboard pages render on the server, so a click always waits for a
- * round-trip. Without feedback that reads as "the button didn't work" and
- * people click repeatedly, so each link shows a spinner while its page is
- * loading (useLinkStatus) and the segment's loading.tsx paints instantly.
  */
 export default function DashboardSidebar({ items }: { items: SidebarItem[] }) {
   const pathname = usePathname();
@@ -62,16 +57,6 @@ export default function DashboardSidebar({ items }: { items: SidebarItem[] }) {
   );
 }
 
-/** Swaps the icon for a spinner while this link's page is loading. */
 function NavIcon({ icon }: { icon: string }) {
-  const { pending } = useLinkStatus();
-  if (pending) {
-    return (
-      <span
-        aria-label="Loading"
-        className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
-      />
-    );
-  }
   return <span className="shrink-0">{icon}</span>;
 }
