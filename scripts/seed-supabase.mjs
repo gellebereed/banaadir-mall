@@ -5,6 +5,7 @@ import { join } from "path";
 // Load environment variables from .env.local
 let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 let supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const envLocalPath = join(process.cwd(), ".env.local");
 if (existsSync(envLocalPath)) {
@@ -14,8 +15,9 @@ if (existsSync(envLocalPath)) {
     if (trimmed.startsWith("NEXT_PUBLIC_SUPABASE_URL=")) {
       supabaseUrl = trimmed.split("=")[1].trim();
     }
-    if (trimmed.startsWith("SUPABASE_SERVICE_ROLE_KEY=") && trimmed.split("=")[1].trim()) {
-      supabaseKey = trimmed.split("=")[1].trim();
+    if (trimmed.startsWith("SUPABASE_SERVICE_ROLE_KEY=") && trimmed.split("=")[1].trim() && !trimmed.split("=")[1].includes("your-service-role")) {
+      serviceRoleKey = trimmed.split("=")[1].trim();
+      supabaseKey = serviceRoleKey;
     } else if (!supabaseKey && trimmed.startsWith("NEXT_PUBLIC_SUPABASE_ANON_KEY=")) {
       supabaseKey = trimmed.split("=")[1].trim();
     }
@@ -30,12 +32,98 @@ if (!supabaseUrl || supabaseUrl.includes("your-project") || !supabaseKey || supa
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-console.log("🚀 Starting Supabase Data Transfer for Banaadir Mall...\n");
+console.log("🚀 Starting Supabase Data & Auth Transfer for Banaadir Mall...\n");
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function seed() {
   try {
-    // 1. SEED CATEGORIES
-    console.log("📦 Transferring Categories...");
+    // 1. SEED DEMO USERS (AUTH)
+    console.log("👤 Registering Demo Auth Accounts...");
+    const demoUsers = [
+      {
+        email: "admin@banaadirmall.com",
+        password: "Admin@2026",
+        name: "Mall Administrator",
+        role: "admin",
+      },
+      {
+        email: "karaca-home@seller.banaadirmall.com",
+        password: "Seller@2026",
+        name: "Karaca Home Somalia",
+        role: "seller",
+        store: "karaca-home",
+      },
+      {
+        email: "us-polo-assn@seller.banaadirmall.com",
+        password: "Seller@2026",
+        name: "U.S. Polo Assn. Mogadishu",
+        role: "seller",
+        store: "us-polo-assn",
+      },
+      {
+        email: "somali-electronics@seller.banaadirmall.com",
+        password: "Seller@2026",
+        name: "Somali Electronics Hub",
+        role: "seller",
+        store: "somali-electronics",
+      },
+      {
+        email: "banaadir-perfumes@seller.banaadirmall.com",
+        password: "Seller@2026",
+        name: "Banaadir Oud & Perfumes",
+        role: "seller",
+        store: "banaadir-perfumes",
+      },
+      {
+        email: "ayaan@banaadirmall.com",
+        password: "Customer@2026",
+        name: "Ayaan Warsame",
+        role: "customer",
+      },
+    ];
+
+    for (const user of demoUsers) {
+      try {
+        let res;
+        if (serviceRoleKey) {
+          res = await supabase.auth.admin.createUser({
+            email: user.email,
+            password: user.password,
+            email_confirm: true,
+            user_metadata: {
+              name: user.name,
+              role: user.role,
+              store: user.store || undefined,
+            },
+          });
+        } else {
+          res = await supabase.auth.signUp({
+            email: user.email,
+            password: user.password,
+            options: {
+              data: {
+                name: user.name,
+                role: user.role,
+                store: user.store || undefined,
+              },
+            },
+          });
+        }
+
+        if (res.error) {
+          console.log(`  ℹ️ ${user.email}: ${res.error.message}`);
+        } else {
+          console.log(`  ✓ Registered auth account: ${user.email} (${user.role})`);
+        }
+      } catch (err) {
+        console.log(`  ℹ️ Note for ${user.email}:`, err.message || err);
+      }
+      await delay(1200); // 1.2 second pause to avoid rate limits
+    }
+
+    // 2. SEED CATEGORIES
+    console.log("\n📦 Transferring Categories...");
     const categoriesData = [
       { id: "cat-1", slug: "electronics", name: "Electronics", icon: "Tv", count: 42, description: "Smartphones, laptops, accessories & appliances" },
       { id: "cat-2", slug: "fashion-apparel", name: "Fashion & Apparel", icon: "Shirt", count: 128, description: "Men's, women's & children's clothing" },
@@ -51,7 +139,7 @@ async function seed() {
     if (catErr) console.error("  ❌ Categories error:", catErr.message);
     else console.log(`  ✓ Successfully seeded ${categoriesData.length} categories.`);
 
-    // 2. SEED STORES
+    // 3. SEED STORES
     console.log("\n🏪 Transferring Stores...");
     const storesData = [
       { id: "store-1", slug: "karaca-home", name: "Karaca Home Somalia", tagline: "Premium Turkish home textiles & tableware", description: "Official distributor of Karaca Home products in Mogadishu.", logo: "/api/uploads/stores/msa4q0xg-oyeoli.png", banner: "/api/uploads/stores/msa4q0xi-abcdef.png", rating: 4.9, reviews_count: 142, status: "active", owner: "Farah Abdi", location: "Bakaara Market, Mogadishu" },
@@ -64,7 +152,7 @@ async function seed() {
     if (storeErr) console.error("  ❌ Stores error:", storeErr.message);
     else console.log(`  ✓ Successfully seeded ${storesData.length} stores.`);
 
-    // 3. SEED PRODUCTS
+    // 4. SEED PRODUCTS
     console.log("\n🛍️ Transferring Products...");
     const productsData = [
       {
@@ -149,7 +237,7 @@ async function seed() {
     if (prodErr) console.error("  ❌ Products error:", prodErr.message);
     else console.log(`  ✓ Successfully seeded ${productsData.length} products.`);
 
-    // 4. SEED ORDERS
+    // 5. SEED ORDERS
     console.log("\n📑 Transferring Orders...");
     const ordersData = [
       {
@@ -184,7 +272,7 @@ async function seed() {
     if (ordErr) console.error("  ❌ Orders error:", ordErr.message);
     else console.log(`  ✓ Successfully seeded ${ordersData.length} orders.`);
 
-    // 5. SEED MARKETING & FLASH DEALS
+    // 6. SEED MARKETING & FLASH DEALS
     console.log("\n🎯 Transferring Marketing Settings & Flash Deals...");
     const marketingData = {
       id: 1,
@@ -221,7 +309,7 @@ async function seed() {
     await supabase.from("flash_deals").upsert(flashData, { onConflict: "id" });
     console.log("  ✓ Successfully seeded marketing settings and flash deals.");
 
-    console.log("\n🎉 Data transfer to Supabase completed successfully!");
+    console.log("\n🎉 Data & Auth transfer to Supabase completed successfully!");
   } catch (err) {
     console.error("❌ Migration failed:", err);
   }
