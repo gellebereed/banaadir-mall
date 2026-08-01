@@ -53,7 +53,7 @@ export async function signIn(
         };
 
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -81,12 +81,12 @@ export async function signIn(
         employee.store === "platform"
           ? { name: employee.name, email: employee.email, role: "admin", access: employee.role }
           : {
-              name: employee.name,
-              email: employee.email,
-              role: "seller",
-              store: employee.store,
-              access: employee.role,
-            };
+            name: employee.name,
+            email: employee.email,
+            role: "seller",
+            store: employee.store,
+            access: employee.role,
+          };
     }
   }
 
@@ -95,7 +95,7 @@ export async function signIn(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
@@ -146,7 +146,7 @@ export async function signUpCustomer(
           role: "customer",
         };
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -168,7 +168,7 @@ export async function signUpCustomer(
     role: "customer",
   };
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
@@ -197,13 +197,12 @@ export async function signUpSeller(
     return { error: "Password must be at least 6 characters long." };
   }
 
-  let storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  if (!storeSlug) storeSlug = `store-${Date.now()}`;
+  const storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
-      
+
       // 1. Create auth user in Supabase
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
@@ -242,7 +241,7 @@ export async function signUpSeller(
           store: storeSlug,
         };
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
           path: "/",
           maxAge: 60 * 60 * 24 * 7,
           sameSite: "lax",
@@ -265,7 +264,7 @@ export async function signUpSeller(
     store: storeSlug,
   };
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, encodeURIComponent(JSON.stringify(session)), {
+  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
