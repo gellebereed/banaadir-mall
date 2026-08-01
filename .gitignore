@@ -1,0 +1,22 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+
+# env files
+.env*
+!.env.example
+
+# runtime demo database (delete to reset all dashboard changes)
+/data
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

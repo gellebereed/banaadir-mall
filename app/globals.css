@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/*
+ * ── Banaadir Mall design system ──────────────────────────────────────
+ * Brand: "Indian Ocean meets the market" — deep ocean teal as the
+ * primary colour, warm mango as the action colour, coral for sales,
+ * and a soft sand page background instead of plain white.
+ *
+ * Everything below registers as Tailwind utilities, e.g.
+ *   bg-ocean-700, text-mango-500, bg-sand-50, font-display
+ */
+@theme {
+  /* Headings use Outfit, body text uses Inter (loaded in app/layout.tsx) */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), var(--font-inter), ui-sans-serif, sans-serif;
+
+  /* Primary — deep ocean teal */
+  --color-ocean-50: #effafa;
+  --color-ocean-100: #d7f2f2;
+  --color-ocean-200: #b0e4e6;
+  --color-ocean-300: #7bcfd4;
+  --color-ocean-400: #45b1ba;
+  --color-ocean-500: #2995a1;
+  --color-ocean-600: #217987;
+  --color-ocean-700: #1f6270;
+  --color-ocean-800: #1f505c;
+  --color-ocean-900: #1d434e;
+  --color-ocean-950: #0c2b34;
+
+  /* Action — warm mango */
+  --color-mango-50: #fff8ec;
+  --color-mango-100: #ffeecd;
+  --color-mango-200: #ffdb9b;
+  --color-mango-300: #ffc25e;
+  --color-mango-400: #ffa42e;
+  --color-mango-500: #fb8a0e;
+  --color-mango-600: #e56f04;
+  --color-mango-700: #bd5507;
+  --color-mango-800: #96420e;
+  --color-mango-900: #79380f;
+
+  /* Sale / urgency — coral */
+  --color-coral-100: #ffe4e4;
+  --color-coral-500: #ff5a5f;
+  --color-coral-600: #ed3b40;
+  --color-coral-700: #c92a30;
+
+  /* Page background — warm sand */
+  --color-sand-50: #faf8f4;
+  --color-sand-100: #f4f0e8;
+  --color-sand-200: #e8e1d3;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+
+body {
+  @apply bg-sand-50 text-slate-800 antialiased;
+}
+
+::selection {
+  background: var(--color-mango-200);
+  color: var(--color-ocean-950);
+}
+
+/* Thin, unobtrusive scrollbars for horizontal product rails */
+.rail-scroll {
+  scrollbar-width: none;
+}
+.rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Reusable component classes ───────────────────────────────────── */
+
+/* Primary action button (mango) */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-mango-500 px-6 py-3 font-semibold text-white shadow-lg shadow-mango-500/25 transition hover:bg-mango-600 active:scale-[0.98];
+}
+
+/* Secondary button (ocean outline) */
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-ocean-700 px-6 py-3 font-semibold text-ocean-800 transition hover:bg-ocean-700 hover:text-white active:scale-[0.98];
+}
+
+/* Standard card surface */
+.card {
+  @apply rounded-2xl border border-sand-200 bg-white shadow-sm;
+}
+
+/* Form input */
+.input {
+  @apply w-full rounded-xl border border-sand-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder-slate-400 outline-none transition focus:border-ocean-500 focus:ring-2 focus:ring-ocean-200;
+}
+
+.label {
+  @apply mb-1.5 block text-sm font-medium text-slate-700;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────── */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float, .animate-fade-up {
+    animation: none;
+  }
+}

@@ -1,0 +1,162 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { toggleProductHidden } from "@/app/actions";
+import ProductImage from "@/components/ProductImage";
+import { getBaseProductsByStore, getDiscountMap } from "@/lib/api";
+import { hasVariants, totalStock } from "@/lib/product-utils";
+import { can } from "@/lib/auth";
+import { compact, money } from "@/lib/format";
+import { requireVendor } from "@/lib/session";
+
+export const metadata: Metadata = { title: "Products" };
+
+/** Seller product management: edit, hide/show, add. */
+export default async function VendorProductsPage() {
+  const { session, storeSlug } = await requireVendor();
+  // Base prices, so sellers always see and edit their own numbers rather
+  // than the temporarily discounted ones customers are charged.
+  const [products, discounts] = await Promise.all([
+    getBaseProductsByStore(storeSlug),
+    getDiscountMap(storeSlug),
+  ]);
+  const mayEdit = can(session, "products");
+  const discountedCount = Object.keys(discounts).length;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-ocean-950">
+            My Products ({products.length})
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Edit prices, stock and sales. Hidden products stay here but leave
+            the storefront.
+          </p>
+        </div>
+        {mayEdit && (
+          <Link href="/vendor/products/new" className="btn-primary !px-4 !py-2 text-sm">
+            + Add Product
+          </Link>
+        )}
+      </div>
+
+      {discountedCount > 0 && (
+        <p className="mt-4 rounded-xl bg-coral-100/50 px-4 py-3 text-sm text-coral-700">
+          🏷️ A discount is active on <strong>{discountedCount}</strong> of your
+          products — these are your normal prices, customers pay less on the
+          ones marked below.{" "}
+          <Link href="/vendor/promotions" className="font-bold underline">
+            Manage promotions
+          </Link>
+        </p>
+      )}
+
+      {!mayEdit && (
+        <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
+          👁️ Your account has view-only access to products. Ask a manager for
+          the <strong>products</strong> role to make changes.
+        </p>
+      )}
+
+      <div className="card mt-5 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="px-5 py-3">Product</th>
+              <th className="px-5 py-3">Price</th>
+              <th className="px-5 py-3">Stock</th>
+              <th className="px-5 py-3">Sold</th>
+              <th className="px-5 py-3">Visibility</th>
+              <th className="px-5 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => (
+              <tr key={p.id} className="border-b border-sand-100 last:border-0 hover:bg-sand-50">
+                <td className="max-w-72 px-5 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <ProductImage
+                      product={p}
+                      iconClass="text-lg"
+                      className="h-10 w-10 shrink-0 rounded-lg"
+                      sizes="40px"
+                    />
+                    <div className="min-w-0">
+                      <p className={`truncate font-semibold ${p.hidden ? "text-slate-400 line-through" : "text-slate-800"}`}>
+                        {p.name}
+                      </p>
+                      {(p.images?.length ?? 0) === 0 && (
+                        <p className="text-[11px] font-semibold text-mango-600">
+                          ⚠ No photos yet
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-5 py-3.5 font-semibold">
+                  {money(p.price)}
+                  {p.compareAt && (
+                    <span className="ml-1.5 text-xs text-slate-400 line-through">
+                      {money(p.compareAt)}
+                    </span>
+                  )}
+                  {discounts[p.id] && (
+                    <span className="ml-1.5 rounded-full bg-coral-100 px-1.5 py-0.5 text-[10px] font-bold text-coral-600">
+                      −{discounts[p.id]}%
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3.5">
+                  <span className={totalStock(p) <= 15 ? "font-bold text-coral-600" : "text-slate-600"}>
+                    {totalStock(p)}
+                    {totalStock(p) <= 15 && " ⚠"}
+                  </span>
+                  {hasVariants(p) && (
+                    <span className="ml-1 text-[10px] text-slate-400">
+                      ({p.variants!.length} variants)
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3.5 text-slate-600">{compact(p.sold)}</td>
+                <td className="px-5 py-3.5">
+                  {mayEdit ? (
+                    <form action={toggleProductHidden.bind(null, p.id)}>
+                      <button
+                        className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                          p.hidden
+                            ? "bg-sand-100 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700"
+                            : "bg-emerald-100 text-emerald-700 hover:bg-sand-100 hover:text-slate-500"
+                        }`}
+                      >
+                        {p.hidden ? "Hidden — show" : "Live — hide"}
+                      </button>
+                    </form>
+                  ) : (
+                    <span className="text-xs text-slate-400">{p.hidden ? "Hidden" : "Live"}</span>
+                  )}
+                </td>
+                <td className="px-5 py-3.5 text-right">
+                  {mayEdit && (
+                    <Link
+                      href={`/vendor/products/${p.id}/edit`}
+                      className="mr-3 text-xs font-bold text-ocean-700 hover:underline"
+                    >
+                      Edit
+                    </Link>
+                  )}
+                  <Link
+                    href={`/product/${p.slug}`}
+                    className="text-xs font-bold text-slate-400 hover:underline"
+                  >
+                    View →
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
