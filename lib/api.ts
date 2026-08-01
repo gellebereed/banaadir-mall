@@ -1,28 +1,28 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────
- *  DATA ACCESS LAYER — the single integration point for a real backend.
+ *  DATA ACCESS LAYER — the single integration point for Supabase & local DB.
  * ─────────────────────────────────────────────────────────────────────────
  * Every page and component reads data ONLY through the functions here.
- * Data = seed catalog (lib/data/*) merged with runtime changes made from
- * the dashboards (lib/db.ts): product edits, promotions, order status,
- * store approvals, employees and marketing settings.
- *
- * To connect Odoo later, replace the bodies of these functions with calls
- * to Odoo's external API (JSON-RPC / XML-RPC):
- *   - Products   -> product.template   - Categories -> product.category
- *   - Stores     -> vendor partners    - Orders     -> sale.order
- * All functions are async for exactly this reason. The UI never changes.
- *
- * NOTE: server-only (lib/db.ts uses the filesystem). Client components
- * receive this data via props from their server page.
+ * When Supabase is configured, data is fetched live from Supabase Database.
+ * When Supabase is offline or unconfigured, data falls back seamlessly to
+ * the seed catalog in lib/data/* merged with runtime edits from lib/db.ts.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { categories } from "./data/categories";
+import { categories as seedCategories } from "./data/categories";
 import { orders as seedOrders } from "./data/orders";
 import { products as seedProducts } from "./data/products";
 import { stores as seedStores } from "./data/stores";
 import { getDB } from "./db";
+import {
+  fetchCategoriesFromSupabase,
+  fetchEmployeesFromSupabase,
+  fetchMarketingFromSupabase,
+  fetchOrdersFromSupabase,
+  fetchProductsFromSupabase,
+  fetchPromotionsFromSupabase,
+  fetchStoresFromSupabase,
+} from "./supabase/db-api";
 import type {
   Category,
   Employee,
@@ -39,11 +39,15 @@ import type {
 // ── Categories ─────────────────────────────────────────────────────────
 
 export async function getCategories(): Promise<Category[]> {
-  return categories;
+  const supabaseCategories = await fetchCategoriesFromSupabase();
+  if (supabaseCategories && supabaseCategories.length > 0) {
+    return supabaseCategories;
+  }
+  return seedCategories;
 }
 
 export async function getCategory(slug: string): Promise<Category | undefined> {
-  return categories.find((c) => c.slug === slug);
+  return (await getCategories()).find((c) => c.slug === slug);
 }
 
 // ── Stores ─────────────────────────────────────────────────────────────
@@ -53,6 +57,11 @@ export async function getCategory(slug: string): Promise<Category | undefined> {
  * Settings page and status changes from the admin (approve/reject/suspend).
  */
 export async function getAllStores(): Promise<Store[]> {
+  const supabaseStores = await fetchStoresFromSupabase();
+  if (supabaseStores && supabaseStores.length > 0) {
+    return supabaseStores;
+  }
+
   const db = await getDB();
   return seedStores.map((s) => {
     const merged = db.storeOverrides[s.slug] ? { ...s, ...db.storeOverrides[s.slug] } : s;
@@ -75,12 +84,13 @@ export async function getStore(slug: string): Promise<Store | undefined> {
  * The catalog as the SELLER maintains it — seed products minus deletions,
  * plus runtime-created products, with field overrides applied. No
  * promotion or campaign discounts.
- *
- * ⚠ Dashboards must edit these values. Editing the discounted prices from
- * getAllProducts() would bake a temporary discount into the base price and
- * then discount it a second time.
  */
 export async function getBaseProducts(): Promise<Product[]> {
+  const supabaseProducts = await fetchProductsFromSupabase();
+  if (supabaseProducts && supabaseProducts.length > 0) {
+    return supabaseProducts;
+  }
+
   const db = await getDB();
   return [
     ...seedProducts.filter((p) => !db.deletedProducts.includes(p.id)),
@@ -217,15 +227,27 @@ export async function getRelatedProducts(product: Product, limit = 4): Promise<P
 // ── Promotions / employees / marketing ─────────────────────────────────
 
 export async function getPromotionsByStore(storeSlug: string): Promise<Promotion[]> {
+  const supabasePromotions = await fetchPromotionsFromSupabase();
+  if (supabasePromotions) {
+    return supabasePromotions.filter((p) => p.store === storeSlug);
+  }
   return (await getDB()).promotions.filter((p) => p.store === storeSlug);
 }
 
 /** Employees of a store, or of the platform when storeSlug === "platform". */
 export async function getEmployees(storeSlug: string): Promise<Employee[]> {
+  const supabaseEmployees = await fetchEmployeesFromSupabase();
+  if (supabaseEmployees) {
+    return supabaseEmployees.filter((e) => e.store === storeSlug);
+  }
   return (await getDB()).employees.filter((e) => e.store === storeSlug);
 }
 
 export async function getMarketingSettings(): Promise<MarketingSettings> {
+  const supabaseMarketing = await fetchMarketingFromSupabase();
+  if (supabaseMarketing) {
+    return supabaseMarketing;
+  }
   return (await getDB()).marketing;
 }
 
@@ -257,6 +279,10 @@ export async function getFlashRequests(storeSlug?: string): Promise<FlashRequest
 // ── Orders ─────────────────────────────────────────────────────────────
 
 export async function getOrders(): Promise<Order[]> {
+  const supabaseOrders = await fetchOrdersFromSupabase();
+  if (supabaseOrders && supabaseOrders.length > 0) {
+    return supabaseOrders;
+  }
   const db = await getDB();
   return seedOrders.map((o) =>
     db.orderStatus[o.id] ? { ...o, status: db.orderStatus[o.id] } : o,
