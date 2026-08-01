@@ -203,7 +203,9 @@ export async function signUpSeller(
     try {
       const supabase = await createClient();
 
-      // 1. Create auth user in Supabase
+      let user = null;
+
+      // 1. Create auth user in Supabase or authenticate existing user
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
         password,
@@ -218,22 +220,52 @@ export async function signUpSeller(
       });
 
       if (authErr) {
-        return { error: authErr.message };
+        // If user already exists, authenticate with password and upgrade account to seller
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInErr || !signInData.user) {
+          return {
+            error: authErr.message.toLowerCase().includes("already registered")
+              ? "An account with this email already exists. Please verify your password to register your store."
+              : authErr.message,
+          };
+        }
+
+        user = signInData.user;
+
+        // Upgrade user metadata to seller role and store slug
+        await supabase.auth.updateUser({
+          data: {
+            name: ownerName,
+            role: "seller",
+            store: storeSlug,
+            phone,
+          },
+        });
+      } else {
+        user = authData.user;
       }
 
       // 2. Insert store into Supabase stores table
-      await supabase.from("stores").upsert({
-        id: `store-${Date.now()}`,
-        slug: storeSlug,
-        name: storeName,
-        tagline: about.slice(0, 100) || "Quality products & local service",
-        description: about,
-        owner: ownerName,
-        location: city || "Mogadishu",
-        status: "active",
-      }, { onConflict: "slug" });
+      await supabase.from("stores").upsert(
+        {
+          id: `store-${Date.now()}`,
+          slug: storeSlug,
+          name: storeName,
+          tagline: about.slice(0, 100) || "Quality products & local service",
+          description: about,
+          owner: ownerName,
+          location: city || "Mogadishu",
+          category: category || "general",
+          status: "active",
+        },
+        { onConflict: "slug" }
+      );
 
-      if (authData.user) {
+      if (user) {
         const session: Session = {
           name: ownerName,
           email,
