@@ -123,13 +123,14 @@ export default async function VendorProductsPage() {
                   {mayEdit ? (
                     <form action={toggleProductHidden.bind(null, p.id)}>
                       <button
+                        title={p.hidden ? "Click to show on storefront" : "Click to hide from storefront"}
                         className={`rounded-full px-3 py-1 text-xs font-bold transition ${
                           p.hidden
                             ? "bg-sand-100 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700"
                             : "bg-emerald-100 text-emerald-700 hover:bg-sand-100 hover:text-slate-500"
                         }`}
                       >
-                        {p.hidden ? "Hidden — show" : "Live — hide"}
+                        {p.hidden ? "Hidden" : "Live"}
                       </button>
                     </form>
                   ) : (
