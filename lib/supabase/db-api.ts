@@ -1,4 +1,4 @@
-﻿import { unstable_cache } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type { Category, Employee, MarketingSettings, Order, Product, Promotion, Store } from "../types";
 import { isSupabaseConfigured } from "./storage";
@@ -77,19 +77,47 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   }
 }
 
+const CANONICAL_SLUGS = [
+  "electronics",
+  "womens-fashion",
+  "mens-fashion",
+  "beauty",
+  "home-living",
+  "kids-baby",
+  "sports-outdoor",
+  "groceries",
+];
+
 async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
     const { data, error } = await supabase.from("categories").select("*");
     if (error || !data || data.length === 0) return null;
-    return data.map((c) => ({
+    const mapped = data.map((c) => ({
       slug: c.slug,
       name: c.name,
       icon: ICON_MAP[c.icon] || c.icon || "📦",
       tagline: c.description || "",
       art: c.art || DEFAULT_ART,
     }));
+    // Filter to canonical categories in navbar order, appending any extra custom ones
+    const canonicalMap = new Map(mapped.map((c) => [c.slug, c]));
+    const result: Category[] = [];
+    for (const slug of CANONICAL_SLUGS) {
+      if (canonicalMap.has(slug)) {
+        result.push(canonicalMap.get(slug)!);
+        canonicalMap.delete(slug);
+      }
+    }
+    // Append remaining custom categories (excluding legacy migration aliases)
+    const LEGACY_ALIASES = new Set(["fashion-apparel", "beauty-perfume", "groceries-food", "sports-fitness", "baby-kids"]);
+    for (const [slug, cat] of canonicalMap) {
+      if (!LEGACY_ALIASES.has(slug)) {
+        result.push(cat);
+      }
+    }
+    return result.length > 0 ? result : null;
   } catch {
     return null;
   }
