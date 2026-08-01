@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
+import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
@@ -37,7 +38,7 @@ export default async function NewProductPage() {
           It goes live in your store the moment you publish.
         </p>
 
-        <form action={createProduct} className="mt-6 grid gap-5 sm:grid-cols-2">
+        <SafeForm action={createProduct} storageKey="banaadir_draft_new_product" className="mt-6 grid gap-5 sm:grid-cols-2">
           <fieldset className="sm:col-span-2">
             <legend className="label">Photos</legend>
             <PhotoPicker name="photos" />
@@ -117,7 +118,7 @@ export default async function NewProductPage() {
           <div className="sm:col-span-2">
             <SubmitButton pendingLabel="Publishing…">Publish Product</SubmitButton>
           </div>
-        </form>
+        </SafeForm>
       </div>
     </div>
   );

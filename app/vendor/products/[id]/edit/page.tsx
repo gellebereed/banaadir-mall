@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
 import PhotoManager from "@/components/dashboard/PhotoManager";
+import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
@@ -78,7 +79,7 @@ export default async function EditProductPage({
           </p>
         )}
 
-        <form action={updateProduct} className="mt-6 space-y-8">
+        <SafeForm action={updateProduct} className="mt-6 space-y-8">
           <input type="hidden" name="id" value={product.id} />
 
           {/* ── Photos ───────────────────────────────────────────── */}
@@ -230,7 +231,7 @@ export default async function EditProductPage({
               Preview
             </Link>
           </div>
-        </form>
+        </SafeForm>
 
         {/* Danger zone */}
         <div className="mt-6 flex items-center justify-between rounded-xl border border-coral-100 bg-coral-100/30 px-4 py-3">
