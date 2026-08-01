@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { setStoreStatus } from "@/app/actions";
+import { setStoreStatus, toggleStoreOfficial } from "@/app/actions";
 import { getAllStores, getVendorStats } from "@/lib/api";
 import { compact, money } from "@/lib/format";
 
@@ -80,6 +80,7 @@ export default async function AdminStoresPage() {
           <thead>
             <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="px-5 py-3">Store</th>
+              <th className="px-5 py-3">Official Brand</th>
               <th className="px-5 py-3">City</th>
               <th className="px-5 py-3">Products</th>
               <th className="px-5 py-3">Orders (30d)</th>
@@ -92,14 +93,24 @@ export default async function AdminStoresPage() {
           <tbody>
             {activeWithStats.map(({ store, stats }) => (
               <tr key={store.slug} className="border-b border-sand-100 last:border-0 hover:bg-sand-50">
-                <td className="px-5 py-3.5">
+                <td className="px-5 py-3.5 font-semibold text-slate-800">
                   <span className="mr-2">{store.icon}</span>
-                  <span className="font-semibold text-slate-800">{store.name}</span>
-                  {store.official && (
-                    <span className="ml-1.5 rounded-full bg-mango-100 px-2 py-0.5 text-[10px] font-bold text-mango-800">
-                      Brand
-                    </span>
-                  )}
+                  {store.name}
+                </td>
+                <td className="px-5 py-3.5">
+                  <form action={toggleStoreOfficial.bind(null, store.slug)}>
+                    <button
+                      type="submit"
+                      title={store.official ? "Click to remove Official Brand badge" : "Click to mark as Official Brand"}
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold transition ${
+                        store.official
+                          ? "bg-mango-100 text-mango-800 hover:bg-mango-200"
+                          : "bg-sand-100 text-slate-500 hover:bg-mango-100 hover:text-mango-800"
+                      }`}
+                    >
+                      {store.official ? "⭐ Official Brand" : "+ Mark Official"}
+                    </button>
+                  </form>
                 </td>
                 <td className="px-5 py-3.5 text-slate-500">{store.city}</td>
                 <td className="px-5 py-3.5 text-slate-600">{stats.productCount}</td>

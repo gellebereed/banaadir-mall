@@ -539,6 +539,27 @@ export async function setStoreStatus(slug: string, status: Store["status"]): Pro
   refresh();
 }
 
+export async function toggleStoreOfficial(slug: string): Promise<void> {
+  const session = await getSession();
+  if (session?.role !== "admin") redirect("/login");
+
+  const { getStore } = await import("@/lib/api");
+  const store = await getStore(slug);
+  if (!store) return;
+  const newOfficial = !store.official;
+
+  const supabaseOk = await updateStoreFields(slug, { official: newOfficial });
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.storeOverrides[slug] = {
+        ...db.storeOverrides[slug],
+        official: newOfficial,
+      };
+    });
+  }
+  refresh();
+}
+
 // ── Team / employees ───────────────────────────────────────────────────
 
 export async function addEmployee(formData: FormData): Promise<void> {
