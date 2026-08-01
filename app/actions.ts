@@ -1,14 +1,13 @@
-﻿"use server";
+"use server";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
  *  SERVER ACTIONS — every mutation the dashboards can perform.
  * ─────────────────────────────────────────────────────────────────────────
- * Each action: (1) checks the session + access rights, (2) writes to the
- * JSON store (lib/db.ts), (3) revalidates so every page shows the change
- * immediately. When Odoo is connected, these bodies become Odoo API calls
- * (product.template writes, sale.order state changes, …) — the forms and
- * pages calling them stay identical.
+ * Each action: (1) checks the session + access rights, (2) writes to
+ * Supabase when configured (production/Netlify) OR to the JSON store
+ * (lib/db.ts) for local dev, (3) revalidates so every page shows the
+ * change immediately.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -28,6 +27,21 @@ import type {
   Variant,
 } from "@/lib/types";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
+import {
+  useSupabaseMutations,
+  upsertProduct,
+  updateProductFields,
+  deleteProductFromSupabase,
+  updateStoreFields,
+  setStoreStatusInSupabase,
+  setOrderStatusInSupabase,
+  insertPromotion,
+  togglePromotionInSupabase,
+  deletePromotionFromSupabase,
+  insertEmployee,
+  deleteEmployeeFromSupabase,
+  updateMarketingInSupabase,
+} from "@/lib/supabase/mutations";
 
 /**
  * Invalidate what a mutation actually affected.
@@ -163,28 +177,35 @@ export async function updateProduct(formData: FormData): Promise<void> {
   const compareAtRaw = String(formData.get("compareAt") ?? "").trim();
   const badgeRaw = String(formData.get("badge") ?? "");
 
-  await mutateDB((db) => {
-    db.productOverrides[id] = {
-      ...db.productOverrides[id],
-      name: String(formData.get("name")),
-      price,
-      compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
-      // With variants, stock lives on the variants themselves.
-      stock: variants
-        ? variants.reduce((sum, v) => sum + v.stock, 0)
-        : Number(formData.get("stock")),
-      category: String(formData.get("category")),
-      icon: String(formData.get("icon") ?? "").trim() || product.icon,
-      badge: (badgeRaw || undefined) as Product["badge"],
-      description: String(formData.get("description")),
-      features: lines(formData.get("features")),
-      colors: variants ? undefined : commaList(formData.get("colors")),
-      sizes: variants ? undefined : commaList(formData.get("sizes")),
-      images,
-      variants,
-      defaultVariantId,
-    };
-  });
+  const updatedFields: Partial<Product> = {
+    name: String(formData.get("name")),
+    price,
+    compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
+    stock: variants
+      ? variants.reduce((sum, v) => sum + v.stock, 0)
+      : Number(formData.get("stock")),
+    category: String(formData.get("category")),
+    icon: String(formData.get("icon") ?? "").trim() || product.icon,
+    badge: (badgeRaw || undefined) as Product["badge"],
+    description: String(formData.get("description")),
+    features: lines(formData.get("features")),
+    colors: variants ? undefined : commaList(formData.get("colors")),
+    sizes: variants ? undefined : commaList(formData.get("sizes")),
+    images,
+    variants,
+    defaultVariantId,
+  };
+
+  // Try Supabase first; fall back to JSON overlay
+  const supabaseOk = await updateProductFields(id, updatedFields);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.productOverrides[id] = {
+        ...db.productOverrides[id],
+        ...updatedFields,
+      };
+    });
+  }
   refresh();
   redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
 }
@@ -195,12 +216,15 @@ export async function toggleProductHidden(id: string): Promise<void> {
   if (!product) return;
   assertOwnsStore(session, product.store);
 
-  await mutateDB((db) => {
-    db.productOverrides[id] = {
-      ...db.productOverrides[id],
-      hidden: !product.hidden,
-    };
-  });
+  const supabaseOk = await updateProductFields(id, { hidden: !product.hidden });
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.productOverrides[id] = {
+        ...db.productOverrides[id],
+        hidden: !product.hidden,
+      };
+    });
+  }
   refresh();
 }
 
@@ -210,11 +234,14 @@ export async function deleteProduct(id: string): Promise<void> {
   if (!product) return;
   assertOwnsStore(session, product.store);
 
-  await mutateDB((db) => {
-    db.newProducts = db.newProducts.filter((p) => p.id !== id);
-    if (!db.deletedProducts.includes(id)) db.deletedProducts.push(id);
-    delete db.productOverrides[id];
-  });
+  const supabaseOk = await deleteProductFromSupabase(id);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.newProducts = db.newProducts.filter((p) => p.id !== id);
+      if (!db.deletedProducts.includes(id)) db.deletedProducts.push(id);
+      delete db.productOverrides[id];
+    });
+  }
   refresh();
   redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
 }
@@ -260,9 +287,12 @@ export async function createProduct(formData: FormData): Promise<void> {
     defaultVariantId: pickDefaultVariantId(formData, variants),
   };
 
-  await mutateDB((db) => {
-    db.newProducts.push(product);
-  });
+  const supabaseOk = await upsertProduct(product);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.newProducts.push(product);
+    });
+  }
   refresh();
   redirect("/vendor/products");
 }
@@ -300,19 +330,28 @@ export async function bulkImportPhotos(formData: FormData): Promise<void> {
 
   if (additions.size === 0) return;
 
-  await mutateDB((db) => {
+  if (useSupabaseMutations()) {
     for (const [productId, urls] of additions) {
       const existing = replace
         ? []
-        : (db.productOverrides[productId]?.images ??
-           products.find((p) => p.id === productId)?.images ??
-           []);
-      db.productOverrides[productId] = {
-        ...db.productOverrides[productId],
-        images: [...existing, ...urls],
-      };
+        : (products.find((p) => p.id === productId)?.images ?? []);
+      await updateProductFields(productId, { images: [...existing, ...urls] });
     }
-  });
+  } else {
+    await mutateDB((db) => {
+      for (const [productId, urls] of additions) {
+        const existing = replace
+          ? []
+          : (db.productOverrides[productId]?.images ??
+             products.find((p) => p.id === productId)?.images ??
+             []);
+        db.productOverrides[productId] = {
+          ...db.productOverrides[productId],
+          images: [...existing, ...urls],
+        };
+      }
+    });
+  }
   refresh();
 }
 
@@ -349,17 +388,24 @@ export async function updateStoreSettings(
   if (removeLogo && store.logo) await deleteUpload(store.logo);
   if (removeBanner && store.banner) await deleteUpload(store.banner);
 
-  await mutateDB((db) => {
-    db.storeOverrides[storeSlug] = {
-      ...db.storeOverrides[storeSlug],
-      name: String(formData.get("name")).trim() || store.name,
-      tagline: String(formData.get("tagline")).trim(),
-      city: String(formData.get("city")).trim() || store.city,
-      icon: String(formData.get("icon") ?? "").trim() || store.icon,
-      logo: removeLogo ? undefined : (logo ?? store.logo),
-      banner: removeBanner ? undefined : (banner ?? store.banner),
-    };
-  });
+  const updatedFields: Partial<Store> = {
+    name: String(formData.get("name")).trim() || store.name,
+    tagline: String(formData.get("tagline")).trim(),
+    city: String(formData.get("city")).trim() || store.city,
+    icon: String(formData.get("icon") ?? "").trim() || store.icon,
+    logo: removeLogo ? undefined : (logo ?? store.logo),
+    banner: removeBanner ? undefined : (banner ?? store.banner),
+  };
+
+  const supabaseOk = await updateStoreFields(storeSlug, updatedFields);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.storeOverrides[storeSlug] = {
+        ...db.storeOverrides[storeSlug],
+        ...updatedFields,
+      };
+    });
+  }
   refresh();
   return { ok: true, message: "Store settings saved." };
 }
@@ -378,38 +424,64 @@ export async function createPromotion(formData: FormData): Promise<void> {
       ? formData.getAll("productIds").map(String)
       : [];
 
-  await mutateDB((db) => {
-    db.promotions.push({
-      id: "promo-" + Date.now().toString(36),
-      store: storeSlug,
-      name: String(formData.get("name")).trim() || "Store Sale",
-      pct,
-      active: true,
-      productIds,
+  const promo = {
+    id: "promo-" + Date.now().toString(36),
+    store: storeSlug,
+    name: String(formData.get("name")).trim() || "Store Sale",
+    pct,
+    active: true,
+    productIds,
+  };
+
+  const supabaseOk = await insertPromotion(promo);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.promotions.push(promo);
     });
-  });
+  }
   refresh();
 }
 
 export async function togglePromotion(id: string): Promise<void> {
   const session = await requireAccess("products");
-  await mutateDB((db) => {
-    const promo = db.promotions.find((p) => p.id === id);
+
+  if (useSupabaseMutations()) {
+    // We need to read the current state to toggle it
+    const { fetchPromotionsFromSupabase } = await import("@/lib/supabase/db-api");
+    const promos = await fetchPromotionsFromSupabase();
+    const promo = promos?.find((p) => p.id === id);
     if (!promo) return;
     assertOwnsStore(session, promo.store);
-    promo.active = !promo.active;
-  });
+    await togglePromotionInSupabase(id, !promo.active);
+  } else {
+    await mutateDB((db) => {
+      const promo = db.promotions.find((p) => p.id === id);
+      if (!promo) return;
+      assertOwnsStore(session, promo.store);
+      promo.active = !promo.active;
+    });
+  }
   refresh();
 }
 
 export async function deletePromotion(id: string): Promise<void> {
   const session = await requireAccess("products");
-  await mutateDB((db) => {
-    const promo = db.promotions.find((p) => p.id === id);
+
+  if (useSupabaseMutations()) {
+    const { fetchPromotionsFromSupabase } = await import("@/lib/supabase/db-api");
+    const promos = await fetchPromotionsFromSupabase();
+    const promo = promos?.find((p) => p.id === id);
     if (!promo) return;
     assertOwnsStore(session, promo.store);
-    db.promotions = db.promotions.filter((p) => p.id !== id);
-  });
+    await deletePromotionFromSupabase(id);
+  } else {
+    await mutateDB((db) => {
+      const promo = db.promotions.find((p) => p.id === id);
+      if (!promo) return;
+      assertOwnsStore(session, promo.store);
+      db.promotions = db.promotions.filter((p) => p.id !== id);
+    });
+  }
   refresh();
 }
 
@@ -425,9 +497,13 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
       throw new Error("You can only manage your own store's orders.");
     }
   }
-  await mutateDB((db) => {
-    db.orderStatus[orderId] = status;
-  });
+
+  const supabaseOk = await setOrderStatusInSupabase(orderId, status);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.orderStatus[orderId] = status;
+    });
+  }
   refresh();
 }
 
@@ -436,9 +512,13 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
 export async function setStoreStatus(slug: string, status: Store["status"]): Promise<void> {
   const session = await getSession();
   if (session?.role !== "admin") redirect("/login");
-  await mutateDB((db) => {
-    db.storeStatus[slug] = status;
-  });
+
+  const supabaseOk = await setStoreStatusInSupabase(slug, status);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.storeStatus[slug] = status;
+    });
+  }
   refresh();
 }
 
@@ -452,27 +532,42 @@ export async function addEmployee(formData: FormData): Promise<void> {
       : session.store!;
 
   const email = String(formData.get("email")).trim().toLowerCase();
-  await mutateDB((db) => {
-    if (db.employees.some((e) => e.email.toLowerCase() === email)) return;
-    db.employees.push({
-      id: "emp-" + Date.now().toString(36),
-      store: storeSlug,
-      name: String(formData.get("name")).trim(),
-      email,
-      role: String(formData.get("role")) as EmployeeRole,
+  const emp = {
+    id: "emp-" + Date.now().toString(36),
+    store: storeSlug,
+    name: String(formData.get("name")).trim(),
+    email,
+    role: String(formData.get("role")) as EmployeeRole,
+  };
+
+  const supabaseOk = await insertEmployee(emp);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      if (db.employees.some((e) => e.email.toLowerCase() === email)) return;
+      db.employees.push(emp);
     });
-  });
+  }
   refresh();
 }
 
 export async function removeEmployee(id: string): Promise<void> {
   const session = await requireAccess("team");
-  await mutateDB((db) => {
-    const employee = db.employees.find((e) => e.id === id);
+
+  if (useSupabaseMutations()) {
+    const { fetchEmployeesFromSupabase } = await import("@/lib/supabase/db-api");
+    const employees = await fetchEmployeesFromSupabase();
+    const employee = employees?.find((e) => e.id === id);
     if (!employee) return;
     if (session.role !== "admin") assertOwnsStore(session, employee.store);
-    db.employees = db.employees.filter((e) => e.id !== id);
-  });
+    await deleteEmployeeFromSupabase(id);
+  } else {
+    await mutateDB((db) => {
+      const employee = db.employees.find((e) => e.id === id);
+      if (!employee) return;
+      if (session.role !== "admin") assertOwnsStore(session, employee.store);
+      db.employees = db.employees.filter((e) => e.id !== id);
+    });
+  }
   refresh();
 }
 
@@ -491,21 +586,35 @@ export async function updateMarketing(
   formData: FormData,
 ): Promise<SaveState> {
   await requireMarketing();
-  await mutateDB((db) => {
-    db.marketing = {
-      ...db.marketing,
-      announcement: String(formData.get("announcement")),
-      heroBadge: String(formData.get("heroBadge")),
-      heroTitleTop: String(formData.get("heroTitleTop")),
-      heroTitleHighlight: String(formData.get("heroTitleHighlight")),
-      heroSubtitle: String(formData.get("heroSubtitle")),
-      campaign: {
-        active: formData.get("campaignActive") === "on",
-        name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
-        pct: Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10)),
-      },
-    };
-  });
+
+  const marketing = {
+    announcement: String(formData.get("announcement")),
+    heroBadge: String(formData.get("heroBadge")),
+    heroTitleTop: String(formData.get("heroTitleTop")),
+    heroTitleHighlight: String(formData.get("heroTitleHighlight")),
+    heroSubtitle: String(formData.get("heroSubtitle")),
+    campaign: {
+      active: formData.get("campaignActive") === "on",
+      name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
+      pct: Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10)),
+    },
+  };
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    await updateMarketingInSupabase({
+      ...current,
+      ...marketing,
+    });
+  } else {
+    await mutateDB((db) => {
+      db.marketing = {
+        ...db.marketing,
+        ...marketing,
+      };
+    });
+  }
   refresh();
   return { ok: true, message: "Storefront updated." };
 }
@@ -518,9 +627,16 @@ export async function updateSections(
   await requireMarketing();
   const order = parseJsonField<HomeSection[]>(formData.get("sectionsJson"), []);
   if (order.length === 0) return { ok: false, message: "Nothing to save." };
-  await mutateDB((db) => {
-    db.marketing.sections = order;
-  });
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    await updateMarketingInSupabase({ ...current, sections: order });
+  } else {
+    await mutateDB((db) => {
+      db.marketing.sections = order;
+    });
+  }
   refresh();
   return { ok: true, message: "Home page layout saved." };
 }
@@ -532,7 +648,9 @@ export async function saveBanner(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
 
-  await mutateDB((db) => {
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
     const next: Banner = {
       id: id || "ban-" + Date.now().toString(36),
       title: String(formData.get("title")).trim(),
@@ -544,56 +662,115 @@ export async function saveBanner(formData: FormData): Promise<void> {
       image,
       active: true,
     };
-    const existing = db.marketing.banners.find((b) => b.id === id);
-    if (existing) {
-      Object.assign(existing, next, {
-        // Keep the current artwork unless a new file was uploaded.
-        image: image ?? existing.image,
-        active: existing.active,
-      });
+    const banners = [...current.banners];
+    const existingIndex = banners.findIndex((b) => b.id === id);
+    if (existingIndex >= 0) {
+      banners[existingIndex] = { ...banners[existingIndex], ...next, image: image ?? banners[existingIndex].image };
     } else {
-      db.marketing.banners.push(next);
+      banners.push(next);
     }
-  });
+    await updateMarketingInSupabase({ ...current, banners });
+  } else {
+    await mutateDB((db) => {
+      const next: Banner = {
+        id: id || "ban-" + Date.now().toString(36),
+        title: String(formData.get("title")).trim(),
+        subtitle: String(formData.get("subtitle") ?? "").trim() || undefined,
+        cta: String(formData.get("cta") ?? "").trim() || undefined,
+        link: String(formData.get("link") ?? "/products").trim() || "/products",
+        from: String(formData.get("from") ?? "#1f6270"),
+        to: String(formData.get("to") ?? "#fb8a0e"),
+        image,
+        active: true,
+      };
+      const existing = db.marketing.banners.find((b) => b.id === id);
+      if (existing) {
+        Object.assign(existing, next, {
+          // Keep the current artwork unless a new file was uploaded.
+          image: image ?? existing.image,
+          active: existing.active,
+        });
+      } else {
+        db.marketing.banners.push(next);
+      }
+    });
+  }
   refresh();
 }
 
 export async function deleteBanner(id: string): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const banner = db.marketing.banners.find((b) => b.id === id);
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const banner = current.banners.find((b) => b.id === id);
     if (banner?.image) void deleteUpload(banner.image);
-    db.marketing.banners = db.marketing.banners.filter((b) => b.id !== id);
-  });
+    await updateMarketingInSupabase({
+      ...current,
+      banners: current.banners.filter((b) => b.id !== id),
+    });
+  } else {
+    await mutateDB((db) => {
+      const banner = db.marketing.banners.find((b) => b.id === id);
+      if (banner?.image) void deleteUpload(banner.image);
+      db.marketing.banners = db.marketing.banners.filter((b) => b.id !== id);
+    });
+  }
   refresh();
 }
 
 export async function toggleBanner(id: string): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const banner = db.marketing.banners.find((b) => b.id === id);
-    if (banner) banner.active = !banner.active;
-  });
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const banners = current.banners.map((b) =>
+      b.id === id ? { ...b, active: !b.active } : b
+    );
+    await updateMarketingInSupabase({ ...current, banners });
+  } else {
+    await mutateDB((db) => {
+      const banner = db.marketing.banners.find((b) => b.id === id);
+      if (banner) banner.active = !banner.active;
+    });
+  }
   refresh();
 }
 
 export async function moveBanner(id: string, delta: number): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const list = db.marketing.banners;
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const list = [...current.banners];
     const i = list.findIndex((b) => b.id === id);
     const target = i + delta;
     if (i < 0 || target < 0 || target >= list.length) return;
     [list[i], list[target]] = [list[target], list[i]];
-  });
+    await updateMarketingInSupabase({ ...current, banners: list });
+  } else {
+    await mutateDB((db) => {
+      const list = db.marketing.banners;
+      const i = list.findIndex((b) => b.id === id);
+      const target = i + delta;
+      if (i < 0 || target < 0 || target >= list.length) return;
+      [list[i], list[target]] = [list[target], list[i]];
+    });
+  }
   refresh();
 }
 
 export async function savePromoTile(formData: FormData): Promise<void> {
   await requireMarketing();
   const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
-  await mutateDB((db) => {
-    db.marketing.promoTiles.push({
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const tile = {
       id: "tile-" + Date.now().toString(36),
       label: String(formData.get("label")).trim(),
       sublabel: String(formData.get("sublabel") ?? "").trim(),
@@ -602,27 +779,66 @@ export async function savePromoTile(formData: FormData): Promise<void> {
       to: String(formData.get("to") ?? "#fecdd3"),
       image,
       active: true,
+    };
+    await updateMarketingInSupabase({
+      ...current,
+      promoTiles: [...current.promoTiles, tile],
     });
-  });
+  } else {
+    await mutateDB((db) => {
+      db.marketing.promoTiles.push({
+        id: "tile-" + Date.now().toString(36),
+        label: String(formData.get("label")).trim(),
+        sublabel: String(formData.get("sublabel") ?? "").trim(),
+        link: String(formData.get("link") ?? "/products").trim() || "/products",
+        from: String(formData.get("from") ?? "#ffe4e6"),
+        to: String(formData.get("to") ?? "#fecdd3"),
+        image,
+        active: true,
+      });
+    });
+  }
   refresh();
 }
 
 export async function deletePromoTile(id: string): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const tile = db.marketing.promoTiles.find((t) => t.id === id);
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const tile = current.promoTiles.find((t) => t.id === id);
     if (tile?.image) void deleteUpload(tile.image);
-    db.marketing.promoTiles = db.marketing.promoTiles.filter((t) => t.id !== id);
-  });
+    await updateMarketingInSupabase({
+      ...current,
+      promoTiles: current.promoTiles.filter((t) => t.id !== id),
+    });
+  } else {
+    await mutateDB((db) => {
+      const tile = db.marketing.promoTiles.find((t) => t.id === id);
+      if (tile?.image) void deleteUpload(tile.image);
+      db.marketing.promoTiles = db.marketing.promoTiles.filter((t) => t.id !== id);
+    });
+  }
   refresh();
 }
 
 export async function togglePromoTile(id: string): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const tile = db.marketing.promoTiles.find((t) => t.id === id);
-    if (tile) tile.active = !tile.active;
-  });
+
+  if (useSupabaseMutations()) {
+    const { getMarketingSettings } = await import("@/lib/api");
+    const current = await getMarketingSettings();
+    const promoTiles = current.promoTiles.map((t) =>
+      t.id === id ? { ...t, active: !t.active } : t
+    );
+    await updateMarketingInSupabase({ ...current, promoTiles });
+  } else {
+    await mutateDB((db) => {
+      const tile = db.marketing.promoTiles.find((t) => t.id === id);
+      if (tile) tile.active = !tile.active;
+    });
+  }
   refresh();
 }
 
