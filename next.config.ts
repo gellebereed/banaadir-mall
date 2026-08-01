@@ -6,10 +6,22 @@ const nextConfig: NextConfig = {
     // 1 MB request limit is far too small (see lib/uploads.ts).
     serverActions: { bodySizeLimit: "12mb" },
   },
-  // Uploaded photos are served from the same origin (/api/uploads/...), so no
-  // remotePatterns are needed. If product photos later come from Odoo or a
-  // CDN, whitelist that host here:
-  // images: { remotePatterns: [{ protocol: "https", hostname: "your-cdn.com" }] },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**.supabase.co",
+      },
+      {
+        protocol: "https",
+        hostname: "**.supabase.in",
+      },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
+    ],
+  },
 };
 
 export default nextConfig;

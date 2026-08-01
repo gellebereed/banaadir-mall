@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync, existsSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 
 // Load environment variables from .env.local
@@ -103,7 +103,7 @@ async function run() {
       if (Array.isArray(p.images) && p.images.length > 0) {
         const updatedImages = p.images.map((img) => fullMap[img] || img);
         await supabase.from("products").update({ images: updatedImages }).eq("id", p.id);
-        console.log(`  ✓ Updated product: ${p.name}`);
+        console.log(`  ✓ Updated product in Supabase DB: ${p.name}`);
       }
     }
   }
@@ -116,8 +116,30 @@ async function run() {
       const updatedLogo = fullMap[s.logo] || s.logo;
       const updatedBanner = fullMap[s.banner] || s.banner;
       await supabase.from("stores").update({ logo: updatedLogo, banner: updatedBanner }).eq("id", s.id);
-      console.log(`  ✓ Updated store: ${s.name}`);
+      console.log(`  ✓ Updated store in Supabase DB: ${s.name}`);
     }
+  }
+
+  // 4. Update local data files (lib/data/products.ts & lib/data/stores.ts) so fallbacks also use CDN URLs
+  console.log("\n📝 Updating local data fallbacks with Supabase CDN URLs...");
+  const productsFilePath = join(process.cwd(), "lib", "data", "products.ts");
+  if (existsSync(productsFilePath)) {
+    let content = readFileSync(productsFilePath, "utf8");
+    for (const [localPath, cdnUrl] of Object.entries(fullMap)) {
+      content = content.replaceAll(localPath, cdnUrl);
+    }
+    writeFileSync(productsFilePath, content, "utf8");
+    console.log("  ✓ Updated lib/data/products.ts fallback URLs.");
+  }
+
+  const storesFilePath = join(process.cwd(), "lib", "data", "stores.ts");
+  if (existsSync(storesFilePath)) {
+    let content = readFileSync(storesFilePath, "utf8");
+    for (const [localPath, cdnUrl] of Object.entries(fullMap)) {
+      content = content.replaceAll(localPath, cdnUrl);
+    }
+    writeFileSync(storesFilePath, content, "utf8");
+    console.log("  ✓ Updated lib/data/stores.ts fallback URLs.");
   }
 
   console.log("\n🎉 All images uploaded to Supabase Storage and database URLs updated!");
