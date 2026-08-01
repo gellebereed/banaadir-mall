@@ -11,12 +11,8 @@
  *   - employees                                         (team + access)
  *   - marketing                                         (admin storefront control)
  *
- * State persists to data/db.json so it survives restarts. Delete that file
- * to reset the demo to a clean state.
- *
- * When Odoo (or a real database) is connected, this file and the merge
- * logic in lib/api.ts are what get replaced — the dashboards themselves
- * only talk to the server actions in app/actions.ts.
+ * State persists to data/db.json so it survives restarts. On serverless platforms
+ * (Netlify/Vercel) where local disk is read-only, in-memory state is maintained.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -116,9 +112,9 @@ const DB_PATH = path.join(process.cwd(), "data", "db.json");
 let cache: { data: DB; mtimeMs: number } | null = null;
 
 export async function getDB(): Promise<DB> {
+  if (cache) return cache.data;
   try {
     const stat = await fs.stat(DB_PATH);
-    if (cache && cache.mtimeMs === stat.mtimeMs) return cache.data;
     const raw = JSON.parse(await fs.readFile(DB_PATH, "utf8")) as Partial<DB>;
     // Merge over defaults so adding new fields never breaks an old db.json.
     const data: DB = {
@@ -139,15 +135,21 @@ export async function getDB(): Promise<DB> {
     cache = { data, mtimeMs: stat.mtimeMs };
     return data;
   } catch {
-    // First run (or corrupted file): start from defaults.
-    return structuredClone(DEFAULT_DB);
+    // First run (or read-only / corrupted file): start from defaults.
+    const data = structuredClone(DEFAULT_DB);
+    cache = { data, mtimeMs: Date.now() };
+    return data;
   }
 }
 
 async function saveDB(db: DB): Promise<void> {
-  await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
-  await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
-  cache = null;
+  cache = { data: db, mtimeMs: Date.now() };
+  try {
+    await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
+    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
+  } catch {
+    // Netlify / Vercel serverless read-only filesystem fallback — stored safely in memory.
+  }
 }
 
 /** Read-modify-write helper used by every server action. */

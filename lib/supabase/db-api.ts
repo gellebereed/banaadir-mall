@@ -4,7 +4,22 @@ import { isSupabaseConfigured } from "./storage";
 
 export { isSupabaseConfigured };
 
-const DEFAULT_ART = { from: "from-blue-500", to: "to-cyan-400" };
+const DEFAULT_ART = { from: "#e0f2fe", to: "#bae6fd" };
+
+const ICON_MAP: Record<string, string> = {
+  Tv: "📱",
+  Shirt: "👗",
+  Home: "🛋️",
+  Sparkles: "✨",
+  ShoppingBag: "🛒",
+  Dumbbell: "⚽",
+  BookOpen: "📚",
+  Baby: "🧸",
+  electronics: "📱",
+  fashion: "👗",
+  beauty: "✨",
+  groceries: "🛒",
+};
 
 export async function fetchStoresFromSupabase(): Promise<Store[] | null> {
   if (!isSupabaseConfigured()) return null;
@@ -44,7 +59,7 @@ export async function fetchCategoriesFromSupabase(): Promise<Category[] | null> 
     return data.map((c) => ({
       slug: c.slug,
       name: c.name,
-      icon: c.icon || "📦",
+      icon: ICON_MAP[c.icon] || c.icon || "📦",
       tagline: c.description || "",
       art: c.art || DEFAULT_ART,
     }));

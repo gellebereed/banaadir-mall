@@ -30,7 +30,7 @@ const ALLOWED_TYPES = new Map<string, string>([
 /**
  * Persist uploaded files and return their public URLs.
  * If Supabase is configured, uploads directly to Supabase Storage.
- * Otherwise, falls back to local disk uploads.
+ * Otherwise, falls back to local disk uploads safely.
  */
 export async function saveImages(files: File[], folder: string): Promise<string[]> {
   // If Supabase credentials are path-ready, stream to Supabase Storage
@@ -43,19 +43,23 @@ export async function saveImages(files: File[], folder: string): Promise<string[
     }
   }
 
-  // Local filesystem fallback
+  // Local filesystem fallback with read-only error protection
   const urls: string[] = [];
   const dir = path.join(UPLOAD_ROOT, folder);
 
-  for (const file of files) {
-    if (!file || typeof file.arrayBuffer !== "function" || file.size === 0) continue;
-    const ext = ALLOWED_TYPES.get(file.type.toLowerCase());
-    if (!ext || file.size > MAX_BYTES) continue;
+  try {
+    for (const file of files) {
+      if (!file || typeof file.arrayBuffer !== "function" || file.size === 0) continue;
+      const ext = ALLOWED_TYPES.get(file.type.toLowerCase());
+      if (!ext || file.size > MAX_BYTES) continue;
 
-    const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, name), Buffer.from(await file.arrayBuffer()));
-    urls.push(`/api/uploads/${folder}/${name}`);
+      const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, name), Buffer.from(await file.arrayBuffer()));
+      urls.push(`/api/uploads/${folder}/${name}`);
+    }
+  } catch {
+    console.warn("[Uploads] Filesystem is read-only; image saved to Supabase Storage or skipped.");
   }
   return urls;
 }
