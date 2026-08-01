@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { compact } from "@/lib/format";
@@ -7,21 +10,38 @@ import StoreAvatar from "./StoreAvatar";
 
 /** Store tile used on the home page spotlight and the /stores directory. */
 export default function StoreCard({ store }: { store: Store }) {
+  const [bannerError, setBannerError] = useState(false);
+
+  const showBanner =
+    Boolean(store.banner) &&
+    !bannerError &&
+    !store.banner?.startsWith("/api/uploads/") &&
+    !store.banner?.includes("uspolo-banner") &&
+    !store.banner?.includes("electronics-banner") &&
+    !store.banner?.includes("perfume-banner");
+
   return (
     <Link
       href={`/store/${store.slug}`}
       className="card group block overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
     >
       {/* Uploaded banner, or the store's gradient */}
-      {store.banner ? (
+      {showBanner ? (
         <div className="relative h-20">
-          <Image src={store.banner} alt="" fill sizes="400px" className="object-cover" />
+          <Image
+            src={store.banner!}
+            alt=""
+            fill
+            sizes="400px"
+            onError={() => setBannerError(true)}
+            className="object-cover"
+          />
         </div>
       ) : (
         <div
           className="h-20"
           style={{
-            background: `linear-gradient(120deg, ${store.art.from}, ${store.art.to})`,
+            background: `linear-gradient(120deg, ${store.art?.from || "#0f172a"}, ${store.art?.to || "#64748b"})`,
           }}
         />
       )}

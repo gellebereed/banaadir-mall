@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import type { Store } from "@/lib/types";
 
@@ -16,25 +19,36 @@ export default function StoreAvatar({
   size?: number;
   className?: string;
 }) {
+  const [imgError, setImgError] = useState(false);
+
+  const showImage =
+    Boolean(store.logo) &&
+    !imgError &&
+    !store.logo?.startsWith("/api/uploads/") &&
+    !store.logo?.includes("uspolo-logo") &&
+    !store.logo?.includes("electronics-logo") &&
+    !store.logo?.includes("perfume-logo");
+
   return (
     <span
       className={`flex items-center justify-center overflow-hidden ${className}`}
       style={
-        store.logo
+        showImage
           ? undefined
-          : { background: `linear-gradient(135deg, ${store.art.from}, ${store.art.to})` }
+          : { background: `linear-gradient(135deg, ${store.art?.from || "#172554"}, ${store.art?.to || "#b91c1c"})` }
       }
     >
-      {store.logo ? (
+      {showImage ? (
         <Image
-          src={store.logo}
-          alt={store.name}
+          src={store.logo!}
+          alt=""
           width={size}
           height={size}
+          onError={() => setImgError(true)}
           className="h-full w-full object-cover"
         />
       ) : (
-        store.icon
+        <span className="select-none">{store.icon || "🏪"}</span>
       )}
     </span>
   );

@@ -37,64 +37,72 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function seed() {
   try {
-    // 1. SEED DEMO USERS (AUTH)
-    console.log("👤 Registering Demo Auth Accounts...");
-    const demoUsers = [
-      { email: "admin@banaadirmall.com", password: "Admin@2026", name: "Mall Administrator", role: "admin" },
-      { email: "karaca-home@seller.banaadirmall.com", password: "Seller@2026", name: "Karaca Home Somalia", role: "seller", store: "karaca-home" },
-      { email: "us-polo-assn@seller.banaadirmall.com", password: "Seller@2026", name: "U.S. Polo Assn. Mogadishu", role: "seller", store: "us-polo-assn" },
-      { email: "somali-electronics@seller.banaadirmall.com", password: "Seller@2026", name: "Somali Electronics Hub", role: "seller", store: "somali-electronics" },
-      { email: "banaadir-perfumes@seller.banaadirmall.com", password: "Seller@2026", name: "Banaadir Oud & Perfumes", role: "seller", store: "banaadir-perfumes" },
-      { email: "ayaan@banaadirmall.com", password: "Customer@2026", name: "Ayaan Warsame", role: "customer" },
+    // 1. SEED STORES WITH PUBLIC STORAGE URLS & CLEAN ICONS
+    console.log("\n🏪 Transferring Stores with Public CDN URLs...");
+    const storesData = [
+      {
+        id: "store-1",
+        slug: "karaca-home",
+        name: "Karaca Home Somalia",
+        tagline: "Premium Turkish home textiles & tableware",
+        description: "Official distributor of Karaca Home products in Mogadishu.",
+        logo: "https://xqcclakulmtdnfbuilib.supabase.co/storage/v1/object/public/uploads/stores/msa4q0xg-oyeoli.png",
+        banner: "https://xqcclakulmtdnfbuilib.supabase.co/storage/v1/object/public/uploads/stores/msa4q0xj-al9vnp.png",
+        rating: 4.9,
+        reviews_count: 142,
+        status: "active",
+        owner: "Farah Abdi",
+        location: "Bakaara Market, Mogadishu",
+      },
+      {
+        id: "store-2",
+        slug: "us-polo-assn",
+        name: "U.S. Polo Assn. Mogadishu",
+        tagline: "Official polo apparel & accessories",
+        description: "Authentic U.S. Polo Assn. clothing for men and women.",
+        logo: null,
+        banner: null,
+        rating: 4.8,
+        reviews_count: 98,
+        status: "active",
+        owner: "Ayaan Warsame",
+        location: "Maka al Mukarama Rd, Mogadishu",
+      },
+      {
+        id: "store-3",
+        slug: "somali-electronics",
+        name: "Somali Electronics Hub",
+        tagline: "Original smartphones & gadgets with warranty",
+        description: "Laptops, phones, smartwatches & accessories.",
+        logo: null,
+        banner: null,
+        rating: 4.7,
+        reviews_count: 215,
+        status: "active",
+        owner: "Mohamud Hassan",
+        location: "KM4, Mogadishu",
+      },
+      {
+        id: "store-4",
+        slug: "banaadir-perfumes",
+        name: "Banaadir Oud & Perfumes",
+        tagline: "Authentic Arabian oud, frankincense & luxury scents",
+        description: "Traditional Somali & Arabian perfumes.",
+        logo: null,
+        banner: null,
+        rating: 5.0,
+        reviews_count: 76,
+        status: "active",
+        owner: "Habiba Nur",
+        location: "Hamar Weyne, Mogadishu",
+      },
     ];
 
-    for (const user of demoUsers) {
-      try {
-        let res;
-        if (serviceRoleKey) {
-          res = await supabase.auth.admin.createUser({
-            email: user.email,
-            password: user.password,
-            email_confirm: true,
-            user_metadata: { name: user.name, role: user.role, store: user.store || undefined },
-          });
-        } else {
-          res = await supabase.auth.signUp({
-            email: user.email,
-            password: user.password,
-            options: { data: { name: user.name, role: user.role, store: user.store || undefined } },
-          });
-        }
+    const { error: storeErr } = await supabase.from("stores").upsert(storesData, { onConflict: "id" });
+    if (storeErr) console.error("  ❌ Stores error:", storeErr.message);
+    else console.log(`  ✓ Successfully seeded ${storesData.length} stores.`);
 
-        if (res.error) {
-          console.log(`  ℹ️ ${user.email}: ${res.error.message}`);
-        } else {
-          console.log(`  ✓ Registered auth account: ${user.email} (${user.role})`);
-        }
-      } catch (err) {
-        console.log(`  ℹ️ Note for ${user.email}:`, err.message || err);
-      }
-      await delay(1200);
-    }
-
-    // 2. SEED CATEGORIES WITH BEAUTIFUL EMOJIS
-    console.log("\n📦 Transferring Categories with Emojis...");
-    const categoriesData = [
-      { id: "cat-1", slug: "electronics", name: "Electronics", icon: "📱", count: 42, description: "Smartphones, laptops, accessories & appliances" },
-      { id: "cat-2", slug: "fashion-apparel", name: "Fashion & Apparel", icon: "👗", count: 128, description: "Men's, women's & children's clothing" },
-      { id: "cat-3", slug: "home-living", name: "Home & Living", icon: "🛋️", count: 85, description: "Furniture, kitchenware, bedding & decor" },
-      { id: "cat-4", slug: "beauty-perfume", name: "Beauty & Perfume", icon: "✨", count: 64, description: "Fragrances, skincare, cosmetics & hair care" },
-      { id: "cat-5", slug: "groceries-food", name: "Groceries & Food", icon: "🛒", count: 210, description: "Fresh produce, dry goods, beverages & snacks" },
-      { id: "cat-6", slug: "sports-fitness", name: "Sports & Fitness", icon: "⚽", count: 35, description: "Gym equipment, sportswear & outdoor gear" },
-      { id: "cat-7", slug: "books-stationery", name: "Books & Stationery", icon: "📚", count: 50, description: "Islamic literature, educational books & office supplies" },
-      { id: "cat-8", slug: "baby-kids", name: "Baby & Kids", icon: "🧸", count: 40, description: "Toys, baby care, clothing & strollers" },
-    ];
-
-    const { error: catErr } = await supabase.from("categories").upsert(categoriesData, { onConflict: "id" });
-    if (catErr) console.error("  ❌ Categories error:", catErr.message);
-    else console.log(`  ✓ Successfully seeded ${categoriesData.length} categories with emojis.`);
-
-    console.log("\n🎉 Data & Auth transfer to Supabase completed successfully!");
+    console.log("\n🎉 Data transfer to Supabase completed successfully!");
   } catch (err) {
     console.error("❌ Migration failed:", err);
   }
