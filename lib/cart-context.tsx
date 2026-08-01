@@ -105,6 +105,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
         price: item.snapshot.price,
         icon: item.snapshot.icon,
         slug: item.snapshot.slug,
+        // The bundled seed catalog no longer holds Supabase products, so the
+        // snapshot is the only source of a photo for the cart and checkout.
+        images: item.snapshot.image ? [item.snapshot.image] : base.images,
+        // A synthesized product must not carry variants, or the cart would
+        // try to resolve a variant photo that isn't there.
+        variants: undefined,
       };
     };
 

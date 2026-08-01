@@ -122,10 +122,34 @@ export function variantStock(product: Product, variant?: Variant): number {
   return variant?.stock ?? 0;
 }
 
-/** Photos to show: variant photos when it has its own, else the product's. */
+/**
+ * Photos for a variant, resolved in order:
+ *   1. the variant's own photos
+ *   2. photos from ANY variant sharing its colour
+ *   3. the product's photos
+ *
+ * Step 2 is what stops the storage blow-up: a shirt in Black sizes 41–44 is
+ * four variants, but the photos only differ by colour. Upload them once on
+ * any Black variant and every other Black size inherits them.
+ */
 export function variantImages(product: Product, variant?: Variant): string[] {
   if (variant?.images?.length) return variant.images;
+
+  if (variant?.color && product.variants) {
+    const sibling = product.variants.find(
+      (v) => v.color === variant.color && v.images?.length,
+    );
+    if (sibling?.images?.length) return sibling.images;
+  }
+
   return product.images ?? [];
+}
+
+/** True when this variant is borrowing another same-colour variant's photos. */
+export function inheritsColorImages(product: Product, variant: Variant): boolean {
+  if (variant.images?.length) return false;
+  if (!variant.color || !product.variants) return false;
+  return product.variants.some((v) => v.color === variant.color && v.images?.length);
 }
 
 /** Human label for a variant, e.g. "Black · M". */

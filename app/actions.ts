@@ -639,6 +639,16 @@ export async function updateMarketing(
       name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
       pct: Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10)),
     },
+    delivery: {
+      fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
+      freeThreshold: Math.max(0, Number(formData.get("freeThreshold")) || 0),
+      estimate: String(formData.get("deliveryEstimate") ?? "").trim(),
+    },
+    promo: {
+      // Blank code disables the promo field on the cart entirely.
+      code: String(formData.get("promoCode") ?? "").trim().toUpperCase(),
+      pct: Math.min(90, Math.max(1, Number(formData.get("promoPct")) || 10)),
+    },
   };
 
   if (useSupabaseMutations()) {

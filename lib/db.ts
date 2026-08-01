@@ -87,6 +87,8 @@ const DEFAULT_DB: DB = {
     banners: [],
     promoTiles: [],
     campaign: { active: false, name: "Eid Mega Sale", pct: 10 },
+    delivery: { fee: 3, freeThreshold: 25, estimate: "Same-day in Mogadishu · 2–4 days nationwide" },
+    promo: { code: "BANAADIR10", pct: 10 },
   },
   flash: {
     active: true,
@@ -130,6 +132,14 @@ export async function getDB(): Promise<DB> {
         campaign: {
           ...structuredClone(DEFAULT_DB.marketing.campaign),
           ...raw.marketing?.campaign,
+        },
+        delivery: {
+          ...structuredClone(DEFAULT_DB.marketing.delivery),
+          ...raw.marketing?.delivery,
+        },
+        promo: {
+          ...structuredClone(DEFAULT_DB.marketing.promo),
+          ...raw.marketing?.promo,
         },
         // Sections gained keys over time — keep any the saved order misses.
         sections: mergeSections(raw.marketing?.sections),

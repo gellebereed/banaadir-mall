@@ -159,7 +159,18 @@ export interface CartItem {
    * that were created at runtime (seller dashboard) and keeps the price
    * the customer saw when adding.
    */
-  snapshot?: { name: string; price: number; icon: string; slug: string };
+  snapshot?: {
+    name: string;
+    price: number;
+    icon: string;
+    slug: string;
+    /**
+     * Photo shown in the cart and checkout. Without it those screens fall
+     * back to the emoji icon, because the catalog they used to look the
+     * product up in is now Supabase, not the bundled seed data.
+     */
+    image?: string;
+  };
   /** Variant id when the product has variants. */
   variantId?: string;
 }
@@ -275,6 +286,18 @@ export interface MarketingSettings {
   promoTiles: PromoTile[];
   /** Site-wide sale applied to every product when active. */
   campaign: { active: boolean; name: string; pct: number };
+  /**
+   * Checkout rules the admin controls, instead of constants buried in the
+   * cart page. `freeThreshold` of 0 means delivery is always charged.
+   */
+  delivery: {
+    fee: number;
+    freeThreshold: number;
+    /** Shown on the cart and checkout, e.g. "2–4 days nationwide". */
+    estimate: string;
+  };
+  /** Single promo code accepted at checkout. Empty disables the field. */
+  promo: { code: string; pct: number };
 }
 
 export interface Review {

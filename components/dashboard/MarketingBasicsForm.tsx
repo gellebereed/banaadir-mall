@@ -66,6 +66,43 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
         </div>
       </section>
 
+      <section className="card p-5 sm:p-6">
+        <h2 className="font-display font-bold text-ocean-950">🚚 Delivery &amp; checkout</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Applied on the cart and checkout. These used to be fixed in code.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div>
+            <label htmlFor="deliveryFee" className="label">Delivery fee (USD)</label>
+            <input id="deliveryFee" name="deliveryFee" type="number" min="0" step="0.5"
+              defaultValue={marketing.delivery.fee} className="input" />
+          </div>
+          <div>
+            <label htmlFor="freeThreshold" className="label">
+              Free over <span className="font-normal text-slate-400">(0 = never)</span>
+            </label>
+            <input id="freeThreshold" name="freeThreshold" type="number" min="0" step="1"
+              defaultValue={marketing.delivery.freeThreshold} className="input" />
+          </div>
+          <div>
+            <label htmlFor="deliveryEstimate" className="label">Delivery estimate</label>
+            <input id="deliveryEstimate" name="deliveryEstimate"
+              defaultValue={marketing.delivery.estimate} className="input" />
+          </div>
+          <div>
+            <label htmlFor="promoCode" className="label">
+              Promo code <span className="font-normal text-slate-400">(blank = off)</span>
+            </label>
+            <input id="promoCode" name="promoCode" defaultValue={marketing.promo.code} className="input" />
+          </div>
+          <div>
+            <label htmlFor="promoPct" className="label">Promo discount %</label>
+            <input id="promoPct" name="promoPct" type="number" min="1" max="90"
+              defaultValue={marketing.promo.pct} className="input" />
+          </div>
+        </div>
+      </section>
+
       <div className="flex items-center gap-4">
         <SubmitButton pendingLabel="Publishing…">Save &amp; Publish</SubmitButton>
         {state.message && (

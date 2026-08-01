@@ -185,6 +185,7 @@ export default function ProductCard({ product }: { product: Product }) {
                     price,
                     icon: product.icon,
                     slug: product.slug,
+                    image: mainImage,
                   },
                 })
               }

@@ -439,6 +439,8 @@ export async function updateMarketingInSupabase(
         banners: settings.banners,
         promo_tiles: settings.promoTiles,
         campaign: settings.campaign,
+        delivery: settings.delivery,
+        promo: settings.promo,
       },
       { onConflict: "id" }
     );

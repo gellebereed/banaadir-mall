@@ -70,7 +70,14 @@ export default function ProductView({
       color,
       size,
       variantId: variant?.id,
-      snapshot: { name: product.name, price, icon: product.icon, slug: product.slug },
+      snapshot: {
+        name: product.name,
+        price,
+        icon: product.icon,
+        slug: product.slug,
+        // The photo for the variant they actually chose.
+        image: images[0],
+      },
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);

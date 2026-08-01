@@ -266,6 +266,13 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
       banners: data.banners || [],
       promoTiles: data.promo_tiles || [],
       campaign: data.campaign || { active: false, name: "Eid Mega Sale", pct: 10 },
+      // Columns added later — defaults keep older databases working.
+      delivery: data.delivery || {
+        fee: 3,
+        freeThreshold: 25,
+        estimate: "Same-day in Mogadishu · 2–4 days nationwide",
+      },
+      promo: data.promo || { code: "BANAADIR10", pct: 10 },
     };
   } catch {
     return null;
