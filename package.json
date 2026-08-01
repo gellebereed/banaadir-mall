@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "preview": "next build && next start",
-    "seed:supabase": "node scripts/seed-supabase.mjs"
+    "seed:supabase": "node scripts/seed-supabase.mjs",
+    "upload:images": "node scripts/upload-images-to-supabase.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -18,7 +19,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "^5.15.13",
+    "@netlify/plugin-nextjs": "^5.14.3",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
