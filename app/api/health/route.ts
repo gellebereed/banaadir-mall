@@ -89,10 +89,25 @@ export async function GET() {
       if (error) report.writeError = error.message;
     }
 
-    report.status = report.writable === false ? "READ_ONLY" : "OK";
+    // Photo uploads need a public Storage bucket named "uploads". Without it
+    // every upload fails silently and products save with no images.
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const uploads = buckets?.find((b) => b.id === "uploads");
+    report.storageBucket = uploads ? (uploads.public ? "public" : "PRIVATE") : "MISSING";
+
     if (report.writable === false) {
+      report.status = "READ_ONLY";
       report.problem = "Reads work but writes are rejected — check RLS policies.";
       report.fix = "Re-run the RLS section at the bottom of supabase/migration.sql.";
+    } else if (report.storageBucket !== "public") {
+      report.status = "NO_PHOTO_STORAGE";
+      report.problem =
+        report.storageBucket === "MISSING"
+          ? "Storage bucket 'uploads' does not exist — photo uploads fail silently."
+          : "Storage bucket 'uploads' is private — uploaded photos cannot be displayed.";
+      report.fix = "Run supabase/storage-setup.sql in the Supabase SQL editor.";
+    } else {
+      report.status = "OK";
     }
     return NextResponse.json(report, { status: report.status === "OK" ? 200 : 503 });
   } catch (err) {

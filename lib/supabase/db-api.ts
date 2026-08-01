@@ -125,6 +125,7 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       name: p.name,
       store: p.store,
       category: p.category,
+      subcategory: p.subcategory || undefined,
       price: Number(p.price),
       compareAt: p.compare_at ? Number(p.compare_at) : undefined,
       icon: p.icon || "🛍️",

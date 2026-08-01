@@ -4,9 +4,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
 import PhotoManager from "@/components/dashboard/PhotoManager";
+import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
-import { getBaseProduct, getCategories, getDiscountMap } from "@/lib/api";
+import { getBaseProduct, getCategories, getDiscountMap, getSubcategories } from "@/lib/api";
 import { can } from "@/lib/auth";
 import { discountPct } from "@/lib/format";
 import { hasVariants } from "@/lib/product-utils";
@@ -30,7 +31,11 @@ export default async function EditProductPage({
   const { id } = await params;
   // getBaseProduct (not getProduct): the form must edit the seller's own
   // prices, never the temporarily discounted ones a promotion produces.
-  const [product, categories] = await Promise.all([getBaseProduct(id), getCategories()]);
+  const [product, categories, subcategories] = await Promise.all([
+    getBaseProduct(id),
+    getCategories(),
+    getSubcategories(),
+  ]);
   if (!product) notFound();
   if (session.role !== "admin" && product.store !== storeSlug) notFound();
 
@@ -142,6 +147,7 @@ export default async function EditProductPage({
                   ))}
                 </select>
               </div>
+              <SubcategoryField existing={subcategories} defaultValue={product.subcategory} />
               <div>
                 <label htmlFor="icon" className="label">
                   Fallback icon{" "}

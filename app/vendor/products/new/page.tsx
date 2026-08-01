@@ -3,9 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
+import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
-import { getCategories } from "@/lib/api";
+import { getCategories, getSubcategories } from "@/lib/api";
 import { can } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
@@ -18,7 +19,10 @@ export const metadata: Metadata = { title: "Add Product" };
 export default async function NewProductPage() {
   const { session } = await requireVendor();
   if (!can(session, "products")) redirect("/vendor");
-  const categories = await getCategories();
+  const [categories, subcategories] = await Promise.all([
+    getCategories(),
+    getSubcategories(),
+  ]);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -71,6 +75,7 @@ export default async function NewProductPage() {
             <label htmlFor="stock" className="label">Stock quantity</label>
             <input id="stock" name="stock" required type="number" min="0" placeholder="50" className="input" />
           </div>
+          <SubcategoryField existing={subcategories} />
           <div>
             <label htmlFor="colors" className="label">
               Colours <span className="font-normal text-slate-400">(comma separated)</span>

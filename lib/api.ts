@@ -103,6 +103,21 @@ export async function getBaseProduct(id: string): Promise<Product | undefined> {
   return (await getBaseProducts()).find((p) => p.id === id || p.slug === id);
 }
 
+/**
+ * Subcategories that exist inside a category, derived from the products
+ * themselves. Sellers "create" one just by typing it on a product, so
+ * there is no separate table to administer or keep in sync.
+ * Pass no slug to get every subcategory across the catalog.
+ */
+export async function getSubcategories(categorySlug?: string): Promise<string[]> {
+  const products = await getBaseProducts();
+  const names = products
+    .filter((p) => !categorySlug || p.category === categorySlug)
+    .map((p) => p.subcategory?.trim())
+    .filter((s): s is string => Boolean(s));
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
 /** Base (undiscounted) products of one store, for dashboard tables. */
 export async function getBaseProductsByStore(slug: string): Promise<Product[]> {
   return (await getBaseProducts()).filter((p) => p.store === slug);

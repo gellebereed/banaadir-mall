@@ -63,6 +63,12 @@ export interface Product {
   store: string;
   /** Category slug. */
   category: string;
+  /**
+   * Free-text grouping inside a category, e.g. "Cookware" under
+   * Home & Living. Created simply by a seller typing it on a product —
+   * see lib/api.ts#getSubcategories.
+   */
+  subcategory?: string;
   /** Current selling price in USD. */
   price: number;
   /** Original price when the product is on sale. */

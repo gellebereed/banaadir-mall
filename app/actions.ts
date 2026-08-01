@@ -191,6 +191,7 @@ export async function updateProduct(formData: FormData): Promise<void> {
       ? variants.reduce((sum, v) => sum + v.stock, 0)
       : Number(formData.get("stock")),
     category: String(formData.get("category")),
+    subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
     icon: String(formData.get("icon") ?? "").trim() || product.icon,
     badge: (badgeRaw || undefined) as Product["badge"],
     description: String(formData.get("description")),
@@ -282,6 +283,7 @@ export async function createProduct(formData: FormData): Promise<void> {
     name,
     store: storeSlug,
     category: String(formData.get("category")),
+    subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
     price,
     compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
     icon: String(formData.get("icon") ?? "🛍️").trim() || "🛍️",

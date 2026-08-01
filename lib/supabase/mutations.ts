@@ -92,6 +92,7 @@ const EXTENDED_PRODUCT_COLUMNS = [
   "sizes",
   "default_variant_id",
   "features",
+  "subcategory",
 ] as const;
 
 /** Store columns added by supabase/migration.sql. */
@@ -127,6 +128,7 @@ export async function updateProductFields(
     if (fields.price !== undefined) row.price = fields.price;
     if (fields.compareAt !== undefined) row.compare_at = fields.compareAt ?? null;
     if (fields.category !== undefined) row.category = fields.category;
+    if (fields.subcategory !== undefined) row.subcategory = fields.subcategory || null;
     if (fields.badge !== undefined) row.badge = fields.badge ?? null;
     if (fields.description !== undefined) row.description = fields.description;
     if (fields.hidden !== undefined) row.hidden = fields.hidden;

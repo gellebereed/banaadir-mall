@@ -55,6 +55,7 @@ export default function ShopClient({
   );
   const [activeCategories, setActiveCategories] = useState<string[]>([]);
   const [activeStores, setActiveStores] = useState<string[]>([]);
+  const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [priceBand, setPriceBand] = useState<number | null>(null);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [onSaleOnly, setOnSaleOnly] = useState(false);
@@ -76,6 +77,9 @@ export default function ShopClient({
     }
     if (activeStores.length > 0) {
       list = list.filter((p) => activeStores.includes(p.store));
+    }
+    if (activeSubcategory) {
+      list = list.filter((p) => p.subcategory === activeSubcategory);
     }
     if (priceBand !== null) {
       const band = PRICE_BANDS[priceBand];
@@ -113,11 +117,21 @@ export default function ShopClient({
         break;
     }
     return list;
-  }, [products, sort, activeCategories, activeStores, priceBand, minRating, onSaleOnly]);
+  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
+
+  /** Subcategories present in these results, for the chip row. */
+  const subcategories = useMemo(
+    () =>
+      [...new Set(products.map((p) => p.subcategory).filter((s): s is string => Boolean(s)))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [products],
+  );
 
   const activeFilterCount =
     activeCategories.length +
     activeStores.length +
+    (activeSubcategory ? 1 : 0) +
     (priceBand !== null ? 1 : 0) +
     (minRating !== null ? 1 : 0) +
     (onSaleOnly ? 1 : 0);
@@ -125,6 +139,7 @@ export default function ShopClient({
   function clearFilters() {
     setActiveCategories([]);
     setActiveStores([]);
+    setActiveSubcategory(null);
     setPriceBand(null);
     setMinRating(null);
     setOnSaleOnly(false);
@@ -137,6 +152,35 @@ export default function ShopClient({
         <h1 className="font-display text-3xl font-extrabold text-ocean-950">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
+
+      {/* Subcategory chips — sellers create these by typing one on a product */}
+      {subcategories.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          <button
+            onClick={() => setActiveSubcategory(null)}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+              activeSubcategory === null
+                ? "bg-ocean-700 text-white"
+                : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
+            }`}
+          >
+            All
+          </button>
+          {subcategories.map((sub) => (
+            <button
+              key={sub}
+              onClick={() => setActiveSubcategory(sub === activeSubcategory ? null : sub)}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                activeSubcategory === sub
+                  ? "bg-ocean-700 text-white"
+                  : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
+              }`}
+            >
+              {sub}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Toolbar: result count, mobile filter toggle, sort */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
