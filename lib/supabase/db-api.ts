@@ -94,13 +94,19 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
     const supabase = getPublicClient();
     const { data, error } = await supabase.from("categories").select("*");
     if (error || !data || data.length === 0) return null;
-    const mapped = data.map((c) => ({
-      slug: c.slug,
-      name: c.name,
-      icon: ICON_MAP[c.icon] || c.icon || "📦",
-      tagline: c.description || "",
-      art: c.art || DEFAULT_ART,
-    }));
+    const mapped = data.map((c) => {
+      const taglineRaw = c.description || "";
+      const isHidden = Boolean(c.hidden) || taglineRaw.startsWith("[HIDDEN]");
+      const taglineClean = taglineRaw.replace(/^\[HIDDEN\]\s*/, "");
+      return {
+        slug: c.slug,
+        name: (c.name || "").replace(/^\[HIDDEN\]\s*/, ""),
+        icon: ICON_MAP[c.icon] || c.icon || "📦",
+        tagline: taglineClean,
+        art: c.art || DEFAULT_ART,
+        hidden: isHidden,
+      };
+    });
     // Filter to canonical categories in navbar order, appending any extra custom ones
     const canonicalMap = new Map(mapped.map((c) => [c.slug, c]));
     const result: Category[] = [];

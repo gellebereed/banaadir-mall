@@ -42,6 +42,9 @@ import {
   insertEmployee,
   deleteEmployeeFromSupabase,
   updateMarketingInSupabase,
+  upsertCategoryInSupabase,
+  deleteCategoryFromSupabase,
+  toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
 
 /**
@@ -995,5 +998,106 @@ export async function withdrawFlashRequest(id: string): Promise<void> {
     if (session.role !== "admin") assertOwnsStore(session, request.store);
     db.flashRequests = db.flashRequests.filter((r) => r.id !== id);
   });
+  refresh();
+}
+
+// ── Admin Category Actions ─────────────────────────────────────────────
+
+async function requireAdminSession(): Promise<Session> {
+  const session = await getSession();
+  if (!session || session.role !== "admin") redirect("/login");
+  return session;
+}
+
+export async function createCategory(formData: FormData): Promise<void> {
+  await requireAdminSession();
+  const name = String(formData.get("name") || "").trim();
+  let slug = String(formData.get("slug") || "").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const icon = String(formData.get("icon") || "📦").trim() || "📦";
+  const tagline = String(formData.get("tagline") || "").trim();
+
+  if (!name) throw new Error("Category name is required.");
+  if (!slug) {
+    slug = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  }
+
+  const category = {
+    slug,
+    name,
+    icon,
+    tagline,
+    art: { from: "#e0f2fe", to: "#bae6fd" },
+    hidden: false,
+  };
+
+  if (useSupabaseMutations()) {
+    await upsertCategoryInSupabase(category);
+  } else {
+    await mutateDB((db) => {
+      db.categories = db.categories || [];
+      const idx = db.categories.findIndex((c) => c.slug === slug);
+      if (idx >= 0) db.categories[idx] = category;
+      else db.categories.push(category);
+    });
+  }
+
+  refresh();
+}
+
+export async function updateCategory(formData: FormData): Promise<void> {
+  await requireAdminSession();
+  const originalSlug = String(formData.get("originalSlug") || "").trim();
+  const name = String(formData.get("name") || "").trim();
+  const slug = String(formData.get("slug") || originalSlug).trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const icon = String(formData.get("icon") || "📦").trim() || "📦";
+  const tagline = String(formData.get("tagline") || "").trim();
+
+  if (!name || !slug) throw new Error("Category name and slug are required.");
+
+  const category = {
+    slug,
+    name,
+    icon,
+    tagline,
+    art: { from: "#e0f2fe", to: "#bae6fd" },
+  };
+
+  if (useSupabaseMutations()) {
+    await upsertCategoryInSupabase(category);
+  } else {
+    await mutateDB((db) => {
+      db.categories = db.categories || [];
+      const idx = db.categories.findIndex((c) => c.slug === (originalSlug || slug));
+      if (idx >= 0) db.categories[idx] = { ...db.categories[idx], ...category };
+      else db.categories.push(category);
+    });
+  }
+
+  refresh();
+}
+
+export async function toggleCategoryVisibility(slug: string): Promise<void> {
+  await requireAdminSession();
+  if (useSupabaseMutations()) {
+    await toggleCategoryVisibilityInSupabase(slug);
+  } else {
+    await mutateDB((db) => {
+      db.categories = db.categories || [];
+      const cat = db.categories.find((c) => c.slug === slug);
+      if (cat) cat.hidden = !cat.hidden;
+    });
+  }
+  refresh();
+}
+
+export async function deleteCategory(slug: string): Promise<void> {
+  await requireAdminSession();
+  if (useSupabaseMutations()) {
+    await deleteCategoryFromSupabase(slug);
+  } else {
+    await mutateDB((db) => {
+      db.categories = (db.categories || []).filter((c) => c.slug !== slug);
+    });
+  }
   refresh();
 }

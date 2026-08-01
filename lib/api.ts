@@ -38,16 +38,15 @@ import type {
 
 // ── Categories ─────────────────────────────────────────────────────────
 
-export async function getCategories(): Promise<Category[]> {
+export async function getCategories(includeHidden = false): Promise<Category[]> {
   const supabaseCategories = await fetchCategoriesFromSupabase();
-  if (supabaseCategories && supabaseCategories.length > 0) {
-    return supabaseCategories;
-  }
-  return seedCategories;
+  const list = (supabaseCategories && supabaseCategories.length > 0) ? supabaseCategories : seedCategories;
+  if (includeHidden) return list;
+  return list.filter((c) => !c.hidden);
 }
 
 export async function getCategory(slug: string): Promise<Category | undefined> {
-  return (await getCategories()).find((c) => c.slug === slug);
+  return (await getCategories(true)).find((c) => c.slug === slug);
 }
 
 // ── Stores ─────────────────────────────────────────────────────────────

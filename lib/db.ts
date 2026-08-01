@@ -20,6 +20,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { isSupabaseConfigured } from "./supabase/storage";
 import type {
+  Category,
   Employee,
   FlashDeal,
   FlashRequest,
@@ -50,10 +51,12 @@ export interface DB {
   flash: FlashDeal;
   /** Seller applications to join the flash-deal campaign. */
   flashRequests: FlashRequest[];
+  categories?: Category[];
 }
 
 /** Defaults — must match the storefront's original hard-coded content. */
 const DEFAULT_DB: DB = {
+  categories: [],
   productOverrides: {},
   newProducts: [],
   deletedProducts: [],

@@ -452,3 +452,89 @@ export async function updateMarketingInSupabase(
     return false;
   }
 }
+
+// ── Categories ─────────────────────────────────────────────────────────
+
+export async function upsertCategoryInSupabase(category: {
+  slug: string;
+  name: string;
+  icon: string;
+  tagline: string;
+  hidden?: boolean;
+}): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+
+    const row: Record<string, unknown> = {
+      slug: category.slug,
+      name: category.name,
+      icon: category.icon,
+      description: category.hidden ? `[HIDDEN] ${category.tagline}` : category.tagline,
+    };
+
+    if (typeof category.hidden === "boolean") {
+      row.hidden = category.hidden;
+    }
+
+    const { error } = await supabase.from("categories").upsert(row, { onConflict: "slug" });
+    if (error) {
+      console.error("[Supabase Mutations] upsertCategory error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertCategory exception:", err);
+    return false;
+  }
+}
+
+export async function deleteCategoryFromSupabase(slug: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("categories").delete().eq("slug", slug);
+    if (error) {
+      console.error("[Supabase Mutations] deleteCategory error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] deleteCategory exception:", err);
+    return false;
+  }
+}
+
+export async function toggleCategoryVisibilityInSupabase(slug: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { data: existing } = await supabase.from("categories").select("*").eq("slug", slug).maybeSingle();
+    if (!existing) return false;
+
+    const currentlyHidden = Boolean(existing.hidden) || String(existing.description || "").startsWith("[HIDDEN]");
+    const newHidden = !currentlyHidden;
+    const cleanTagline = String(existing.description || "").replace(/^\[HIDDEN\]\s*/, "");
+
+    const updatePayload: Record<string, unknown> = {
+      description: newHidden ? `[HIDDEN] ${cleanTagline}` : cleanTagline,
+      hidden: newHidden,
+    };
+
+    const { error } = await supabase.from("categories").update(updatePayload).eq("slug", slug);
+    if (error) {
+      const { error: fbErr } = await supabase
+        .from("categories")
+        .update({ description: newHidden ? `[HIDDEN] ${cleanTagline}` : cleanTagline })
+        .eq("slug", slug);
+      if (fbErr) {
+        console.error("[Supabase Mutations] toggleCategoryVisibility error:", fbErr.message);
+        return false;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] toggleCategoryVisibility exception:", err);
+    return false;
+  }
+}

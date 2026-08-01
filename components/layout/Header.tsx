@@ -4,8 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { categories } from "@/lib/data/categories";
 import { useCart } from "@/lib/cart-context";
+import { categories as seedCategories } from "@/lib/data/categories";
+import type { Category } from "@/lib/types";
 import type { Session } from "@/lib/auth";
 
 /** The main call-to-action changes with who is signed in. */
@@ -31,16 +32,19 @@ export default function Header({
   announcement,
   session,
   storeName,
+  categories: dynamicCategories,
 }: {
   announcement: string;
   session: Session | null;
   storeName?: string;
+  categories?: Category[];
 }) {
   const router = useRouter();
   const { count, wishlist } = useCart();
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const action = primaryAction(session, storeName);
+  const categoriesList = dynamicCategories && dynamicCategories.length > 0 ? dynamicCategories : seedCategories;
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -153,7 +157,7 @@ export default function Header({
             >
               All Products
             </Link>
-            {categories.map((c) => (
+            {categoriesList.map((c) => (
               <Link
                 key={c.slug}
                 href={`/category/${c.slug}`}
@@ -176,7 +180,7 @@ export default function Header({
       {menuOpen && (
         <div className="border-b border-sand-200 bg-white shadow-xl lg:hidden">
           <div className="grid grid-cols-2 gap-1 p-3">
-            {categories.map((c) => (
+            {categoriesList.map((c) => (
               <Link
                 key={c.slug}
                 href={`/category/${c.slug}`}

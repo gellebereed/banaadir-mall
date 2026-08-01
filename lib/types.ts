@@ -22,6 +22,8 @@ export interface Category {
   icon: string;
   tagline: string;
   art: Art;
+  /** If true, hidden from customer navbar and homepage category lists. */
+  hidden?: boolean;
 }
 
 export interface Store {
