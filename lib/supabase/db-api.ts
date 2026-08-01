@@ -1,4 +1,5 @@
-import { createClient } from "./server";
+﻿import { unstable_cache } from "next/cache";
+import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type { Category, Employee, MarketingSettings, Order, Product, Promotion, Store } from "../types";
 import { isSupabaseConfigured } from "./storage";
 
@@ -21,25 +22,51 @@ const ICON_MAP: Record<string, string> = {
   groceries: "🛒",
 };
 
-export async function fetchStoresFromSupabase(): Promise<Store[] | null> {
+/**
+ * Franchised international brands. Used as a fallback so the home page's
+ * "Official Brand Stores" row still works on databases where the
+ * `stores.official` column hasn't been added yet (see supabase/migration.sql).
+ */
+const OFFICIAL_BRAND_SLUGS = new Set([
+  "karaca-home",
+  "us-polo-assn",
+  "altinyildiz-classics",
+  "ozdilek-home",
+]);
+
+/** Per-store fallback icons, again only used pre-migration. */
+const STORE_ICON_FALLBACK: Record<string, string> = {
+  "karaca-home": "🍳",
+  "us-polo-assn": "🐎",
+  "altinyildiz-classics": "🎩",
+  "ozdilek-home": "🛁",
+  "somali-electronics": "🔌",
+  "banaadir-perfumes": "🧴",
+};
+
+async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("stores").select("*");
     if (error || !data || data.length === 0) return null;
     return data.map((s) => ({
       slug: s.slug,
       name: s.name,
-      icon: s.logo ? "" : "🛍️",
+      // Keep the emoji even when a logo exists — StoreAvatar falls back to
+      // it whenever the logo image fails to load.
+      icon: s.icon || STORE_ICON_FALLBACK[s.slug] || "🛍️",
       tagline: s.tagline || "",
       city: s.location || "Mogadishu",
       category: s.category || "general",
       rating: Number(s.rating || 0),
       reviewCount: s.reviews_count || 0,
-      followers: s.followers || 100,
-      joinedYear: s.joined_year || 2026,
+      followers: s.followers ?? 100,
+      joinedYear: s.joined_year ?? 2026,
       verified: s.verified ?? true,
-      official: s.official ?? false,
+      // `?? fallback` (not `|| false`) so an explicit false from the DB wins
+      // once the column exists, while a missing column still resolves.
+      official: s.official ?? OFFICIAL_BRAND_SLUGS.has(s.slug),
       status: (s.status || "active") as Store["status"],
       art: s.art || DEFAULT_ART,
       logo: s.logo || undefined,
@@ -50,10 +77,10 @@ export async function fetchStoresFromSupabase(): Promise<Store[] | null> {
   }
 }
 
-export async function fetchCategoriesFromSupabase(): Promise<Category[] | null> {
+async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("categories").select("*");
     if (error || !data || data.length === 0) return null;
     return data.map((c) => ({
@@ -68,10 +95,28 @@ export async function fetchCategoriesFromSupabase(): Promise<Category[] | null> 
   }
 }
 
-export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
+/**
+ * Feature bullets are plain sentences ("Ships within 24 hours").
+ * They used to be squeezed into the `specs` {name,value} shape, which
+ * appended a stray ": " on every save. Prefer the `features` column and
+ * only reconstruct from `specs` for rows the migration hasn't touched.
+ */
+function mapFeatures(p: { features?: unknown; specs?: unknown }): string[] {
+  if (Array.isArray(p.features) && p.features.length > 0) {
+    return p.features.map(String);
+  }
+  if (Array.isArray(p.specs)) {
+    return (p.specs as { name?: string; value?: string }[]).map((s) =>
+      s.value ? `${s.name}: ${s.value}` : String(s.name ?? ""),
+    );
+  }
+  return [];
+}
+
+async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("products").select("*");
     if (error || !data || data.length === 0) return null;
     return data.map((p) => ({
@@ -87,15 +132,19 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
       rating: Number(p.rating || 0),
       reviewCount: p.reviews_count || 0,
       sold: p.sold || 0,
-      stock: p.in_stock ? 50 : 0,
+      // Real stock number when the column exists. The old `in_stock ? 50 : 0`
+      // is only a pre-migration fallback — it is why edited stock values
+      // always snapped back to 50.
+      stock:
+        p.stock !== undefined && p.stock !== null ? Number(p.stock) : p.in_stock ? 50 : 0,
       badge: p.badge || undefined,
-      colors: p.colors || [],
-      sizes: p.sizes || [],
+      colors: p.colors?.length ? p.colors : undefined,
+      sizes: p.sizes?.length ? p.sizes : undefined,
       description: p.description || "",
-      features: p.specs ? p.specs.map((s: { name: string; value: string }) => `${s.name}: ${s.value}`) : [],
+      features: mapFeatures(p),
       hidden: p.hidden ?? false,
       images: p.images || [],
-      variants: p.variants || [],
+      variants: p.variants?.length ? p.variants : undefined,
       defaultVariantId: p.default_variant_id || undefined,
     }));
   } catch {
@@ -103,10 +152,10 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   }
 }
 
-export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
+async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("orders").select("*");
     if (error || !data || data.length === 0) return null;
     return data.map((o) => ({
@@ -127,10 +176,10 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   }
 }
 
-export async function fetchPromotionsFromSupabase(): Promise<Promotion[] | null> {
+async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("promotions").select("*");
     if (error || !data) return null;
     return data.map((p) => ({
@@ -147,10 +196,10 @@ export async function fetchPromotionsFromSupabase(): Promise<Promotion[] | null>
   }
 }
 
-export async function fetchEmployeesFromSupabase(): Promise<Employee[] | null> {
+async function fetchEmployeesFromSupabaseRaw(): Promise<Employee[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("employees").select("*");
     if (error || !data) return null;
     return data.map((e) => ({
@@ -166,10 +215,10 @@ export async function fetchEmployeesFromSupabase(): Promise<Employee[] | null> {
   }
 }
 
-export async function fetchMarketingFromSupabase(): Promise<MarketingSettings | null> {
+async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
     const { data, error } = await supabase.from("marketing_settings").select("*").eq("id", 1).single();
     if (error || !data) return null;
     return {
@@ -187,3 +236,45 @@ export async function fetchMarketingFromSupabase(): Promise<MarketingSettings | 
     return null;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CACHED READS
+// ═══════════════════════════════════════════════════════════════════════
+// Every page previously re-queried Supabase for the same rows several times
+// per render (the home page alone fetched the product table ~5 times, once
+// for flash deals, bestsellers, new arrivals and so on). Wrapping the raw
+// fetchers in `unstable_cache` collapses that to a single query, then serves
+// later requests from the cache entirely.
+//
+// Each entry carries a tag; dashboard saves call revalidateTag() (see
+// app/actions.ts) so an edit is visible immediately rather than after the
+// revalidate window. The time-based `revalidate` is only a safety net for
+// changes made directly in the Supabase dashboard.
+
+/** Safety-net refresh interval, in seconds. */
+const REVALIDATE_SECONDS = 60;
+
+function cached<T>(fn: () => Promise<T>, key: string, tag: string) {
+  return unstable_cache(fn, [key], { tags: [tag], revalidate: REVALIDATE_SECONDS });
+}
+
+export const fetchStoresFromSupabase = cached(
+  fetchStoresFromSupabaseRaw, "stores", CACHE_TAGS.stores);
+
+export const fetchCategoriesFromSupabase = cached(
+  fetchCategoriesFromSupabaseRaw, "categories", CACHE_TAGS.categories);
+
+export const fetchProductsFromSupabase = cached(
+  fetchProductsFromSupabaseRaw, "products", CACHE_TAGS.products);
+
+export const fetchOrdersFromSupabase = cached(
+  fetchOrdersFromSupabaseRaw, "orders", CACHE_TAGS.orders);
+
+export const fetchPromotionsFromSupabase = cached(
+  fetchPromotionsFromSupabaseRaw, "promotions", CACHE_TAGS.promotions);
+
+export const fetchEmployeesFromSupabase = cached(
+  fetchEmployeesFromSupabaseRaw, "employees", CACHE_TAGS.employees);
+
+export const fetchMarketingFromSupabase = cached(
+  fetchMarketingFromSupabaseRaw, "marketing", CACHE_TAGS.marketing);

@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "preview": "next build && next start",
+    "check:supabase": "node scripts/check-supabase.mjs",
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "upload:images": "node scripts/upload-images-to-supabase.mjs"
   },

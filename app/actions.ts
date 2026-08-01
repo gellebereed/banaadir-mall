@@ -11,7 +11,8 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
 import { redirect } from "next/navigation";
 import { getBaseProduct, getBaseProducts, getStore } from "@/lib/api";
 import { can, type AccessArea, type Session } from "@/lib/auth";
@@ -56,10 +57,15 @@ import {
  * and re-read data every request, so they never need revalidating.
  */
 function refresh() {
-  // Only the home page is cached; dashboards and catalog pages are all
-  // `force-dynamic` (or read cookies) so they re-render on every request
-  // and on every server-action response. Revalidating their layouts here
-  // would remount the client forms mid-submit and wipe their state.
+  // Supabase reads are cached per tag (lib/supabase/db-api.ts). Dropping
+  // those entries is what makes an edit show up immediately instead of
+  // after the 60s safety-net window.
+  for (const tag of ALL_CACHE_TAGS) revalidateTag(tag);
+
+  // Only the home page is cached at the route level; dashboards and catalog
+  // pages are all `force-dynamic` (or read cookies) so they re-render on
+  // every request and on every server-action response. Revalidating their
+  // layouts here would remount the client forms mid-submit and wipe state.
   revalidatePath("/", "page");
 }
 
@@ -196,9 +202,18 @@ export async function updateProduct(formData: FormData): Promise<void> {
     defaultVariantId,
   };
 
-  // Try Supabase first; fall back to JSON overlay
   const supabaseOk = await updateProductFields(id, updatedFields);
   if (!supabaseOk) {
+    if (useSupabaseMutations()) {
+      // Supabase is the source of truth here, and the read layer ignores the
+      // JSON overlay whenever Supabase returns rows. Writing to the overlay
+      // would make the edit *look* saved and then silently revert, which is
+      // exactly the "I can't update products" bug. Fail loudly instead.
+      throw new Error(
+        "Could not save to Supabase. The edit was NOT stored. " +
+          "Check the server logs — if it mentions a missing column, run supabase/migration.sql.",
+      );
+    }
     await mutateDB((db) => {
       db.productOverrides[id] = {
         ...db.productOverrides[id],

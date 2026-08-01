@@ -78,6 +78,41 @@ export async function upsertProduct(product: Product): Promise<boolean> {
   }
 }
 
+/**
+ * Columns added by supabase/migration.sql. If that migration hasn't been
+ * run yet these don't exist, so a write including them fails wholesale —
+ * we detect that and retry with the core columns rather than losing the
+ * entire edit.
+ */
+const EXTENDED_PRODUCT_COLUMNS = [
+  "stock",
+  "icon",
+  "art",
+  "colors",
+  "sizes",
+  "default_variant_id",
+  "features",
+] as const;
+
+/** Store columns added by supabase/migration.sql. */
+const EXTENDED_STORE_COLUMNS = [
+  "icon",
+  "official",
+  "verified",
+  "category",
+  "followers",
+  "joined_year",
+  "art",
+] as const;
+
+/** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
+function isMissingColumnError(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "PGRST204" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? "")
+  );
+}
+
 export async function updateProductFields(
   id: string,
   fields: Partial<Product>
@@ -85,37 +120,70 @@ export async function updateProductFields(
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = await createClient();
-    // Map camelCase fields to snake_case columns (only existing columns)
     const row: Record<string, unknown> = {};
+
+    // ── Core columns (always present) ──────────────────────────────
     if (fields.name !== undefined) row.name = fields.name;
     if (fields.price !== undefined) row.price = fields.price;
     if (fields.compareAt !== undefined) row.compare_at = fields.compareAt ?? null;
-    if (fields.stock !== undefined) {
-      // 'stock' column doesn't exist; map to in_stock boolean
-      row.in_stock = fields.stock > 0;
-    }
     if (fields.category !== undefined) row.category = fields.category;
     if (fields.badge !== undefined) row.badge = fields.badge ?? null;
     if (fields.description !== undefined) row.description = fields.description;
-    if (fields.features !== undefined) {
-      row.specs = fields.features.map((f) => {
-        const parts = f.split(":");
-        return parts.length > 1
-          ? { name: parts[0].trim(), value: parts.slice(1).join(":").trim() }
-          : { name: f, value: "" };
-      });
-    }
     if (fields.hidden !== undefined) row.hidden = fields.hidden;
     if (fields.images !== undefined) row.images = fields.images;
-    if (fields.variants !== undefined) row.variants = fields.variants;
-    // Note: icon, art, colors, sizes, default_variant_id columns don't exist in DB
-    // They are handled by the read layer in db-api.ts
+    if (fields.variants !== undefined) row.variants = fields.variants ?? [];
+    // Keep the legacy boolean in sync so old readers still behave.
+    if (fields.stock !== undefined) row.in_stock = fields.stock > 0;
+
+    // ── Extended columns (added by the migration) ──────────────────
+    if (fields.stock !== undefined) row.stock = fields.stock;
+    if (fields.icon !== undefined) row.icon = fields.icon;
+    if (fields.art !== undefined) row.art = fields.art;
+    if (fields.colors !== undefined) row.colors = fields.colors ?? [];
+    if (fields.sizes !== undefined) row.sizes = fields.sizes ?? [];
+    if (fields.defaultVariantId !== undefined) {
+      row.default_variant_id = fields.defaultVariantId ?? null;
+    }
+    if (fields.features !== undefined) row.features = fields.features;
 
     if (Object.keys(row).length === 0) return true;
 
-    const { error } = await supabase.from("products").update(row).eq("id", id);
+    /**
+     * `.select()` makes PostgREST return the rows it changed. Without it an
+     * UPDATE whose filter matches nothing reports success while changing
+     * nothing — a save that silently does nothing. We also retry on `slug`
+     * because dashboard routes sometimes carry a slug where the table's
+     * primary key is a separate id (e.g. "karaca-hatir-mod" vs "prod-1").
+     */
+    const runUpdate = async (payload: Record<string, unknown>) => {
+      let res = await supabase.from("products").update(payload).eq("id", id).select("id");
+      if (!res.error && (res.data?.length ?? 0) === 0) {
+        res = await supabase.from("products").update(payload).eq("slug", id).select("id");
+      }
+      return res;
+    };
+
+    let { data, error } = await runUpdate(row);
+
+    // Retry without the post-migration columns so the edit still lands.
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] products is missing newer columns — run supabase/migration.sql. " +
+          "Saving core fields only; stock/icon/colours/sizes/default variant will not persist.",
+      );
+      const core = { ...row };
+      for (const column of EXTENDED_PRODUCT_COLUMNS) delete core[column];
+      ({ data, error } = await runUpdate(core));
+    }
+
     if (error) {
       console.error("[Supabase Mutations] updateProductFields error:", error.message);
+      return false;
+    }
+    if ((data?.length ?? 0) === 0) {
+      console.error(
+        `[Supabase Mutations] updateProductFields matched no row for id/slug "${id}".`,
+      );
       return false;
     }
     return true;
@@ -159,14 +227,40 @@ export async function updateStoreFields(
     if (fields.logo !== undefined) row.logo = fields.logo ?? null;
     if (fields.banner !== undefined) row.banner = fields.banner ?? null;
     if (fields.status !== undefined) row.status = fields.status;
-    // Note: icon, followers, joinedYear, verified, official, category, art
-    // columns don't exist in the stores table
+    // Added by supabase/migration.sql — dropped automatically on databases
+    // that haven't been migrated yet (see the retry below).
+    if (fields.icon !== undefined) row.icon = fields.icon;
+    if (fields.official !== undefined) row.official = fields.official;
+    if (fields.verified !== undefined) row.verified = fields.verified;
+    if (fields.category !== undefined) row.category = fields.category;
+    if (fields.followers !== undefined) row.followers = fields.followers;
+    if (fields.joinedYear !== undefined) row.joined_year = fields.joinedYear;
+    if (fields.art !== undefined) row.art = fields.art;
 
     if (Object.keys(row).length === 0) return true;
 
-    const { error } = await supabase.from("stores").update(row).eq("slug", slug);
+    // `.select()` so an UPDATE that matches nothing is reported as a failure
+    // rather than a silent no-op.
+    let { data, error } = await supabase
+      .from("stores").update(row).eq("slug", slug).select("slug");
+
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] stores is missing newer columns — run supabase/migration.sql. " +
+          "Saving core fields only.",
+      );
+      const core = { ...row };
+      for (const column of EXTENDED_STORE_COLUMNS) delete core[column];
+      ({ data, error } = await supabase
+        .from("stores").update(core).eq("slug", slug).select("slug"));
+    }
+
     if (error) {
       console.error("[Supabase Mutations] updateStoreFields error:", error.message);
+      return false;
+    }
+    if ((data?.length ?? 0) === 0) {
+      console.error(`[Supabase Mutations] updateStoreFields matched no store "${slug}".`);
       return false;
     }
     return true;

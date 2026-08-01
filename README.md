@@ -47,6 +47,42 @@ Examples: `karaca-home@seller.banaadirmall.com`, `us-polo-assn@seller.banaadirma
 `/login` unless the right role is signed in. The session is a plain cookie —
 demo only; replace with real auth before launch.
 
+## ⚠️ Supabase: run the migration first
+
+```bash
+npm run check:supabase
+```
+
+If it says **ACTION NEEDED**, open Supabase → **SQL Editor** → paste
+`supabase/migration.sql` → **Run**. It is idempotent (safe to re-run).
+
+Until that migration runs, the `products` and `stores` tables are missing
+columns the app needs, which caused two bugs:
+
+| Symptom | Cause |
+|---|---|
+| Product edits "don't save" — stock always shows **50** | No `stock` column; the number was squeezed into an `in_stock` boolean and read back as a hard-coded 50 |
+| **Official Brand Stores** section vanished from the home page | No `official` column, so every store read back as `official: false` and the section rendered nothing |
+| Feature bullets grew a stray `": "` on every save | They were forced through the `specs` `{name,value}` shape |
+| Icon / colours / sizes / default variant reset on save | No columns to store them |
+
+The code now degrades gracefully before the migration (official brands are
+inferred from a known-brand slug list, writes retry without the newer
+columns) — but **run the migration** to get real stock numbers and full
+persistence.
+
+### Never let a save fail silently
+
+`updateProductFields` / `updateStoreFields` use `.select()` so PostgREST
+returns the changed rows. Without it, an `UPDATE` whose filter matches no
+row reports **success while changing nothing** — a save that silently does
+nothing. They also retry on `slug` when a match on `id` finds no row.
+
+And when Supabase is the source of truth, a failed write now **throws**
+instead of falling back to the JSON overlay: the read layer ignores that
+overlay whenever Supabase returns rows, so the fallback made edits *look*
+saved and then revert.
+
 ## Fully functional dashboards
 
 Everything in the dashboards really works and persists to a small JSON
