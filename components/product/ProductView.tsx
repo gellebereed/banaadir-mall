@@ -147,7 +147,7 @@ export default function ProductView({
           )}
         </div>
 
-        <p className="mt-4 text-slate-600">{product.description}</p>
+        <FormattedDescription text={product.description} />
 
         {/* Variant pickers */}
         <div className="mt-6 space-y-5">
@@ -366,4 +366,57 @@ function OptionPicker({
       </div>
     </div>
   );
+}
+
+function FormattedDescription({ text }: { text: string }) {
+  if (!text) return null;
+
+  // Split by double line breaks into paragraphs / sections
+  const blocks = text.split(/\n\s*\n/);
+
+  return (
+    <div className="mt-4 space-y-3 text-sm text-slate-600 leading-relaxed">
+      {blocks.map((block, idx) => {
+        const trimmed = block.trim();
+        if (trimmed.startsWith("### ")) {
+          return (
+            <h3 key={idx} className="font-display text-base font-bold text-ocean-950 mt-4 mb-1">
+              {trimmed.replace(/^###\s+/, "")}
+            </h3>
+          );
+        }
+        if (trimmed.includes("\n") || trimmed.startsWith("•") || trimmed.startsWith("-") || trimmed.startsWith("✓")) {
+          const lines = trimmed.split("\n");
+          return (
+            <ul key={idx} className="space-y-1">
+              {lines.map((line, lIdx) => {
+                const cleanLine = line.replace(/^[•\-✓*]\s*/, "").trim();
+                if (!cleanLine) return null;
+                return (
+                  <li key={lIdx} className="flex items-start gap-2">
+                    <span className="text-ocean-600 font-bold">•</span>
+                    <span>{formatInlineMarkdown(cleanLine)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        }
+        return <p key={idx}>{formatInlineMarkdown(trimmed)}</p>;
+      })}
+    </div>
+  );
+}
+
+function formatInlineMarkdown(text: string) {
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="font-bold text-slate-800">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+    }
+    return part;
+  });
 }

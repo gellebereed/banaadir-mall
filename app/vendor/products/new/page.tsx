@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
+import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
@@ -96,14 +97,24 @@ export default async function NewProductPage() {
             <input id="icon" name="icon" maxLength={4} placeholder="🛍️" className="input" />
           </div>
           <div className="sm:col-span-2">
-            <label htmlFor="description" className="label">Description</label>
-            <textarea id="description" name="description" required rows={4} placeholder="What makes this product great?" className="input resize-none" />
+            <FormattedTextarea
+              id="description"
+              name="description"
+              label="Description"
+              required
+              rows={5}
+              placeholder="What makes this product great?"
+            />
           </div>
           <div className="sm:col-span-2">
-            <label htmlFor="features" className="label">
-              Feature bullets <span className="font-normal text-slate-400">(one per line)</span>
-            </label>
-            <textarea id="features" name="features" rows={3} placeholder={"Ships within 24 hours\n7-day easy returns"} className="input resize-none" />
+            <FormattedTextarea
+              id="features"
+              name="features"
+              label="Feature bullets (one per line)"
+              rows={4}
+              isListMode
+              placeholder={"Ships within 24 hours\n7-day easy returns"}
+            />
           </div>
 
           <section className="sm:col-span-2">

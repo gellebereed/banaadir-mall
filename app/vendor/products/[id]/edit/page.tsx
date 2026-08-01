@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
+import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoManager from "@/components/dashboard/PhotoManager";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
@@ -212,15 +213,26 @@ export default async function EditProductPage({
             <h2 className="mb-3 font-display font-bold text-ocean-950">✍️ Description</h2>
             <div className="grid gap-4">
               <div>
-                <label htmlFor="description" className="label">Description</label>
-                <textarea id="description" name="description" required rows={4} defaultValue={product.description} className="input resize-none" />
+                <FormattedTextarea
+                  id="description"
+                  name="description"
+                  label="Description"
+                  required
+                  rows={5}
+                  defaultValue={product.description}
+                  placeholder="What makes this product great?"
+                />
               </div>
               <div>
-                <label htmlFor="features" className="label">
-                  Feature bullets{" "}
-                  <span className="font-normal text-slate-400">(one per line)</span>
-                </label>
-                <textarea id="features" name="features" rows={4} defaultValue={product.features.join("\n")} className="input resize-none" />
+                <FormattedTextarea
+                  id="features"
+                  name="features"
+                  label="Feature bullets (one per line)"
+                  rows={4}
+                  isListMode
+                  defaultValue={product.features.join("\n")}
+                  placeholder={"Ships within 24 hours\n7-day easy returns"}
+                />
               </div>
             </div>
           </section>
