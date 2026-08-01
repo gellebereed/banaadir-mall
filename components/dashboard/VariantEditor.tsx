@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { money } from "@/lib/format";
+import { compressImageFile } from "@/lib/image-compress";
 import { colorSwatch } from "@/lib/product-utils";
 import type { Variant } from "@/lib/types";
 
@@ -86,11 +87,23 @@ export default function VariantEditor({
     });
   }
 
-  function handleFiles(id: string, e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  async function handleFiles(id: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const rawFiles = Array.from(e.target.files ?? []);
+    if (rawFiles.length === 0) return;
+
+    const compressedFiles = await Promise.all(rawFiles.map((f) => compressImageFile(f)));
+
+    try {
+      const dt = new DataTransfer();
+      compressedFiles.forEach((f) => dt.items.add(f));
+      e.target.files = dt.files;
+    } catch {
+      // Fallback for browsers restricting file input updates
+    }
+
     setPreviews((prev) => {
       prev[id]?.forEach(URL.revokeObjectURL);
-      return { ...prev, [id]: files.map((f) => URL.createObjectURL(f)) };
+      return { ...prev, [id]: compressedFiles.map((f) => URL.createObjectURL(f)) };
     });
   }
 

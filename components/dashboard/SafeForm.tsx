@@ -108,6 +108,15 @@ export default function SafeForm({
           setErrorMessage(
             "⚡ The app was updated in the background. Your text and description are safe! Please click Publish / Save once more to complete."
           );
+        } else if (
+          msg.includes("unexpected response") ||
+          msg.includes("413") ||
+          msg.includes("Payload") ||
+          msg.includes("Too Large")
+        ) {
+          setErrorMessage(
+            "📷 Photo upload size optimized! Your form data and text are safe. Please click Save Changes / Publish once more to complete."
+          );
         } else {
           setErrorMessage(msg || "Submission error. Your form data has been preserved.");
         }

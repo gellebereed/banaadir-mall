@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { compressImageFile } from "@/lib/image-compress";
 
 /**
  * File input styled as a drop zone, with instant local previews of the
@@ -18,12 +19,29 @@ export default function PhotoPicker({
   hint?: string;
 }) {
   const [previews, setPreviews] = useState<string[]>([]);
+  const [compressing, setCompressing] = useState(false);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    // Release the previous object URLs before replacing them.
-    previews.forEach(URL.revokeObjectURL);
-    setPreviews(files.map((f) => URL.createObjectURL(f)));
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const rawFiles = Array.from(e.target.files ?? []);
+    if (rawFiles.length === 0) return;
+
+    setCompressing(true);
+    try {
+      const compressedFiles = await Promise.all(rawFiles.map((f) => compressImageFile(f)));
+
+      try {
+        const dt = new DataTransfer();
+        compressedFiles.forEach((f) => dt.items.add(f));
+        e.target.files = dt.files;
+      } catch {
+        // Fallback for browsers that restrict setting file input files
+      }
+
+      previews.forEach(URL.revokeObjectURL);
+      setPreviews(compressedFiles.map((f) => URL.createObjectURL(f)));
+    } finally {
+      setCompressing(false);
+    }
   }
 
   return (
@@ -41,6 +59,12 @@ export default function PhotoPicker({
           className="sr-only"
         />
       </label>
+
+      {compressing && (
+        <p className="mt-2 text-xs font-bold text-ocean-700 animate-pulse">
+          ⚡ Optimizing photos for ultra-fast upload...
+        </p>
+      )}
 
       {previews.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-3">
