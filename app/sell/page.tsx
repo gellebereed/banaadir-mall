@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import StoreApplicationForm from "@/components/StoreApplicationForm";
 
 export const metadata: Metadata = {
   title: "Sell on Banaadir Mall",
@@ -90,47 +91,15 @@ export default function SellPage() {
             Open your store
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Fill this in and our team will contact you within 48 hours.
+            Fill this in and your store will be created instantly.
           </p>
 
-          {/* Demo form — submits to the vendor dashboard preview. */}
-          <form className="mt-6 grid gap-4 sm:grid-cols-2" action="/vendor">
-            <div>
-              <label htmlFor="store-name" className="label">Store name</label>
-              <input id="store-name" required placeholder="e.g. Hodan Electronics" className="input" />
-            </div>
-            <div>
-              <label htmlFor="owner" className="label">Owner name</label>
-              <input id="owner" required placeholder="Your full name" className="input" />
-            </div>
-            <div>
-              <label htmlFor="phone" className="label">Phone (WhatsApp)</label>
-              <input id="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
-            </div>
-            <div>
-              <label htmlFor="city" className="label">City</label>
-              <input id="city" required placeholder="Mogadishu" className="input" />
-            </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="category" className="label">What do you sell?</label>
-              <select id="category" className="input">
-                {["Electronics", "Women's Fashion", "Men's Fashion", "Beauty & Care", "Home & Living", "Kids & Baby", "Sports & Outdoor", "Groceries", "Something else"].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="about" className="label">Tell us about your business</label>
-              <textarea id="about" rows={3} placeholder="How long have you been selling? Do you have a physical shop?" className="input resize-none" />
-            </div>
-            <button type="submit" className="btn-primary sm:col-span-2">
-              Submit Application
-            </button>
-          </form>
+          <StoreApplicationForm />
+
           <p className="mt-4 text-center text-xs text-slate-400">
             Already a seller?{" "}
-            <Link href="/vendor" className="font-bold text-ocean-700 hover:underline">
-              Go to your dashboard →
+            <Link href="/login" className="font-bold text-ocean-700 hover:underline">
+              Sign in to your dashboard →
             </Link>
           </p>
         </div>
