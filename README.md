@@ -47,6 +47,50 @@ Examples: `karaca-home@seller.banaadirmall.com`, `us-polo-assn@seller.banaadirma
 `/login` unless the right role is signed in. The session is a plain cookie —
 demo only; replace with real auth before launch.
 
+## Artwork sizes (banners & campaign tiles)
+
+These are the **exact frames the storefront renders**, measured in the
+browser — not rounded guesses. Match them and nothing gets cropped.
+
+| Asset | Size | Ratio | Notes |
+|---|---|---|---|
+| Banner — desktop | **1600 × 600** | 8:3 (2.67:1) | Shown from the `sm` breakpoint up |
+| Banner — mobile | **1000 × 800** | 5:4 (1.25:1) | Phones only; optional but strongly recommended |
+| Banner — "whole image" mode | **1600 × 700** | 16:7 (2.29:1) | Only if you set *Image display → show the whole image* |
+| Campaign tile | **800 × 300** | 8:3 (2.67:1) | Background art only — see below |
+
+Export as **JPG or WebP, under 300 KB**. Uploads are re-encoded to WebP and
+capped at 1600px automatically, so don't bother pre-shrinking.
+
+### Why the mobile banner matters
+
+Desktop is 2.67:1 and mobile is 1.25:1 — very different shapes. With one
+image, phones crop away most of the left and right, which is what makes a
+banner look accidental. Upload a mobile version and each gets its own
+art direction. If you skip it, the desktop image is used and centre-cropped,
+so keep anything important in the **middle 60%**.
+
+### Campaign tiles are backgrounds, not finished graphics
+
+The site draws the tile's **label and sublabel over the artwork in dark
+ink**. So tile art should:
+
+- stay **light** on the left half (that's where the text lands),
+- put the subject/motif on the **right**,
+- keep that motif within the central **70%** — mobile shows tiles in two
+  columns at roughly 1.5:1, which crops the sides.
+
+Banners are the opposite: text there is **optional**. If your artwork
+already carries the headline, leave title/subtitle/CTA empty and the banner
+renders clean with no darkening scrim over your design.
+
+### Sample set
+
+`npm run seed:marketing` installs a worked example — an "Eid Mega Sale"
+banner (desktop + mobile) and four tiles (50% off, Buy 4 Pay 3, Free
+delivery, New In) — built at exactly these sizes using the brand palette.
+Use them as a template, then delete or replace them from `/admin/marketing`.
+
 ## Deploying to Netlify — check this first
 
 Open **`/api/health`** on the deployed site. It answers "is this environment
