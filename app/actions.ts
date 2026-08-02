@@ -729,16 +729,17 @@ export async function updateMarketing(
       ...current,
       ...marketing,
     });
-  } else {
-    await mutateDB((db) => {
-      db.marketing = {
-        ...db.marketing,
-        ...marketing,
-      };
-    });
   }
+
+  await mutateDB((db) => {
+    db.marketing = {
+      ...db.marketing,
+      ...marketing,
+    };
+  });
+
   refresh();
-  return { ok: true, message: "Storefront updated." };
+  return { ok: true, message: "Storefront updated successfully! 🎉" };
 }
 
 /** Section order + visibility, submitted by the section arranger. */

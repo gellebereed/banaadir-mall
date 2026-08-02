@@ -444,29 +444,55 @@ export async function updateMarketingInSupabase(
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = await createClient();
+    const fullPayload = {
+      id: 1,
+      announcement: settings.announcement,
+      announcement_bg_color: settings.announcementBgColor,
+      announcement_text_color: settings.announcementTextColor,
+      announcement_scroll: settings.announcementScroll,
+      announcement_speed: settings.announcementSpeed,
+      hero_badge: settings.heroBadge,
+      hero_title_top: settings.heroTitleTop,
+      hero_title_highlight: settings.heroTitleHighlight,
+      hero_subtitle: settings.heroSubtitle,
+      sections: settings.sections,
+      banners: settings.banners,
+      promo_tiles: settings.promoTiles,
+      campaign: settings.campaign,
+      delivery: settings.delivery,
+      promo: settings.promo,
+    };
+
     const { error } = await supabase.from("marketing_settings").upsert(
-      {
-        id: 1,
-        announcement: settings.announcement,
-        announcement_bg_color: settings.announcementBgColor,
-        announcement_text_color: settings.announcementTextColor,
-        announcement_scroll: settings.announcementScroll,
-        announcement_speed: settings.announcementSpeed,
-        hero_badge: settings.heroBadge,
-        hero_title_top: settings.heroTitleTop,
-        hero_title_highlight: settings.heroTitleHighlight,
-        hero_subtitle: settings.heroSubtitle,
-        sections: settings.sections,
-        banners: settings.banners,
-        promo_tiles: settings.promoTiles,
-        campaign: settings.campaign,
-        delivery: settings.delivery,
-        promo: settings.promo,
-      },
+      fullPayload,
       { onConflict: "id" }
     );
-    if (error) {
-      console.error("[Supabase Mutations] updateMarketing error:", error.message);
+    if (!error) return true;
+
+    console.warn("[Supabase Mutations] updateMarketing full upsert failed, retrying base fields:", error.message);
+
+    // Fallback if optional announcement styling columns don't exist in schema
+    const fallbackPayload = {
+      id: 1,
+      announcement: settings.announcement,
+      hero_badge: settings.heroBadge,
+      hero_title_top: settings.heroTitleTop,
+      hero_title_highlight: settings.heroTitleHighlight,
+      hero_subtitle: settings.heroSubtitle,
+      sections: settings.sections,
+      banners: settings.banners,
+      promo_tiles: settings.promoTiles,
+      campaign: settings.campaign,
+      delivery: settings.delivery,
+      promo: settings.promo,
+    };
+
+    const { error: fallbackErr } = await supabase.from("marketing_settings").upsert(
+      fallbackPayload,
+      { onConflict: "id" }
+    );
+    if (fallbackErr) {
+      console.error("[Supabase Mutations] updateMarketing fallback error:", fallbackErr.message);
       return false;
     }
     return true;

@@ -2,14 +2,16 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  deleteBanner,
-  deletePromoTile,
-  moveBanner,
   savePromoTile,
   saveBanner,
-  toggleBanner,
-  togglePromoTile,
 } from "@/app/actions";
+import {
+  BannerDeleteBtn,
+  BannerMoveBtn,
+  BannerToggleBtn,
+  TileDeleteBtn,
+  TileToggleBtn,
+} from "@/components/dashboard/MarketingActionButtons";
 import MarketingBasicsForm from "@/components/dashboard/MarketingBasicsForm";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import SectionArranger from "@/components/dashboard/SectionArranger";
@@ -78,23 +80,11 @@ export default async function AdminMarketingPage() {
                   {b.fit === "contain" && " · whole image"}
                 </p>
               </div>
-              <div className="flex items-center gap-1">
-                <form action={moveBanner.bind(null, b.id, -1)}>
-                  <button disabled={i === 0} aria-label="Move up" className="px-2 text-slate-400 hover:text-ocean-700 disabled:opacity-25">▲</button>
-                </form>
-                <form action={moveBanner.bind(null, b.id, 1)}>
-                  <button disabled={i === m.banners.length - 1} aria-label="Move down" className="px-2 text-slate-400 hover:text-ocean-700 disabled:opacity-25">▼</button>
-                </form>
-                <form action={toggleBanner.bind(null, b.id)}>
-                  <button className={`rounded-full px-3 py-1 text-xs font-bold ${b.active ? "bg-emerald-100 text-emerald-700" : "bg-sand-100 text-slate-500"}`}>
-                    {b.active ? "Live" : "Paused"}
-                  </button>
-                </form>
-                <form action={deleteBanner.bind(null, b.id)}>
-                  <button className="rounded-full border border-coral-500 px-3 py-1 text-xs font-bold text-coral-600 hover:bg-coral-500 hover:text-white">
-                    Delete
-                  </button>
-                </form>
+              <div className="flex items-center gap-2">
+                <BannerMoveBtn id={b.id} delta={-1} disabled={i === 0} />
+                <BannerMoveBtn id={b.id} delta={1} disabled={i === m.banners.length - 1} />
+                <BannerToggleBtn id={b.id} active={b.active} />
+                <BannerDeleteBtn id={b.id} />
               </div>
             </div>
           ))}
@@ -181,17 +171,11 @@ export default async function AdminMarketingPage() {
               </div>
               <div className="p-3">
                 <p className="truncate text-xs font-semibold text-slate-700">{t.sublabel}</p>
-                <div className="mt-2 flex gap-2">
-                  <form action={togglePromoTile.bind(null, t.id)} className="flex-1">
-                    <button className={`w-full rounded-full py-1 text-[11px] font-bold ${t.active ? "bg-emerald-100 text-emerald-700" : "bg-sand-100 text-slate-500"}`}>
-                      {t.active ? "Live" : "Paused"}
-                    </button>
-                  </form>
-                  <form action={deletePromoTile.bind(null, t.id)}>
-                    <button className="rounded-full border border-coral-500 px-3 py-1 text-[11px] font-bold text-coral-600">
-                      ✕
-                    </button>
-                  </form>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1">
+                    <TileToggleBtn id={t.id} active={t.active} />
+                  </div>
+                  <TileDeleteBtn id={t.id} />
                 </div>
               </div>
             </div>
