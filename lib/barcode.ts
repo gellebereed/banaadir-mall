@@ -48,7 +48,7 @@ export function normalizeBarcode(raw: string | null | undefined): string {
     .trim();
   if (!trimmed) return "";
 
-  // Pure numeric GTIN / barcode
+  // Pure numeric GTIN / barcode — remove internal spaces/hyphens
   const stripped = trimmed.replace(/[\s:-]/g, "");
   if (/^\d+$/.test(stripped)) return stripped;
 
@@ -68,7 +68,10 @@ export function gtinCheckDigit(digitsWithoutCheck: string): string {
   return String((10 - (sum % 10)) % 10);
 }
 
-/** Validate & auto-fix a barcode so saves are robust. */
+/**
+ * Validate a barcode cleanly without EVER altering or mutating the actual barcode number
+ * entered by the seller.
+ */
 export function checkBarcode(raw: string | null | undefined): BarcodeCheck {
   const value = normalizeBarcode(raw);
   if (!value) return { value: "", valid: true, symbology: null };
@@ -78,32 +81,10 @@ export function checkBarcode(raw: string | null | undefined): BarcodeCheck {
       value,
       valid: true,
       symbology: "INTERNAL",
-      warning: "Stored as an internal code.",
     };
   }
 
-  const symbology = GTIN_LENGTHS[value.length];
-  if (!symbology) {
-    return {
-      value,
-      valid: true,
-      symbology: "INTERNAL",
-      warning: `${value.length} digits — stored as an internal code.`,
-    };
-  }
-
-  const expected = gtinCheckDigit(value.slice(0, -1));
-  if (expected !== value.slice(-1)) {
-    const fixedValue = value.slice(0, -1) + expected;
-    return {
-      value: fixedValue, // Auto-correct check digit on save
-      valid: true,
-      symbology,
-      warning: `Auto-corrected ${symbology} check digit from ${value.slice(-1)} to ${expected}.`,
-      suggestion: fixedValue,
-    };
-  }
-
+  const symbology = GTIN_LENGTHS[value.length] || "INTERNAL";
   return { value, valid: true, symbology };
 }
 
