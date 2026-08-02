@@ -41,33 +41,51 @@ export async function upsertProduct(product: Product): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = await createClient();
-    const { error } = await supabase.from("products").upsert(
-      {
-        id: product.id,
-        slug: product.slug,
-        name: product.name,
-        store: product.store,
-        category: product.category,
-        price: product.price,
-        compare_at: product.compareAt ?? null,
-        rating: product.rating ?? 5,
-        reviews_count: product.reviewCount ?? 0,
-        sold: product.sold ?? 0,
-        in_stock: (product.stock ?? 0) > 0,
-        badge: product.badge ?? null,
-        description: product.description || "",
-        specs: product.features?.map((f) => {
-          const parts = f.split(":");
-          return parts.length > 1
-            ? { name: parts[0].trim(), value: parts.slice(1).join(":").trim() }
-            : { name: f, value: "" };
-        }) ?? [],
-        hidden: product.hidden ?? false,
-        images: product.images ?? [],
-        variants: product.variants ?? [],
-      },
-      { onConflict: "id" }
-    );
+    const row: Record<string, unknown> = {
+      id: product.id,
+      slug: product.slug,
+      name: product.name,
+      store: product.store,
+      category: product.category,
+      subcategory: product.subcategory || null,
+      price: product.price,
+      compare_at: product.compareAt ?? null,
+      rating: product.rating ?? 5,
+      reviews_count: product.reviewCount ?? 0,
+      sold: product.sold ?? 0,
+      in_stock: (product.stock ?? 0) > 0,
+      stock: Number(product.stock ?? 0),
+      badge: product.badge ?? null,
+      icon: product.icon || "🛍️",
+      art: product.art || null,
+      colors: product.colors ?? [],
+      sizes: product.sizes ?? [],
+      default_variant_id: product.defaultVariantId ?? null,
+      description: product.description || "",
+      features: product.features ?? [],
+      specs: product.features?.map((f) => {
+        const parts = f.split(":");
+        return parts.length > 1
+          ? { name: parts[0].trim(), value: parts.slice(1).join(":").trim() }
+          : { name: f, value: "" };
+      }) ?? [],
+      hidden: product.hidden ?? false,
+      images: product.images ?? [],
+      variants: product.variants ?? [],
+    };
+
+    let { error } = await supabase.from("products").upsert(row, { onConflict: "id" });
+
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] products table is missing newer columns — run supabase/migration.sql. " +
+          "Saving core columns.",
+      );
+      const core = { ...row };
+      for (const column of EXTENDED_PRODUCT_COLUMNS) delete core[column];
+      ({ error } = await supabase.from("products").upsert(core, { onConflict: "id" }));
+    }
+
     if (error) {
       console.error("[Supabase Mutations] upsertProduct error:", error.message);
       return false;

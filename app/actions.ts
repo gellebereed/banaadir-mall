@@ -329,9 +329,9 @@ export async function createProduct(formData: FormData): Promise<void> {
     rating: 5,
     reviewCount: 0,
     sold: 0,
-    stock: variants
+    stock: variants && variants.length > 0
       ? variants.reduce((sum, v) => sum + v.stock, 0)
-      : Number(formData.get("stock")),
+      : Math.max(0, Number(formData.get("stock") || 0)),
     badge: "New",
     colors: variants ? undefined : commaList(formData.get("colors")),
     sizes: variants ? undefined : commaList(formData.get("sizes")),
