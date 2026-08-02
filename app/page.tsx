@@ -114,6 +114,29 @@ function CampaignBanner({ campaign }: { campaign: MarketingSettings["campaign"] 
 
 /* ── Hero ─────────────────────────────────────────────────────────── */
 
+function shortHeroTitle(name: string): string {
+  if (!name) return "";
+  // Remove duplicate words like "Slim Fit Slim Fit"
+  const clean = name.replace(/\b(\w+)\s+\1\b/gi, "$1").trim();
+  if (clean.toLowerCase().includes("hatır")) return "Hatır Coffee Maker";
+  if (clean.toLowerCase().includes("polo")) return "Classic Polo Shirt";
+  if (clean.toLowerCase().includes("suit")) return "Slim Fit Wool Suit";
+  if (clean.toLowerCase().includes("towel") || clean.toLowerCase().includes("rose") || clean.toLowerCase().includes("duvet"))
+    return "Rose Bamboo Duvet Set";
+
+  const words = clean.split(/\s+/);
+  return words.slice(0, 3).join(" ");
+}
+
+function shortStoreName(store: string): string {
+  const s = store.toLowerCase();
+  if (s.includes("karaca")) return "KARACA";
+  if (s.includes("polo")) return "U.S. POLO";
+  if (s.includes("altinyildiz")) return "ALTINYILDIZ";
+  if (s.includes("ozdilek")) return "ÖZDILEK";
+  return store.replace(/-/g, " ").toUpperCase();
+}
+
 function Hero({
   marketing,
   heroProducts,
@@ -122,10 +145,10 @@ function Hero({
   heroProducts: Product[];
 }) {
   const cardPositions = [
-    { cls: "left-0 top-2", delay: "0s" },
-    { cls: "right-0 top-8", delay: "0.8s" },
-    { cls: "left-4 bottom-8", delay: "1.6s" },
-    { cls: "right-2 bottom-2", delay: "2.4s" },
+    { cls: "left-0 top-1", delay: "0s" },
+    { cls: "right-0 top-16", delay: "0.8s" },
+    { cls: "left-4 bottom-2", delay: "1.6s" },
+    { cls: "right-0 bottom-20", delay: "2.4s" },
   ];
 
   return (
@@ -172,37 +195,38 @@ function Hero({
           </dl>
         </div>
 
-        <div className="relative mx-auto hidden h-[420px] w-full max-w-lg lg:block">
+        <div className="relative mx-auto hidden h-[440px] w-full max-w-lg lg:block">
           {heroProducts.map((p, idx) => {
             const pos = cardPositions[idx % cardPositions.length];
-            const storeLabel = p.store.replace(/-/g, " ").toUpperCase();
+            const storeLabel = shortStoreName(p.store);
+            const title = shortHeroTitle(p.name);
 
             return (
               <Link
                 key={p.id}
                 href={`/product/${p.slug}`}
-                className={`animate-float absolute ${pos.cls} group flex items-center gap-3.5 rounded-2xl bg-white/95 p-3 pr-5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80 z-10 max-w-[260px] sm:max-w-[280px]`}
+                className={`animate-float absolute ${pos.cls} group flex w-52 items-center gap-3 rounded-2xl bg-white/95 p-2.5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80 z-10`}
                 style={{ animationDelay: pos.delay }}
               >
                 <ProductImage
                   product={p}
-                  className="h-14 w-14 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
+                  className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
                 />
                 <div className="min-w-0 flex-1">
-                  <span className="inline-block rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900 truncate max-w-[140px]">
+                  <span className="inline-block rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900 truncate">
                     {storeLabel}
                   </span>
-                  <p className="mt-0.5 truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
-                    {p.name}
+                  <p className="truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
+                    {title}
                   </p>
-                  <p className="mt-0.5 font-display font-extrabold text-sm text-ocean-950">
+                  <p className="font-display font-extrabold text-xs text-ocean-950">
                     {money(p.price)}
                   </p>
                 </div>
               </Link>
             );
           })}
-          <div className="absolute inset-10 rounded-full bg-white/5 ring-1 ring-white/10" />
+          <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
         </div>
       </div>
     </section>
