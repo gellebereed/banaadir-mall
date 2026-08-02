@@ -466,17 +466,29 @@ export async function updateStoreSettings(
 
 // ── Promotions (store discounts) ───────────────────────────────────────
 
-export async function createPromotion(formData: FormData): Promise<void> {
+export async function createPromotion(
+  _prev: SaveState,
+  formData: FormData,
+): Promise<SaveState> {
   const session = await requireAccess("products");
   const storeSlug =
     session.role === "seller" && session.store ? session.store : "sahra-fashion";
   const pct = Math.min(90, Math.max(1, Number(formData.get("pct"))));
+
   // "products" scope limits the promotion to the ticked products; the
   // default "store" scope leaves productIds empty (applies to everything).
-  const productIds =
-    String(formData.get("scope")) === "products"
-      ? formData.getAll("productIds").map(String)
-      : [];
+  const scopedToProducts = String(formData.get("scope")) === "products";
+  const productIds = scopedToProducts ? formData.getAll("productIds").map(String) : [];
+
+  if (scopedToProducts && productIds.length === 0) {
+    return { ok: false, message: "Pick at least one product, or choose the whole store." };
+  }
+
+  const startsAt = String(formData.get("startsAt") ?? "").trim() || undefined;
+  const endsAt = String(formData.get("endsAt") ?? "").trim() || undefined;
+  if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
+    return { ok: false, message: "The end date must come after the start date." };
+  }
 
   const promo = {
     id: "promo-" + Date.now().toString(36),
@@ -485,15 +497,36 @@ export async function createPromotion(formData: FormData): Promise<void> {
     pct,
     active: true,
     productIds,
+    startsAt,
+    endsAt,
   };
 
   const supabaseOk = await insertPromotion(promo);
   if (!supabaseOk) {
+    if (useSupabaseMutations()) {
+      // Supabase is the source of truth for pricing; writing to the JSON
+      // overlay would show the promotion in the list while discounting
+      // nothing.
+      return {
+        ok: false,
+        message: "Could not save the promotion to Supabase — check the server logs.",
+      };
+    }
     await mutateDB((db) => {
       db.promotions.push(promo);
     });
   }
   refresh();
+
+  const scopeLabel = productIds.length
+    ? `${productIds.length} product${productIds.length === 1 ? "" : "s"}`
+    : "your whole store";
+  return {
+    ok: true,
+    message: startsAt
+      ? `Scheduled — ${pct}% off ${scopeLabel} from the start date.`
+      : `Live now — ${pct}% off ${scopeLabel}.`,
+  };
 }
 
 export async function togglePromotion(id: string): Promise<void> {

@@ -123,31 +123,70 @@ export async function getBaseProductsByStore(slug: string): Promise<Product[]> {
 }
 
 /**
- * Highest discount percentage that applies to a given product right now.
- * A promotion covers the whole store when it has no productIds, or only
- * the listed products when it does. The site-wide campaign always applies.
+ * Every promotion, from whichever store actually holds them.
+ *
+ * ⚠ This must be the ONLY way promotions are read. Discounts used to be
+ * computed from the local JSON store while the dashboards saved to
+ * Supabase, so a seller's promotion appeared in the promotions list and
+ * then had no effect on any price — the product kept its original price
+ * and its "New" badge.
  */
-function discountPctFor(product: Product, db: Awaited<ReturnType<typeof getDB>>): number {
-  const promo = db.promotions
+export async function getPromotions(): Promise<Promotion[]> {
+  const supabasePromotions = await fetchPromotionsFromSupabase();
+  if (supabasePromotions) return supabasePromotions;
+  return (await getDB()).promotions;
+}
+
+/**
+ * Is this promotion running right now? `active` is the seller's on/off
+ * switch; the optional window lets them schedule one in advance or have it
+ * expire on its own.
+ */
+export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
+  if (!promo.active) return false;
+  if (promo.startsAt && new Date(promo.startsAt) > now) return false;
+  if (promo.endsAt && new Date(promo.endsAt) < now) return false;
+  return true;
+}
+
+/**
+ * Highest discount percentage applying to a product right now. A promotion
+ * covers the whole store when it has no productIds, or only the listed
+ * products when it does. The site-wide campaign always applies.
+ */
+function discountPctFor(
+  product: Product,
+  promotions: Promotion[],
+  campaignPct: number,
+): number {
+  const promo = promotions
     .filter(
       (p) =>
-        p.active &&
+        isPromotionLive(p) &&
         p.store === product.store &&
         (!p.productIds?.length || p.productIds.includes(product.id)),
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
-  const campaign = db.marketing.campaign.active ? db.marketing.campaign.pct : 0;
-  return Math.max(promo, campaign);
+  return Math.max(promo, campaignPct);
+}
+
+/** The site-wide campaign percentage, or 0 when it isn't running. */
+async function campaignPct(): Promise<number> {
+  const marketing = await getMarketingSettings();
+  return marketing.campaign.active ? marketing.campaign.pct : 0;
 }
 
 /** Discount percentage per product id, for dashboard tables and notices. */
 export async function getDiscountMap(storeSlug?: string): Promise<Record<string, number>> {
-  const db = await getDB();
-  const products = await getBaseProducts();
+  const [promotions, campaign, products] = await Promise.all([
+    getPromotions(),
+    campaignPct(),
+    getBaseProducts(),
+  ]);
   const map: Record<string, number> = {};
   for (const p of products) {
     if (storeSlug && p.store !== storeSlug) continue;
-    const pct = discountPctFor(p, db);
+    const pct = discountPctFor(p, promotions, campaign);
     if (pct > 0) map[p.id] = pct;
   }
   return map;
@@ -160,11 +199,14 @@ export async function getDiscountMap(storeSlug?: string): Promise<Record<string,
  * Includes hidden products; use getProducts() for the storefront.
  */
 export async function getAllProducts(): Promise<Product[]> {
-  const db = await getDB();
-  const base = await getBaseProducts();
+  const [base, promotions, campaign] = await Promise.all([
+    getBaseProducts(),
+    getPromotions(),
+    campaignPct(),
+  ]);
 
   return base.map((p) => {
-    const pct = discountPctFor(p, db);
+    const pct = discountPctFor(p, promotions, campaign);
     if (pct <= 0) return p;
     const factor = 1 - pct / 100;
     const round = (n: number) => Math.round(n * factor * 100) / 100;
@@ -241,11 +283,7 @@ export async function getRelatedProducts(product: Product, limit = 4): Promise<P
 // ── Promotions / employees / marketing ─────────────────────────────────
 
 export async function getPromotionsByStore(storeSlug: string): Promise<Promotion[]> {
-  const supabasePromotions = await fetchPromotionsFromSupabase();
-  if (supabasePromotions) {
-    return supabasePromotions.filter((p) => p.store === storeSlug);
-  }
-  return (await getDB()).promotions.filter((p) => p.store === storeSlug);
+  return (await getPromotions()).filter((p) => p.store === storeSlug);
 }
 
 /** Employees of a store, or of the platform when storeSlug === "platform". */

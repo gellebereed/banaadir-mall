@@ -240,6 +240,8 @@ async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
       code: p.code || undefined,
       active: p.active ?? true,
       productIds: p.product_ids || undefined,
+      startsAt: p.starts_at || undefined,
+      endsAt: p.ends_at || undefined,
     }));
   } catch {
     return null;

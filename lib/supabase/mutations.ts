@@ -312,14 +312,31 @@ export async function insertPromotion(promo: Promotion): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = await createClient();
-    const { error } = await supabase.from("promotions").insert({
+    const row: Record<string, unknown> = {
       id: promo.id,
       store: promo.store,
       name: promo.name,
       pct: promo.pct,
       active: promo.active,
       product_ids: promo.productIds ?? [],
-    });
+      starts_at: promo.startsAt ?? null,
+      ends_at: promo.endsAt ?? null,
+    };
+
+    let { error } = await supabase.from("promotions").insert(row);
+
+    // The schedule columns arrived later — retry without them so creating a
+    // promotion still works on a database that hasn't been migrated.
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] promotions is missing starts_at/ends_at — run " +
+          "supabase/migration-promotion-schedule.sql. Saving without a schedule.",
+      );
+      delete row.starts_at;
+      delete row.ends_at;
+      ({ error } = await supabase.from("promotions").insert(row));
+    }
+
     if (error) {
       console.error("[Supabase Mutations] insertPromotion error:", error.message);
       return false;

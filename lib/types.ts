@@ -191,6 +191,13 @@ export interface Promotion {
    * whole store.
    */
   productIds?: string[];
+  /**
+   * Optional schedule (ISO datetime). Lets a seller queue a promotion for
+   * a future date or have it expire by itself, instead of remembering to
+   * switch it off. See isPromotionLive() in lib/api.ts.
+   */
+  startsAt?: string;
+  endsAt?: string;
 }
 
 export type EmployeeRole = "manager" | "products" | "orders" | "marketing" | "viewer";
