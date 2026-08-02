@@ -22,6 +22,7 @@ import type {
   Banner,
   EmployeeRole,
   HomeSection,
+  Order,
   OrderStatus,
   Product,
   Store,
@@ -894,40 +895,105 @@ export async function moveBanner(id: string, delta: number): Promise<void> {
 
 export async function savePromoTile(formData: FormData): Promise<void> {
   await requireMarketing();
+  const id = String(formData.get("id") ?? "");
   const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
 
   if (useSupabaseMutations()) {
     const { getMarketingSettings } = await import("@/lib/api");
     const current = await getMarketingSettings();
+    const existingTile = current.promoTiles.find((t) => t.id === id);
     const tile = {
-      id: "tile-" + Date.now().toString(36),
+      id: id || "tile-" + Date.now().toString(36),
       label: String(formData.get("label")).trim(),
       sublabel: String(formData.get("sublabel") ?? "").trim(),
       link: String(formData.get("link") ?? "/products").trim() || "/products",
       from: String(formData.get("from") ?? "#ffe4e6"),
       to: String(formData.get("to") ?? "#fecdd3"),
-      image,
-      active: true,
+      image: image ?? existingTile?.image,
+      active: existingTile?.active ?? true,
     };
-    await updateMarketingInSupabase({
-      ...current,
-      promoTiles: [...current.promoTiles, tile],
-    });
+    const promoTiles = [...current.promoTiles];
+    const idx = promoTiles.findIndex((t) => t.id === id);
+    if (idx >= 0) {
+      promoTiles[idx] = tile;
+    } else {
+      promoTiles.push(tile);
+    }
+    await updateMarketingInSupabase({ ...current, promoTiles });
   } else {
     await mutateDB((db) => {
-      db.marketing.promoTiles.push({
-        id: "tile-" + Date.now().toString(36),
+      const existing = db.marketing.promoTiles.find((t) => t.id === id);
+      const tile = {
+        id: id || "tile-" + Date.now().toString(36),
         label: String(formData.get("label")).trim(),
         sublabel: String(formData.get("sublabel") ?? "").trim(),
         link: String(formData.get("link") ?? "/products").trim() || "/products",
         from: String(formData.get("from") ?? "#ffe4e6"),
         to: String(formData.get("to") ?? "#fecdd3"),
-        image,
-        active: true,
-      });
+        image: image ?? existing?.image,
+        active: existing?.active ?? true,
+      };
+      if (existing) {
+        Object.assign(existing, tile);
+      } else {
+        db.marketing.promoTiles.push(tile);
+      }
     });
   }
   refresh();
+}
+
+export async function submitOrderAction(payload: {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  address: string;
+  city: string;
+  items: { productId: string; name: string; price: number; qty: number; store: string; image?: string }[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: string;
+}): Promise<{ ok: boolean; message: string; orderId: string }> {
+  const { id, customerName, customerPhone, customerEmail, address, city, items } = payload;
+
+  const itemsByStore = new Map<string, typeof items>();
+  for (const item of items) {
+    const list = itemsByStore.get(item.store) || [];
+    list.push(item);
+    itemsByStore.set(item.store, list);
+  }
+
+  const { createOrderInSupabase } = await import("@/lib/supabase/mutations");
+
+  for (const [storeSlug, storeItems] of itemsByStore.entries()) {
+    const storeSubtotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+    const orderRecord: Order = {
+      id: itemsByStore.size > 1 ? `${id}-${storeSlug.slice(0, 4)}` : id,
+      date: new Date().toISOString().slice(0, 10),
+      customer: customerName,
+      email: customerEmail || "",
+      phone: customerPhone,
+      address,
+      city,
+      store: storeSlug,
+      total: storeSubtotal,
+      items: storeItems.map((i) => ({ productId: i.productId, qty: i.qty })),
+      status: "pending",
+    };
+
+    if (useSupabaseMutations()) {
+      await createOrderInSupabase(orderRecord);
+    }
+
+    await mutateDB((db) => {
+      db.orderStatus[orderRecord.id] = "pending";
+    });
+  }
+
+  refresh();
+  return { ok: true, message: "Order placed successfully!", orderId: id };
 }
 
 export async function deletePromoTile(id: string): Promise<void> {

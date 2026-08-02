@@ -138,6 +138,9 @@ export interface OrderItem {
 export interface Order {
   id: string;
   customer: string;
+  email?: string;
+  phone?: string;
+  address?: string;
   city: string;
   /** Store slug that fulfils this order. */
   store: string;

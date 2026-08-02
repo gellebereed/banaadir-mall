@@ -104,8 +104,17 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
   const delivery = freeThreshold > 0 && subtotal >= freeThreshold ? 0 : fee;
   const total = subtotal + delivery;
 
-  function placeOrder(e: React.FormEvent) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function placeOrder(e: React.FormEvent) {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    const orderId = `BM-${Math.floor(10000 + Math.random() * 90000)}`;
+    const fullPhone = `${selectedCountry.phoneCode} ${phone}`;
+    const destinationCity = city === "Other" ? customCity : city;
+    const fullAddress = `${district ? district + ", " : ""}${destinationCity}, ${selectedCountry.name}`;
 
     // Save address to localStorage for future orders
     try {
@@ -120,35 +129,108 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
           district,
         })
       );
+
+      // Save order to user's order history
+      const existingUserOrders = JSON.parse(localStorage.getItem("banaadir_user_orders") || "[]");
+      const newOrderEntry = {
+        id: orderId,
+        date: new Date().toISOString().slice(0, 10),
+        customer: name,
+        phone: fullPhone,
+        city: destinationCity,
+        address: fullAddress,
+        total,
+        status: "pending",
+        items: lines.map((l) => ({
+          productId: l.product.id,
+          name: l.product.name,
+          price: l.product.price,
+          qty: l.qty,
+          image: l.product.images?.[0] || l.product.art?.from,
+          selectedColor: l.color,
+          selectedSize: l.size,
+        })),
+      };
+      localStorage.setItem("banaadir_user_orders", JSON.stringify([newOrderEntry, ...existingUserOrders]));
     } catch {
-      // Ignore
+      // Ignore storage errors
     }
 
-    setPlacedOrderId(`BM-${Math.floor(10000 + Math.random() * 90000)}`);
+    try {
+      const { submitOrderAction } = await import("@/app/actions");
+      await submitOrderAction({
+        id: orderId,
+        customerName: name,
+        customerPhone: fullPhone,
+        address: fullAddress,
+        city: destinationCity,
+        items: lines.map((l) => ({
+          productId: l.product.id,
+          name: l.product.name,
+          price: l.product.price,
+          qty: l.qty,
+          store: l.product.store,
+          image: l.product.images?.[0],
+        })),
+        subtotal,
+        deliveryFee: delivery,
+        total,
+        paymentMethod: payment,
+      });
+    } catch (err) {
+      console.warn("Order submission sync warning:", err);
+    }
+
+    setPlacedOrderId(orderId);
     clearCart();
+    setIsSubmitting(false);
     window.scrollTo({ top: 0 });
   }
 
   // ── Success screen ───────────────────────────────────────────────
   if (placedOrderId) {
+    const waText = encodeURIComponent(
+      `Hello Banaadir Mall / Vendor! 🛍️\n\nI just placed order *${placedOrderId}* on Banaadir Mall.\n\n👤 *Customer:* ${name}\n📞 *Phone:* ${selectedCountry.phoneCode} ${phone}\n📍 *Delivery:* ${city === "Other" ? customCity : city}, ${selectedCountry.name}\n💰 *Total:* $${total.toFixed(2)}\n\nPlease confirm my order delivery status. Thank you!`
+    );
+
     return (
-      <div className="mx-auto flex max-w-md flex-col items-center px-4 py-20 text-center">
-        <span className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-5xl">
+      <div className="mx-auto flex max-w-lg flex-col items-center px-4 py-16 text-center animate-fade-up">
+        <span className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-5xl shadow-sm">
           🎉
         </span>
         <h1 className="mt-6 font-display text-3xl font-extrabold text-ocean-950">
-          Order placed!
+          Order Placed Successfully!
         </h1>
-        <p className="mt-3 text-slate-500">
+        <p className="mt-3 text-sm text-slate-600">
           Thank you for shopping on Banaadir Mall. Your order number is{" "}
-          <strong className="text-ocean-800">{placedOrderId}</strong>. We&apos;ve
-          sent the details to your phone.
+          <strong className="rounded-lg bg-sand-100 px-2 py-1 font-mono text-base font-bold text-ocean-900">
+            {placedOrderId}
+          </strong>.
         </p>
-        <div className="mt-8 flex gap-3">
-          <Link href="/track" className="btn-secondary !py-2.5 text-sm">
-            Track Order
+
+        {/* WhatsApp Seller Notification Button */}
+        <div className="mt-6 w-full rounded-2xl border-2 border-emerald-300 bg-emerald-50/70 p-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-900">
+            ⚡ Instant Vendor Notification
+          </p>
+          <p className="mt-1 text-xs text-emerald-700">
+            Send order confirmation directly to the vendor via WhatsApp for faster processing & live updates.
+          </p>
+          <a
+            href={`https://wa.me/252610000000?text=${waText}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700"
+          >
+            <span>💬 Notify Vendor on WhatsApp</span>
+          </a>
+        </div>
+
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link href={`/track?id=${placedOrderId}`} className="btn-primary !py-2.5 text-sm">
+            📦 Track Order Status
           </Link>
-          <Link href="/products" className="btn-primary !py-2.5 text-sm">
+          <Link href="/products" className="btn-secondary !py-2.5 text-sm">
             Keep Shopping
           </Link>
         </div>

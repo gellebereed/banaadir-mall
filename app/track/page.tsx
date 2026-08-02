@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/dashboard/StatusBadge";
-import { orders } from "@/lib/data/orders";
+import { orders as demoOrders } from "@/lib/data/orders";
 import { money, shortDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
 
@@ -22,18 +23,71 @@ const STATUS_INDEX: Record<OrderStatus, number> = {
   cancelled: -1,
 };
 
-export default function TrackPage() {
-  const [input, setInput] = useState("");
+function TrackContent() {
+  const searchParams = useSearchParams();
+  const queryId = searchParams.get("id") || "";
+
+  const [input, setInput] = useState(queryId);
   const [order, setOrder] = useState<Order | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
-  function lookup(e: React.FormEvent) {
+  async function performLookup(searchId: string) {
+    if (!searchId.trim()) return;
+    setIsSearching(true);
+    setNotFound(false);
+
+    const cleanId = searchId.trim().toLowerCase();
+
+    // 1. Check local storage user orders first
+    try {
+      const localOrders: Order[] = JSON.parse(localStorage.getItem("banaadir_user_orders") || "[]");
+      const localFound = localOrders.find((o) => o.id.toLowerCase() === cleanId);
+      if (localFound) {
+        setOrder(localFound);
+        setIsSearching(false);
+        return;
+      }
+    } catch {
+      // Ignore
+    }
+
+    // 2. Check demo/static orders
+    const demoFound = demoOrders.find((o) => o.id.toLowerCase() === cleanId);
+    if (demoFound) {
+      setOrder(demoFound);
+      setIsSearching(false);
+      return;
+    }
+
+    // 3. Fallback to API lookup
+    try {
+      const { getOrder } = await import("@/lib/api");
+      const fetched = await getOrder(cleanId);
+      if (fetched) {
+        setOrder(fetched);
+        setIsSearching(false);
+        return;
+      }
+    } catch {
+      // Ignore
+    }
+
+    setOrder(null);
+    setNotFound(true);
+    setIsSearching(false);
+  }
+
+  useEffect(() => {
+    if (queryId) {
+      setInput(queryId);
+      void performLookup(queryId);
+    }
+  }, [queryId]);
+
+  function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const found = orders.find(
-      (o) => o.id.toLowerCase() === input.trim().toLowerCase(),
-    );
-    setOrder(found ?? null);
-    setNotFound(!found);
+    void performLookup(input);
   }
 
   const reached = order ? STATUS_INDEX[order.status] : -1;
@@ -48,39 +102,42 @@ export default function TrackPage() {
         <p className="mt-2 text-sm text-slate-500">
           Enter your order number (e.g.{" "}
           <button
-            onClick={() => setInput(orders[0].id)}
+            type="button"
+            onClick={() => {
+              setInput("BM-10240");
+              void performLookup("BM-10240");
+            }}
             className="font-bold text-ocean-700 hover:underline"
           >
-            {orders[0].id}
+            BM-10240
           </button>
           ) to see where it is.
         </p>
       </div>
 
-      <form onSubmit={lookup} className="mt-6 flex gap-2">
+      <form onSubmit={handleFormSubmit} className="mt-6 flex gap-2">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="BM-10287"
-          className="input"
+          className="input font-mono text-base font-semibold"
         />
-        <button type="submit" className="btn-primary shrink-0 !py-2.5">
-          Track
+        <button type="submit" disabled={isSearching} className="btn-primary shrink-0 !py-2.5 disabled:opacity-50">
+          {isSearching ? "Searching…" : "Track Order"}
         </button>
       </form>
 
       {notFound && (
-        <p className="mt-4 rounded-xl bg-coral-100 px-4 py-3 text-sm font-semibold text-coral-700">
-          We couldn&apos;t find that order. Double-check the number and try
-          again.
-        </p>
+        <div className="mt-4 rounded-2xl border border-coral-200 bg-coral-50 p-4 text-sm font-semibold text-coral-800 animate-fade-up">
+          ⚠️ We couldn&apos;t find order &ldquo;{input}&rdquo;. Please verify your order number and try again.
+        </div>
       )}
 
       {order && (
-        <div className="card mt-8 p-6">
+        <div className="card mt-8 p-6 animate-fade-up">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand-200 pb-4">
             <div>
-              <p className="font-display text-lg font-extrabold text-ocean-950">
+              <p className="font-display text-xl font-extrabold text-ocean-950">
                 {order.id}
               </p>
               <p className="text-xs text-slate-500">
@@ -114,8 +171,8 @@ export default function TrackPage() {
                     <span
                       className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${
                         done
-                          ? "bg-ocean-700 shadow-md shadow-ocean-700/30"
-                          : "bg-sand-100"
+                          ? "bg-ocean-700 text-white shadow-md shadow-ocean-700/30"
+                          : "bg-sand-100 text-slate-400"
                       }`}
                     >
                       {step.icon}
@@ -124,8 +181,8 @@ export default function TrackPage() {
                       <p className="font-display font-bold text-ocean-950">
                         {step.label}
                         {current && (
-                          <span className="ml-2 rounded-full bg-mango-100 px-2 py-0.5 text-[10px] font-bold text-mango-800">
-                            Current
+                          <span className="ml-2 rounded-full bg-mango-100 px-2.5 py-0.5 text-[10px] font-bold text-mango-900">
+                            Current Status
                           </span>
                         )}
                       </p>
@@ -139,5 +196,13 @@ export default function TrackPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function TrackPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-slate-400">Loading order tracker…</div>}>
+      <TrackContent />
+    </Suspense>
   );
 }

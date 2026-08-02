@@ -145,7 +145,11 @@ export default async function AccountPage() {
           <tbody>
             {orders.map((o) => (
               <tr key={o.id} className="border-b border-sand-100 last:border-0 hover:bg-sand-50">
-                <td className="px-5 py-3.5 font-bold text-ocean-800">{o.id}</td>
+                <td className="px-5 py-3.5 font-bold">
+                  <Link href={`/track?id=${o.id}`} className="text-ocean-700 hover:underline">
+                    {o.id} ↗
+                  </Link>
+                </td>
                 <td className="px-5 py-3.5 text-slate-500">
                   {store ? o.customer : shortDate(o.date)}
                 </td>

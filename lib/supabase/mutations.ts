@@ -20,6 +20,7 @@ import type {
   Employee,
   EmployeeRole,
   MarketingSettings,
+  Order,
   OrderStatus,
   Product,
   Promotion,
@@ -282,6 +283,37 @@ export async function setStoreStatusInSupabase(
 // ── Orders ─────────────────────────────────────────────────────────────
 // Actual columns: id, date, customer, email, phone, address, city,
 //   store, total, items, status, created_at
+
+export async function createOrderInSupabase(order: Order): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("orders").upsert(
+      {
+        id: order.id,
+        date: order.date || new Date().toISOString().slice(0, 10),
+        customer: order.customer,
+        email: order.email || "",
+        phone: order.phone || "",
+        address: order.address || "",
+        city: order.city || "",
+        store: order.store,
+        total: order.total,
+        items: order.items || [],
+        status: order.status || "pending",
+      },
+      { onConflict: "id" }
+    );
+    if (error) {
+      console.error("[Supabase Mutations] createOrderInSupabase error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] createOrderInSupabase exception:", err);
+    return false;
+  }
+}
 
 export async function setOrderStatusInSupabase(
   orderId: string,

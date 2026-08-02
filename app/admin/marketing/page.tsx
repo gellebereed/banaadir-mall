@@ -7,9 +7,11 @@ import {
 } from "@/app/actions";
 import {
   BannerDeleteBtn,
+  BannerEditBtn,
   BannerMoveBtn,
   BannerToggleBtn,
   TileDeleteBtn,
+  TileEditBtn,
   TileToggleBtn,
 } from "@/components/dashboard/MarketingActionButtons";
 import MarketingBasicsForm from "@/components/dashboard/MarketingBasicsForm";
@@ -83,6 +85,7 @@ export default async function AdminMarketingPage() {
               <div className="flex items-center gap-2">
                 <BannerMoveBtn id={b.id} delta={-1} disabled={i === 0} />
                 <BannerMoveBtn id={b.id} delta={1} disabled={i === m.banners.length - 1} />
+                <BannerEditBtn banner={b} />
                 <BannerToggleBtn id={b.id} active={b.active} />
                 <BannerDeleteBtn id={b.id} />
               </div>
@@ -196,10 +199,11 @@ export default async function AdminMarketingPage() {
               </div>
               <div className="p-3">
                 <p className="truncate text-xs font-semibold text-slate-700">{t.sublabel}</p>
-                <div className="mt-2 flex items-center gap-2">
+                <div className="mt-2 flex items-center gap-1.5">
                   <div className="flex-1">
                     <TileToggleBtn id={t.id} active={t.active} />
                   </div>
+                  <TileEditBtn tile={t} />
                   <TileDeleteBtn id={t.id} />
                 </div>
               </div>
