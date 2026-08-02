@@ -12,13 +12,7 @@ import StoreAvatar from "./StoreAvatar";
 export default function StoreCard({ store }: { store: Store }) {
   const [bannerError, setBannerError] = useState(false);
 
-  const showBanner =
-    Boolean(store.banner) &&
-    !bannerError &&
-    !store.banner?.startsWith("/api/uploads/") &&
-    !store.banner?.includes("uspolo-banner") &&
-    !store.banner?.includes("electronics-banner") &&
-    !store.banner?.includes("perfume-banner");
+  const showBanner = Boolean(store.banner) && !bannerError;
 
   return (
     <Link

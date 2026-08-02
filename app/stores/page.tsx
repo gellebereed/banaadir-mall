@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import StoreCard from "@/components/StoreCard";
+import PublicStoresClient from "@/components/PublicStoresClient";
 import { getStores } from "@/lib/api";
 
-export const metadata: Metadata = { title: "All Stores" };
+export const metadata: Metadata = {
+  title: "All Stores & Official Brands | Banaadir Mall",
+  description: "Browse official brand stores and verified local sellers across Mogadishu, Hargeisa, Kismayo and Somalia.",
+};
 
 // Rendered per request so admin approvals/suspensions show immediately.
 export const dynamic = "force-dynamic";
@@ -16,10 +19,10 @@ export default async function StoresPage() {
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-extrabold text-ocean-950">
-            Our Stores
+            Stores & Official Brands
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {stores.length} trusted sellers from across Somalia
+            Explore {stores.length} official brand franchises and verified merchant stores on Banaadir Mall.
           </p>
         </div>
         <Link href="/sell" className="btn-primary !py-2.5 text-sm">
@@ -27,11 +30,7 @@ export default async function StoresPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {stores.map((s) => (
-          <StoreCard key={s.slug} store={s} />
-        ))}
-      </div>
+      <PublicStoresClient stores={stores} />
     </div>
   );
 }

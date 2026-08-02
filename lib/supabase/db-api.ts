@@ -44,6 +44,13 @@ const STORE_ICON_FALLBACK: Record<string, string> = {
   "banaadir-perfumes": "🧴",
 };
 
+const STORE_LOGO_FALLBACK: Record<string, string> = {
+  "altinyildiz-classics": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Alt%C4%B1ny%C1%B1ld%C1%B1z_Classics_logo.png/320px-Alt%C4%B1ny%C1%B1ld%C1%B1z_Classics_logo.png",
+  "karaca-home": "https://upload.wikimedia.org/wikipedia/commons/4/4e/Karaca_logo.png",
+  "ozdilek-home": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Ozdilek_logo.png/320px-Ozdilek_logo.png",
+  "us-polo-assn": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/U.S._Polo_Assn._logo.svg/320px-U.S._Polo_Assn._logo.svg.png",
+};
+
 async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
@@ -69,7 +76,7 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       official: s.official ?? OFFICIAL_BRAND_SLUGS.has(s.slug),
       status: (s.status || "active") as Store["status"],
       art: s.art || DEFAULT_ART,
-      logo: s.logo || undefined,
+      logo: s.logo || STORE_LOGO_FALLBACK[s.slug] || undefined,
       banner: s.banner || undefined,
     }));
   } catch {
