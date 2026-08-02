@@ -996,6 +996,11 @@ export async function submitOrderAction(payload: {
   return { ok: true, message: "Order placed successfully!", orderId: id };
 }
 
+export async function getOrderAction(id: string): Promise<Order | undefined> {
+  const { getOrder } = await import("@/lib/api");
+  return getOrder(id);
+}
+
 export async function deletePromoTile(id: string): Promise<void> {
   await requireMarketing();
 

@@ -60,10 +60,10 @@ function TrackContent() {
       return;
     }
 
-    // 3. Fallback to API lookup
+    // 3. Fallback to Server Action lookup
     try {
-      const { getOrder } = await import("@/lib/api");
-      const fetched = await getOrder(cleanId);
+      const { getOrderAction } = await import("@/app/actions");
+      const fetched = await getOrderAction(cleanId);
       if (fetched) {
         setOrder(fetched);
         setIsSearching(false);
