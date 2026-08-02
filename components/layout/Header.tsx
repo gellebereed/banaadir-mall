@@ -109,13 +109,37 @@ export default function Header({
           </form>
 
           {/* Actions */}
-          <nav className="ml-auto flex items-center gap-1 sm:gap-2">
+          <nav className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <Link
-              href={action.href}
-              className="hidden max-w-52 items-center truncate rounded-full bg-mango-100 px-4 py-2 text-sm font-bold text-mango-800 transition hover:bg-mango-200 lg:flex"
+              href="/products?sort=discount"
+              className="hidden items-center rounded-full bg-mango-100 px-3.5 py-2 text-sm font-bold text-mango-900 transition hover:bg-mango-200 lg:flex"
             >
-              {action.label}
+              ⚡ Daily Deals
             </Link>
+            {!session && (
+              <Link
+                href="/sell"
+                className="hidden items-center rounded-full border border-sand-300 bg-sand-100 px-3.5 py-2 text-sm font-bold text-slate-800 transition hover:bg-sand-200 lg:flex"
+              >
+                🏪 Sell on Banaadir
+              </Link>
+            )}
+            {session?.role === "admin" && (
+              <Link
+                href="/admin"
+                className="hidden items-center rounded-full bg-ocean-100 px-3.5 py-2 text-sm font-bold text-ocean-900 transition hover:bg-ocean-200 lg:flex"
+              >
+                🛡️ Control Panel
+              </Link>
+            )}
+            {session?.role === "seller" && (
+              <Link
+                href="/vendor"
+                className="hidden items-center rounded-full bg-ocean-100 px-3.5 py-2 text-sm font-bold text-ocean-900 transition hover:bg-ocean-200 lg:flex"
+              >
+                🏪 {storeName ?? "My Store"}
+              </Link>
+            )}
             {session ? (
               <Link
                 href="/account"
@@ -140,13 +164,12 @@ export default function Header({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               type="search"
-              placeholder="Search Banaadir Mall…"
-              className="w-full rounded-full border-2 border-ocean-700/20 bg-sand-50 py-2.5 pl-4 pr-12 text-sm outline-none focus:border-ocean-600 focus:bg-white"
+              placeholder="Search products, brands and stores…"
+              className="w-full rounded-full border border-sand-200 bg-sand-50 py-2 pl-4 pr-10 text-sm outline-none transition focus:border-ocean-600 focus:bg-white"
             />
             <button
               type="submit"
-              aria-label="Search"
-              className="absolute right-1 top-1 bottom-1 flex w-10 items-center justify-center rounded-full bg-ocean-700 text-white"
+              className="absolute right-1 top-1 bottom-1 px-3 text-slate-500 hover:text-ocean-700"
             >
               🔍
             </button>
@@ -180,9 +203,9 @@ export default function Header({
             {!session && (
               <Link
                 href="/sell"
-                className="ml-auto whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-sand-100 hover:text-ocean-800"
+                className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
               >
-                🏪 Become a Seller
+                🏪 Sell on Banaadir
               </Link>
             )}
           </div>
