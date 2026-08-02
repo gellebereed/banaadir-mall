@@ -273,6 +273,10 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
     if (error || !data) return null;
     return {
       announcement: data.announcement,
+      announcementBgColor: data.announcement_bg_color || data.announcementBgColor || "#0c2b34",
+      announcementTextColor: data.announcement_text_color || data.announcementTextColor || "#ffffff",
+      announcementScroll: data.announcement_scroll ?? data.announcementScroll ?? true,
+      announcementSpeed: data.announcement_speed || data.announcementSpeed || 25,
       heroBadge: data.hero_badge,
       heroTitleTop: data.hero_title_top,
       heroTitleHighlight: data.hero_title_highlight,

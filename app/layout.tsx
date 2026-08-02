@@ -48,6 +48,10 @@ export default async function RootLayout({
           </Suspense>
           <Header
             announcement={marketing.announcement}
+            announcementBgColor={marketing.announcementBgColor}
+            announcementTextColor={marketing.announcementTextColor}
+            announcementScroll={marketing.announcementScroll}
+            announcementSpeed={marketing.announcementSpeed}
             session={session}
             storeName={store?.name}
             categories={categories}

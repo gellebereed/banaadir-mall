@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { updateMarketing, type SaveState } from "@/app/actions";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
@@ -13,16 +13,170 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
   const [state, formAction] = useActionState(updateMarketing, INITIAL);
   useRefreshOnSuccess(state);
 
+  const [bgColor, setBgColor] = useState(marketing.announcementBgColor || "#0c2b34");
+  const [textColor, setTextColor] = useState(marketing.announcementTextColor || "#ffffff");
+  const [autoScroll, setAutoScroll] = useState(marketing.announcementScroll ?? true);
+  const [speed, setSpeed] = useState(marketing.announcementSpeed || 25);
+
+  const bgPresets = [
+    { label: "Deep Ocean", hex: "#0c2b34" },
+    { label: "Navy Blue", hex: "#0f172a" },
+    { label: "Ocean Teal", hex: "#1f6270" },
+    { label: "Emerald", hex: "#064e3b" },
+    { label: "Crimson", hex: "#881337" },
+    { label: "Dark Amber", hex: "#78350f" },
+  ];
+
+  const textPresets = [
+    { label: "Pure White", hex: "#ffffff" },
+    { label: "Mango Gold", hex: "#fde68a" },
+    { label: "Light Cyan", hex: "#e0f2fe" },
+    { label: "Mint Green", hex: "#d1fae5" },
+    { label: "Soft Coral", hex: "#fecdd3" },
+  ];
+
   return (
     <form action={formAction} className="space-y-5">
       <section className="card p-5 sm:p-6">
-        <h2 className="font-display font-bold text-ocean-950">📢 Top of the page</h2>
-        <div className="mt-4 grid gap-4">
+        <h2 className="font-display font-bold text-ocean-950">📢 Top Announcement Bar</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Customize the auto-scrolling header banner. Format text with <strong>**bold**</strong>, <em>*italics*</em>, and emojis.
+        </p>
+
+        <div className="mt-4 grid gap-5">
           <div>
-            <label htmlFor="announcement" className="label">Announcement bar text</label>
-            <input id="announcement" name="announcement" required defaultValue={marketing.announcement} className="input" />
+            <label htmlFor="announcement" className="label">Announcement Text</label>
+            <input
+              id="announcement"
+              name="announcement"
+              required
+              defaultValue={marketing.announcement}
+              placeholder="e.g. **FREE DELIVERY** in Mogadishu on orders over $25 · Pay with *EVC Plus, Zaad & eDahab*"
+              className="input"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Tip: Surround words with <code>**bold text**</code> to make them bold, or <code>*italic text*</code> to italicize.
+            </p>
           </div>
+
+          {/* Color Customization */}
+          <div className="grid gap-4 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="announcementBgColor" className="label font-semibold text-slate-700">
+                Background Color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={bgColor}
+                  onChange={(e) => setBgColor(e.target.value)}
+                  className="h-10 w-12 cursor-pointer rounded-lg border-0 p-0"
+                />
+                <input
+                  type="text"
+                  id="announcementBgColor"
+                  name="announcementBgColor"
+                  value={bgColor}
+                  onChange={(e) => setBgColor(e.target.value)}
+                  className="input !py-2 font-mono text-xs uppercase"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {bgPresets.map((p) => (
+                  <button
+                    key={p.hex}
+                    type="button"
+                    onClick={() => setBgColor(p.hex)}
+                    className="flex items-center gap-1 rounded-full border border-sand-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 transition hover:border-ocean-400"
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.hex }} />
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="announcementTextColor" className="label font-semibold text-slate-700">
+                Text Color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                  className="h-10 w-12 cursor-pointer rounded-lg border-0 p-0"
+                />
+                <input
+                  type="text"
+                  id="announcementTextColor"
+                  name="announcementTextColor"
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                  className="input !py-2 font-mono text-xs uppercase"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {textPresets.map((p) => (
+                  <button
+                    key={p.hex}
+                    type="button"
+                    onClick={() => setTextColor(p.hex)}
+                    className="flex items-center gap-1 rounded-full border border-sand-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 transition hover:border-ocean-400"
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ backgroundColor: p.hex }} />
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Auto-scroll & Speed controls */}
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-sand-200 bg-sand-50 p-4">
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                name="announcementScroll"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
+                className="h-4 w-4 accent-ocean-700"
+              />
+              <span>🔄 Enable continuous auto-scrolling marquee</span>
+            </label>
+
+            {autoScroll && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="announcementSpeed" className="text-xs font-semibold text-slate-600">
+                  Speed:
+                </label>
+                <select
+                  id="announcementSpeed"
+                  name="announcementSpeed"
+                  value={speed}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
+                  className="input !py-1.5 !px-3 text-xs"
+                >
+                  <option value={15}>⚡ Fast (15s)</option>
+                  <option value={25}>✨ Medium Smooth (25s)</option>
+                  <option value={35}>🐢 Relaxed Slow (35s)</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Live Preview Box */}
           <div>
+            <span className="label text-xs font-bold uppercase tracking-wider text-slate-400">Live Preview</span>
+            <div
+              className="mt-1 overflow-hidden rounded-xl py-2 px-4 text-center text-xs font-semibold shadow-xs"
+              style={{ backgroundColor: bgColor, color: textColor }}
+            >
+              <span>{marketing.announcement}</span>
+            </div>
+          </div>
+
+          <div className="pt-2">
             <label htmlFor="heroBadge" className="label">Hero badge</label>
             <input id="heroBadge" name="heroBadge" required defaultValue={marketing.heroBadge} className="input" />
           </div>

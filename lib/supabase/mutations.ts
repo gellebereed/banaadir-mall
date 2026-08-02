@@ -431,6 +431,10 @@ export async function updateMarketingInSupabase(
       {
         id: 1,
         announcement: settings.announcement,
+        announcement_bg_color: settings.announcementBgColor,
+        announcement_text_color: settings.announcementTextColor,
+        announcement_scroll: settings.announcementScroll,
+        announcement_speed: settings.announcementSpeed,
         hero_badge: settings.heroBadge,
         hero_title_top: settings.heroTitleTop,
         hero_title_highlight: settings.heroTitleHighlight,

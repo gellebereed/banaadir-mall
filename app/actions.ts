@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -664,6 +664,10 @@ export async function updateMarketing(
 
   const marketing = {
     announcement: String(formData.get("announcement")),
+    announcementBgColor: String(formData.get("announcementBgColor") ?? "#0c2b34").trim(),
+    announcementTextColor: String(formData.get("announcementTextColor") ?? "#ffffff").trim(),
+    announcementScroll: formData.get("announcementScroll") === "on",
+    announcementSpeed: Math.max(5, Math.min(60, Number(formData.get("announcementSpeed")) || 25)),
     heroBadge: String(formData.get("heroBadge")),
     heroTitleTop: String(formData.get("heroTitleTop")),
     heroTitleHighlight: String(formData.get("heroTitleHighlight")),

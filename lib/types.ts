@@ -287,6 +287,14 @@ export interface FlashRequest {
 export interface MarketingSettings {
   /** Text in the bar above the header. */
   announcement: string;
+  /** Announcement bar background color hex (e.g. #0c2b34). */
+  announcementBgColor?: string;
+  /** Announcement bar text color hex (e.g. #ffffff). */
+  announcementTextColor?: string;
+  /** Whether the announcement bar continuously auto-scrolls. Default true. */
+  announcementScroll?: boolean;
+  /** Marquee auto-scroll speed in seconds (e.g. 15 to 40). Default 25. */
+  announcementSpeed?: number;
   heroBadge: string;
   heroTitleTop: string;
   heroTitleHighlight: string;

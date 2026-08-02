@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import AnnouncementBar from "./AnnouncementBar";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
 import type { Category } from "@/lib/types";
@@ -20,21 +21,21 @@ function primaryAction(session: Session | null, storeName?: string) {
   return { href: "/sell", label: "Sell on Banaadir" };
 }
 
-/**
- * Site header: announcement bar (text set in /admin/marketing), logo +
- * search + actions, and a category strip on desktop. On mobile the search
- * collapses under the logo and the category strip becomes a slide-down menu.
- *
- * The dashboard link and account chip react to the signed-in session, so a
- * seller never sees a "Sell on Banaadir" pitch or a dead admin link.
- */
 export default function Header({
   announcement,
+  announcementBgColor,
+  announcementTextColor,
+  announcementScroll = true,
+  announcementSpeed = 25,
   session,
   storeName,
   categories: dynamicCategories,
 }: {
   announcement: string;
+  announcementBgColor?: string;
+  announcementTextColor?: string;
+  announcementScroll?: boolean;
+  announcementSpeed?: number;
   session: Session | null;
   storeName?: string;
   categories?: Category[];
@@ -56,9 +57,13 @@ export default function Header({
   return (
     <header className="sticky top-0 z-40">
       {/* Announcement bar */}
-      <div className="bg-ocean-950 px-4 py-1.5 text-center text-xs font-medium text-ocean-100">
-        {announcement}
-      </div>
+      <AnnouncementBar
+        announcement={announcement}
+        bgColor={announcementBgColor}
+        textColor={announcementTextColor}
+        autoScroll={announcementScroll}
+        speed={announcementSpeed}
+      />
 
       {/* Main bar */}
       <div className="border-b border-sand-200 bg-white/95 backdrop-blur">
