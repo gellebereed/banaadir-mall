@@ -209,6 +209,12 @@ export type OrderStatus =
 export interface OrderItem {
   productId: string;
   qty: number;
+  store?: string;
+  name?: string;
+  price?: number;
+  image?: string;
+  selectedColor?: string;
+  selectedSize?: string;
 }
 
 export interface Order {

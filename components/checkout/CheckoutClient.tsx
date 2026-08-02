@@ -146,6 +146,7 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
           name: l.product.name,
           price: l.product.price,
           qty: l.qty,
+          store: l.product.store,
           image: l.product.images?.[0] || l.product.art?.from,
           selectedColor: l.color,
           selectedSize: l.size,

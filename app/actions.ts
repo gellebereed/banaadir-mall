@@ -1090,6 +1090,47 @@ export async function getOrderAction(id: string): Promise<Order | undefined> {
   return getOrder(id);
 }
 
+export async function getUserOrdersAction(query: {
+  name?: string;
+  phone?: string;
+  email?: string;
+}): Promise<Order[]> {
+  const { getOrders } = await import("@/lib/api");
+  const allOrders = await getOrders();
+  if (!query.name && !query.phone && !query.email) return [];
+
+  const cleanName = (query.name || "").trim().toLowerCase();
+  const cleanPhone = (query.phone || "").replace(/\D/g, "");
+  const cleanEmail = (query.email || "").trim().toLowerCase();
+
+  return allOrders.filter((o) => {
+    if (cleanEmail && o.email && o.email.toLowerCase() === cleanEmail) return true;
+    if (cleanPhone && o.phone && o.phone.replace(/\D/g, "").includes(cleanPhone)) return true;
+    if (cleanName && o.customer.toLowerCase().includes(cleanName)) return true;
+    return false;
+  });
+}
+
+export async function getBrandOrderStatusesAction(
+  baseOrderId: string
+): Promise<Record<string, { status: OrderStatus; store: string; total: number }>> {
+  const { getOrders } = await import("@/lib/api");
+  const allOrders = await getOrders();
+
+  const cleanBase = baseOrderId.trim().toLowerCase();
+  const matches = allOrders.filter(
+    (o) => o.id.toLowerCase() === cleanBase || o.id.toLowerCase().startsWith(`${cleanBase}-`)
+  );
+
+  const result: Record<string, { status: OrderStatus; store: string; total: number }> = {};
+  for (const o of matches) {
+    if (o.store) {
+      result[o.store] = { status: o.status, store: o.store, total: o.total };
+    }
+  }
+  return result;
+}
+
 export async function deletePromoTile(id: string): Promise<void> {
   await requireMarketing();
 

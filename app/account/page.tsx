@@ -2,19 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrders, getStore, getVendorStats } from "@/lib/api";
-import { money, shortDate } from "@/lib/format";
+import { money } from "@/lib/format";
 import { getSession } from "@/lib/session";
 import SignOutButton from "@/components/SignOutButton";
-import StatusBadge from "@/components/dashboard/StatusBadge";
 import StoreAvatar from "@/components/StoreAvatar";
+import AccountOrdersClient from "@/components/account/AccountOrdersClient";
 
 export const metadata: Metadata = { title: "My Account" };
 
-/**
- * Account page for the signed-in user. What it shows depends on the role:
- * customers get their order history, sellers get a link into their store
- * dashboard with live numbers, admins get the control panel.
- */
 export default async function AccountPage() {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -25,10 +20,7 @@ export default async function AccountPage() {
   const store = isSeller && session.store ? await getStore(session.store) : undefined;
   const stats = store ? await getVendorStats(store.slug) : undefined;
 
-  // Customers see the orders they placed; sellers see their store's orders.
-  const orders = (await getOrders())
-    .filter((o) => (store ? o.store === store.slug : o.customer === session.name))
-    .slice(0, 6);
+  const serverOrders = await getOrders();
 
   const quickLinks = isAdmin
     ? [
@@ -72,7 +64,7 @@ export default async function AccountPage() {
               ? `🛡️ Administrator${session.access ? ` · ${session.access}` : ""}`
               : isSeller
                 ? `🏪 Store owner${session.access ? ` · ${session.access}` : ""} · ${stats?.productCount ?? 0} products`
-                : `⭐ Gold member · ${orders.length} orders`}
+                : `⭐ Gold member`}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -127,50 +119,12 @@ export default async function AccountPage() {
         ))}
       </div>
 
-      {/* Orders */}
-      <h2 className="mb-4 mt-10 font-display text-xl font-bold text-ocean-950">
-        {store ? "Recent Store Orders" : "Recent Orders"}
-      </h2>
-      <div className="card overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
-          <thead>
-            <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="px-5 py-3">Order</th>
-              <th className="px-5 py-3">{store ? "Customer" : "Date"}</th>
-              <th className="px-5 py-3">City</th>
-              <th className="px-5 py-3">Total</th>
-              <th className="px-5 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id} className="border-b border-sand-100 last:border-0 hover:bg-sand-50">
-                <td className="px-5 py-3.5 font-bold">
-                  <Link href={`/track?id=${o.id}`} className="text-ocean-700 hover:underline">
-                    {o.id} ↗
-                  </Link>
-                </td>
-                <td className="px-5 py-3.5 text-slate-500">
-                  {store ? o.customer : shortDate(o.date)}
-                </td>
-                <td className="px-5 py-3.5 text-slate-500">{o.city}</td>
-                <td className="px-5 py-3.5 font-semibold">{money(o.total)}</td>
-                <td className="px-5 py-3.5"><StatusBadge status={o.status} /></td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
-                  No orders yet —{" "}
-                  <Link href="/products" className="font-semibold text-ocean-700">
-                    start shopping
-                  </Link>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Orders with per-brand status breakdown */}
+      <AccountOrdersClient
+        userName={session.name}
+        userEmail={session.email}
+        serverOrders={serverOrders}
+      />
     </div>
   );
 }

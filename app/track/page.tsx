@@ -31,6 +31,9 @@ function TrackContent() {
   const [order, setOrder] = useState<Order | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [brandStatuses, setBrandStatuses] = useState<
+    Record<string, { status: OrderStatus; store: string; total: number }>
+  >({});
 
   async function performLookup(searchId: string) {
     if (!searchId.trim()) return;
@@ -38,44 +41,57 @@ function TrackContent() {
     setNotFound(false);
 
     const cleanId = searchId.trim().toLowerCase();
+    let foundOrder: Order | null = null;
 
     // 1. Check local storage user orders first
     try {
       const localOrders: Order[] = JSON.parse(localStorage.getItem("banaadir_user_orders") || "[]");
       const localFound = localOrders.find((o) => o.id.toLowerCase() === cleanId);
       if (localFound) {
-        setOrder(localFound);
-        setIsSearching(false);
-        return;
+        foundOrder = localFound;
       }
     } catch {
       // Ignore
     }
 
     // 2. Check demo/static orders
-    const demoFound = demoOrders.find((o) => o.id.toLowerCase() === cleanId);
-    if (demoFound) {
-      setOrder(demoFound);
-      setIsSearching(false);
-      return;
+    if (!foundOrder) {
+      const demoFound = demoOrders.find((o) => o.id.toLowerCase() === cleanId);
+      if (demoFound) {
+        foundOrder = demoFound;
+      }
     }
 
     // 3. Fallback to Server Action lookup
-    try {
-      const { getOrderAction } = await import("@/app/actions");
-      const fetched = await getOrderAction(cleanId);
-      if (fetched) {
-        setOrder(fetched);
-        setIsSearching(false);
-        return;
+    if (!foundOrder) {
+      try {
+        const { getOrderAction } = await import("@/app/actions");
+        const fetched = await getOrderAction(cleanId);
+        if (fetched) {
+          foundOrder = fetched;
+        }
+      } catch {
+        // Ignore
       }
-    } catch {
-      // Ignore
     }
 
-    setOrder(null);
-    setNotFound(true);
-    setIsSearching(false);
+    if (foundOrder) {
+      setOrder(foundOrder);
+      setIsSearching(false);
+
+      // Fetch per-brand live statuses from backend
+      try {
+        const { getBrandOrderStatusesAction } = await import("@/app/actions");
+        const statuses = await getBrandOrderStatusesAction(foundOrder.id);
+        setBrandStatuses(statuses);
+      } catch {
+        // Ignore
+      }
+    } else {
+      setOrder(null);
+      setNotFound(true);
+      setIsSearching(false);
+    }
   }
 
   useEffect(() => {
@@ -91,6 +107,16 @@ function TrackContent() {
   }
 
   const reached = order ? STATUS_INDEX[order.status] : -1;
+
+  // Group order items by vendor store / brand
+  const itemsWithStore = order?.items || [];
+  const groupedStores: Record<string, typeof itemsWithStore> = {};
+  itemsWithStore.forEach((item) => {
+    const storeKey = item.store || order?.store || "banaadir-mall";
+    groupedStores[storeKey] = groupedStores[storeKey] || [];
+    groupedStores[storeKey].push(item);
+  });
+  const storeEntries = Object.entries(groupedStores);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -134,11 +160,12 @@ function TrackContent() {
       )}
 
       {order && (
-        <div className="card mt-8 p-6 animate-fade-up">
+        <div className="card mt-8 p-6 animate-fade-up space-y-6">
+          {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand-200 pb-4">
             <div>
               <p className="font-display text-xl font-extrabold text-ocean-950">
-                {order.id}
+                Order #{order.id}
               </p>
               <p className="text-xs text-slate-500">
                 Placed {shortDate(order.date)} · Deliver to {order.city} ·{" "}
@@ -148,6 +175,7 @@ function TrackContent() {
             <StatusBadge status={order.status} />
           </div>
 
+          {/* Timeline Journey */}
           {order.status === "cancelled" ? (
             <p className="mt-5 text-sm text-slate-500">
               This order was cancelled. If that doesn&apos;t look right,
@@ -192,6 +220,46 @@ function TrackContent() {
                 );
               })}
             </ol>
+          )}
+
+          {/* Per-Vendor Brand Status Breakdown */}
+          {storeEntries.length > 0 && (
+            <div className="border-t border-sand-200 pt-6">
+              <h3 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400 mb-3">
+                Per-Brand Delivery Status ({storeEntries.length})
+              </h3>
+              <div className="space-y-3">
+                {storeEntries.map(([storeSlug, storeItems]) => {
+                  const storeName = storeSlug.replace(/-/g, " ").toUpperCase();
+                  const brandStatus = brandStatuses[storeSlug]?.status || order.status;
+
+                  return (
+                    <div
+                      key={storeSlug}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sand-50 p-4 border border-sand-200"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ocean-900 text-white font-bold text-sm">
+                          🏪
+                        </span>
+                        <div>
+                          <p className="font-display text-sm font-bold text-ocean-950">
+                            {storeName}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {storeItems.length} item{storeItems.length === 1 ? "" : "s"} in this brand parcel
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={brandStatus} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}
