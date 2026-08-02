@@ -227,6 +227,13 @@ export interface Banner {
   link: string;
   /** Uploaded artwork; falls back to the gradient below. */
   image?: string;
+  /**
+   * Optional portrait artwork for phones. The desktop frame is 2.67:1 but
+   * the mobile frame is 1.25:1, so one wide image loses most of its sides
+   * on a phone. Supplying this is what separates a banner that looks
+   * designed from one that looks cropped.
+   */
+  mobileImage?: string;
   from: string;
   to: string;
   active: boolean;

@@ -69,6 +69,18 @@ export default function BannerCarousel({ banners }: { banners: Banner[] }) {
                 : { background: `linear-gradient(120deg, ${active.from}, ${active.to})` }
             }
           >
+            {/* Portrait artwork on phones, wide artwork from `sm` up. Falls
+                back to the wide image when no mobile version was supplied. */}
+            {active.mobileImage && (
+              <Image
+                src={active.mobileImage}
+                alt={active.title || ""}
+                fill
+                sizes="100vw"
+                priority
+                className={`sm:hidden ${contain ? "object-contain" : "object-cover"}`}
+              />
+            )}
             {active.image && (
               <Image
                 src={active.image}
@@ -76,7 +88,9 @@ export default function BannerCarousel({ banners }: { banners: Banner[] }) {
                 fill
                 sizes="(max-width: 1280px) 100vw, 1280px"
                 priority
-                className={contain ? "object-contain" : "object-cover"}
+                className={`${active.mobileImage ? "hidden sm:block" : ""} ${
+                  contain ? "object-contain" : "object-cover"
+                }`}
               />
             )}
 

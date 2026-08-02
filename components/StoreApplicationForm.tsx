@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { signUpSeller, type AuthActionState } from "@/app/auth-actions";
 
@@ -7,6 +8,29 @@ const INITIAL_STATE: AuthActionState = { error: null };
 
 export default function StoreApplicationForm() {
   const [state, formAction, pending] = useActionState(signUpSeller, INITIAL_STATE);
+
+  if (state.success) {
+    return (
+      <div className="mt-6 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-6 text-center shadow-sm animate-fade-up">
+        <span className="text-5xl">🎉</span>
+        <h2 className="mt-3 font-display text-xl font-bold text-emerald-950">Store Application Received!</h2>
+        <p className="mt-2 text-sm font-medium text-emerald-800">
+          Thank you for applying to sell on Banaadir Mall. Your store application is currently <strong>awaiting admin approval</strong>.
+        </p>
+        <p className="mt-1 text-xs text-emerald-600">
+          Our management team reviews applications promptly. Once approved by the admin, you will receive access to your seller dashboard.
+        </p>
+        <div className="mt-5 flex justify-center gap-3">
+          <Link href="/products" className="btn-primary !py-2.5 text-sm">
+            Browse Storefront
+          </Link>
+          <Link href="/" className="btn-secondary !py-2.5 text-sm">
+            Return Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form action={formAction} className="mt-6 grid gap-4 sm:grid-cols-2">

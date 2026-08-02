@@ -95,9 +95,34 @@ export default async function AdminMarketingPage() {
             + Add a banner
           </summary>
           <form action={saveBanner} className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <span className="label">Artwork</span>
-              <PhotoPicker name="image" multiple={false} label="Upload banner image" hint="Wide images work best (about 1600 × 500)" />
+            <div className="sm:col-span-2 rounded-xl border border-ocean-200 bg-ocean-50/60 px-4 py-3 text-xs text-ocean-900">
+              <p className="font-bold">📐 Artwork sizes</p>
+              <ul className="mt-1.5 space-y-1">
+                <li>
+                  <strong>Desktop — 1600 × 600 px</strong> (ratio 8:3). This is
+                  the exact frame, so nothing gets cropped.
+                </li>
+                <li>
+                  <strong>Mobile — 1000 × 800 px</strong> (ratio 5:4). Phones use
+                  a much squarer frame; without this, a wide banner loses most of
+                  its left and right edges.
+                </li>
+                <li>
+                  Keep logos and text in the middle <strong>60%</strong>, save as
+                  JPG or WebP under 300 KB.
+                </li>
+              </ul>
+            </div>
+            <div>
+              <span className="label">Desktop artwork · 1600 × 600</span>
+              <PhotoPicker name="image" multiple={false} label="Upload desktop banner" hint="8:3 wide · JPG or WebP" />
+            </div>
+            <div>
+              <span className="label">
+                Mobile artwork · 1000 × 800{" "}
+                <span className="font-normal text-slate-400">(optional)</span>
+              </span>
+              <PhotoPicker name="mobileImage" multiple={false} label="Upload mobile banner" hint="5:4 · falls back to desktop" />
             </div>
             <div className="sm:col-span-2 rounded-xl bg-ocean-50 px-4 py-3 text-xs text-ocean-900">
               💡 <strong>Text is optional.</strong> If your artwork already
@@ -216,7 +241,12 @@ export default async function AdminMarketingPage() {
             </div>
             <div className="sm:col-span-2">
               <span className="label">Optional image</span>
-              <PhotoPicker name="image" multiple={false} label="Upload tile image" hint="Square works best" />
+              <PhotoPicker
+                name="image"
+                multiple={false}
+                label="Upload tile image · 800 × 300"
+                hint="8:3 · keep the subject on the right, text sits on the left"
+              />
             </div>
             <div className="sm:col-span-2">
               <SubmitButton pendingLabel="Adding…">Add Tile</SubmitButton>

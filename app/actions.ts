@@ -770,6 +770,7 @@ export async function saveBanner(formData: FormData): Promise<void> {
   await requireMarketing();
   const id = String(formData.get("id") ?? "");
   const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
+  const [mobileImage] = await saveImages(filesFrom(formData, "mobileImage"), "marketing");
 
   if (useSupabaseMutations()) {
     const { getMarketingSettings } = await import("@/lib/api");
@@ -784,12 +785,13 @@ export async function saveBanner(formData: FormData): Promise<void> {
       to: String(formData.get("to") ?? "#fb8a0e"),
       fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
       image,
+      mobileImage,
       active: true,
     };
     const banners = [...current.banners];
     const existingIndex = banners.findIndex((b) => b.id === id);
     if (existingIndex >= 0) {
-      banners[existingIndex] = { ...banners[existingIndex], ...next, image: image ?? banners[existingIndex].image };
+      banners[existingIndex] = { ...banners[existingIndex], ...next, image: image ?? banners[existingIndex].image, mobileImage: mobileImage ?? banners[existingIndex].mobileImage };
     } else {
       banners.push(next);
     }
@@ -806,6 +808,7 @@ export async function saveBanner(formData: FormData): Promise<void> {
         to: String(formData.get("to") ?? "#fb8a0e"),
         fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
         image,
+        mobileImage,
         active: true,
       };
       const existing = db.marketing.banners.find((b) => b.id === id);
@@ -813,6 +816,7 @@ export async function saveBanner(formData: FormData): Promise<void> {
         Object.assign(existing, next, {
           // Keep the current artwork unless a new file was uploaded.
           image: image ?? existing.image,
+        mobileImage: mobileImage ?? existing.mobileImage,
           active: existing.active,
         });
       } else {

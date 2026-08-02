@@ -52,6 +52,7 @@ export interface DB {
   /** Seller applications to join the flash-deal campaign. */
   flashRequests: FlashRequest[];
   categories?: Category[];
+  stores?: Store[];
 }
 
 /** Defaults — must match the storefront's original hard-coded content. */

@@ -18,7 +18,7 @@ function primaryAction(session: Session | null, storeName?: string) {
   if (session?.role === "seller") {
     return { href: "/vendor", label: `🏪 ${storeName ?? "My Store"}` };
   }
-  return { href: "/sell", label: "Sell on Banaadir" };
+  return { href: "/products?sort=discount", label: "⚡ Daily Deals" };
 }
 
 export default function Header({
@@ -177,6 +177,14 @@ export default function Header({
             >
               ✦ All Stores
             </Link>
+            {!session && (
+              <Link
+                href="/sell"
+                className="ml-auto whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-sand-100 hover:text-ocean-800"
+              >
+                🏪 Become a Seller
+              </Link>
+            )}
           </div>
         </div>
       </div>

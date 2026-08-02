@@ -19,8 +19,9 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
 export interface AuthActionState {
-  error: string | null;
+  error?: string | null;
   success?: boolean;
+  message?: string;
 }
 
 export type SignInState = AuthActionState;
@@ -203,8 +204,6 @@ export async function signUpSeller(
     try {
       const supabase = await createClient();
 
-      let user = null;
-
       // 1. Create auth user in Supabase or authenticate existing user
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
@@ -220,7 +219,6 @@ export async function signUpSeller(
       });
 
       if (authErr) {
-        // If user already exists, authenticate with password and upgrade account to seller
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -229,14 +227,11 @@ export async function signUpSeller(
         if (signInErr || !signInData.user) {
           return {
             error: authErr.message.toLowerCase().includes("already registered")
-              ? "An account with this email already exists. Please verify your password to register your store."
+              ? "An account with this email already exists. Please verify your password to submit your store application."
               : authErr.message,
           };
         }
 
-        user = signInData.user;
-
-        // Upgrade user metadata to seller role and store slug
         await supabase.auth.updateUser({
           data: {
             name: ownerName,
@@ -245,11 +240,9 @@ export async function signUpSeller(
             phone,
           },
         });
-      } else {
-        user = authData.user;
       }
 
-      // 2. Insert store into Supabase stores table
+      // 2. Insert store into Supabase stores table with status 'pending'
       await supabase.from("stores").upsert(
         {
           id: `store-${Date.now()}`,
@@ -260,48 +253,46 @@ export async function signUpSeller(
           owner: ownerName,
           location: city || "Mogadishu",
           category: category || "general",
-          status: "active",
+          status: "pending",
         },
         { onConflict: "slug" }
       );
-
-      if (user) {
-        const session: Session = {
-          name: ownerName,
-          email,
-          role: "seller",
-          store: storeSlug,
-        };
-        const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-          path: "/",
-          maxAge: 60 * 60 * 24 * 7,
-          sameSite: "lax",
-        });
-        redirect("/vendor");
-      }
     } catch (err: unknown) {
-      if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) {
-        throw err;
-      }
       return { error: (err as Error).message || "Seller sign up failed." };
     }
   }
 
-  // Fallback demo seller session
-  const session: Session = {
-    name: ownerName,
-    email,
-    role: "seller",
-    store: storeSlug,
-  };
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
+  // Also save to local DB as fallback/cache
+  const { mutateDB } = await import("@/lib/db");
+  await mutateDB((db) => {
+    db.stores = db.stores || [];
+    const existing = db.stores.find((s) => s.slug === storeSlug);
+    if (!existing) {
+      db.stores.push({
+        slug: storeSlug,
+        name: storeName,
+        tagline: about.slice(0, 100) || "Quality products & local service",
+        city: city || "Mogadishu",
+        category: category || "general",
+        icon: "🏪",
+        art: { from: "#e0f2fe", to: "#bae6fd" },
+        rating: 5.0,
+        reviewCount: 1,
+        followers: 1,
+        joinedYear: 2026,
+        verified: false,
+        official: false,
+        status: "pending",
+      });
+    } else {
+      existing.status = "pending";
+    }
   });
-  redirect("/vendor");
+
+  return {
+    success: true,
+    message: "🎉 Your store application has been submitted! It is currently awaiting admin review.",
+  };
 }
 
 export async function signOut(): Promise<void> {
