@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { money } from "@/lib/format";
 import ColorPickerControl from "@/components/dashboard/ColorPickerControl";
+import { checkBarcode } from "@/lib/barcode";
 import { compressImageFile } from "@/lib/image-compress";
 import { colorSwatch } from "@/lib/product-utils";
 import type { Variant } from "@/lib/types";
@@ -109,6 +110,18 @@ export default function VariantEditor({
   }
 
   const totalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+
+  /**
+   * A barcode identifies exactly one item, so two variants sharing one is
+   * always a mistake — usually a copy-paste while filling the rows in. Flag
+   * it here; the server and the database both reject it as well.
+   */
+  const duplicateBarcodes = new Set(
+    variants
+      .map((v) => checkBarcode(v.barcode).value)
+      .filter(Boolean)
+      .filter((code, i, all) => all.indexOf(code) !== i),
+  );
 
   return (
     <div>
@@ -221,6 +234,72 @@ export default function VariantEditor({
                       Remove
                     </button>
                   </div>
+                </div>
+
+                {/*
+                  Odoo identity for THIS colour/size. In Odoo these live on
+                  product.product, and it is the variant's barcode — not the
+                  product's — that a scanner at the counter resolves to.
+                */}
+                <div className="mt-3 grid gap-3 border-t border-sand-100 pt-3 sm:grid-cols-2">
+                  {(() => {
+                    const barcodeCheck = checkBarcode(v.barcode);
+                    const isDuplicate =
+                      Boolean(barcodeCheck.value) && duplicateBarcodes.has(barcodeCheck.value);
+                    const isBad = Boolean(v.barcode) && (!barcodeCheck.valid || isDuplicate);
+                    return (
+                      <>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-slate-500">
+                            SKU / internal reference
+                          </span>
+                          <input
+                            value={v.sku ?? ""}
+                            onChange={(e) => update(v.id, { sku: e.target.value })}
+                            placeholder={`e.g. ${
+                              [v.color, v.size].filter(Boolean).join("-").toUpperCase() ||
+                              "REF-001"
+                            }`}
+                            spellCheck={false}
+                            className="input !py-2 font-mono text-sm uppercase"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-slate-500">
+                            Barcode (EAN / UPC)
+                          </span>
+                          <input
+                            value={v.barcode ?? ""}
+                            onChange={(e) => update(v.id, { barcode: e.target.value })}
+                            placeholder="Scan or type"
+                            spellCheck={false}
+                            className={`input !py-2 font-mono text-sm ${
+                              isBad ? "!border-coral-500" : ""
+                            }`}
+                          />
+                          {isDuplicate ? (
+                            <span className="mt-1 block text-xs font-semibold text-coral-600">
+                              This barcode is on another variant — each one needs its own.
+                            </span>
+                          ) : v.barcode && !barcodeCheck.valid ? (
+                            <span className="mt-1 block text-xs font-semibold text-coral-600">
+                              {barcodeCheck.error}
+                            </span>
+                          ) : v.barcode && barcodeCheck.symbology &&
+                            barcodeCheck.symbology !== "INTERNAL" ? (
+                            <span className="mt-1 block text-xs font-semibold text-emerald-600">
+                              ✓ {barcodeCheck.symbology}
+                            </span>
+                          ) : (
+                            <span className="mt-1 block text-xs text-slate-400">
+                              Leave empty to fall back to the product&apos;s barcode.
+                            </span>
+                          )}
+                        </label>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Variant photos: saved ones (reorderable) + new previews */}

@@ -3,12 +3,19 @@ import Link from "next/link";
 import { toggleProductHidden } from "@/app/actions";
 import ProductImage from "@/components/ProductImage";
 import { getBaseProductsByStore, getDiscountMap } from "@/lib/api";
+import { sellableUnits } from "@/lib/odoo/mapping";
 import { hasVariants, totalStock } from "@/lib/product-utils";
 import { can } from "@/lib/auth";
 import { compact, money } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
+import type { Product } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Products" };
+
+/** How many of a product's sellable units carry a barcode. */
+function codedUnits(product: Product): number {
+  return sellableUnits(product).filter((u) => u.barcode).length;
+}
 
 /** Seller product management: edit, hide/show, add. */
 export default async function VendorProductsPage() {
@@ -21,6 +28,12 @@ export default async function VendorProductsPage() {
   ]);
   const mayEdit = can(session, "products");
   const discountedCount = Object.keys(discounts).length;
+
+  // Catalogue readiness. Every unit without a barcode is one a stocktake
+  // can't scan and one the Odoo sync will have to match by hand, so the
+  // number is worth showing before it grows.
+  const units = products.flatMap(sellableUnits);
+  const unitsWithoutBarcode = units.filter((u) => !u.barcode).length;
 
   return (
     <div>
@@ -52,6 +65,15 @@ export default async function VendorProductsPage() {
         </p>
       )}
 
+      {unitsWithoutBarcode > 0 && mayEdit && (
+        <p className="mt-4 rounded-xl bg-ocean-50 px-4 py-3 text-sm text-ocean-900">
+          🏷️ <strong>{unitsWithoutBarcode}</strong> of your{" "}
+          <strong>{units.length}</strong> sellable items have no barcode yet.
+          Adding them now means stock can be scanned instead of counted by
+          hand — and matched automatically when the shop is connected to Odoo.
+        </p>
+      )}
+
       {!mayEdit && (
         <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
           👁️ Your account has view-only access to products. Ask a manager for
@@ -64,6 +86,7 @@ export default async function VendorProductsPage() {
           <thead>
             <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="px-5 py-3">Product</th>
+              <th className="px-5 py-3">Reference / Barcode</th>
               <th className="px-5 py-3">Price</th>
               <th className="px-5 py-3">Stock</th>
               <th className="px-5 py-3">Sold</th>
@@ -93,6 +116,29 @@ export default async function VendorProductsPage() {
                       )}
                     </div>
                   </div>
+                </td>
+                {/*
+                  The identity column. "Not set" is deliberately visible
+                  rather than blank — an uncoded product is the one that will
+                  need reconciling by hand when Odoo is connected, and it can
+                  only be fixed while someone still knows what it is.
+                */}
+                <td className="px-5 py-3.5">
+                  {p.internalReference ? (
+                    <p className="font-mono text-xs font-semibold text-slate-700">
+                      {p.internalReference}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] font-semibold text-mango-600">No reference</p>
+                  )}
+                  {codedUnits(p) > 0 ? (
+                    <p className="font-mono text-[11px] text-slate-400">
+                      {p.barcode ??
+                        `${codedUnits(p)}/${sellableUnits(p).length} variants coded`}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">No barcode</p>
+                  )}
                 </td>
                 <td className="px-5 py-3.5 font-semibold">
                   {money(p.price)}

@@ -138,6 +138,13 @@ inferred from a known-brand slug list, writes retry without the newer
 columns) — but **run the migration** to get real stock numbers and full
 persistence.
 
+Then run `supabase/migration-odoo-catalog.sql` as well. It adds the product
+identity fields (internal reference, barcode, unit of measure), turns
+categories into a tree, and installs the uniqueness rules — see
+[Product identity](#product-identity-barcodes-internal-references--the-category-tree).
+Writes retry without those columns too, so nothing breaks beforehand; codes
+simply won't persist until it has run.
+
 ### Never let a save fail silently
 
 `updateProductFields` / `updateStoreFields` use `.select()` so PostgREST
@@ -356,24 +363,112 @@ app/                One folder per route (see page map above)
 exceptions are small client components that need the static lists). All data
 flows through the async functions in `lib/api.ts`.
 
+## Product identity: barcodes, internal references & the category tree
+
+The catalogue is built on the same three identity fields Odoo keys a product
+on, so the two systems can be connected later **without a reconciliation
+project**. Run `supabase/migration-odoo-catalog.sql` to add them.
+
+| Odoo | Here | Where a seller edits it |
+|---|---|---|
+| `product.template.default_code` | `Product.internalReference` | Product form → *Product codes* |
+| `product.template.barcode` | `Product.barcode` | Product form → *Product codes* |
+| `product.template.uom_id` | `Product.uom` | Product form → *Product codes* |
+| `product.product.default_code` | `Variant.sku` | Variant editor, per row |
+| `product.product.barcode` | `Variant.barcode` | Variant editor, per row |
+| `product.category.parent_id` | `Category.parentSlug` | Admin → Categories → *Parent category* |
+
+### A variant is a `product.product`
+
+Odoo always materialises **at least one** `product.product` per template.
+This app mirrors that exactly: a product with no variants *is* its own single
+sellable unit. `sellableUnits(product)` in `lib/odoo/mapping.ts` resolves
+that for you — always iterate it rather than branching on `variants?.length`,
+so the two cases can never drift apart.
+
+The variant's barcode is the one a scanner reads; the product's is the
+fallback for variants that have none. Same precedence as Odoo.
+
+### Three layers enforce uniqueness — keep all of them
+
+A barcode that identifies two items is worse than no barcode at all, so the
+rule is enforced three times over:
+
+1. **In the browser** (`components/dashboard/ProductCodesFields.tsx`) — the
+   GS1 mod-10 check digit is verified as the seller types, while the box is
+   still in their hand to re-scan.
+2. **In the server action** (`assertCodesAreFree` in `app/actions.ts`) — the
+   only layer that can say *"8691… is already on Karaca Tencere Seti"*. A
+   database constraint can't name the conflict, and an error you can't act
+   on is an error that gets worked around.
+3. **In Postgres** (`banaadir_check_product_codes` trigger) — covers direct
+   SQL, bulk imports, and two sellers racing on the same code. Variant codes
+   live inside JSONB where no unique index reaches, which is why this is a
+   trigger and not just an index.
+
+`lib/barcode.ts` is shared by layers 1 and 2, so they can't disagree. A wrong
+check digit is **rejected** (a scanner never produces one — it's always a
+typo); a non-GTIN code like `KRC-TENC-24` is **accepted** as an internal
+barcode, because plenty of suppliers label goods with their own scheme.
+
+### Categories are a tree
+
+`parentSlug` makes categories hierarchical, matching Odoo's
+`product.category`. Two consequences worth knowing:
+
+- **A parent page includes its children's products.**
+  `getProductsByCategory("home-living")` returns everything under *Cookware*
+  and *Bedding* too — otherwise a parent category looks empty the moment
+  sellers start using subcategories.
+- **Cycles are impossible.** The admin UI won't offer a descendant as a
+  parent, the server action rejects one, and a database trigger rejects it
+  again. A category that is its own ancestor would make every breadcrumb
+  walk infinite.
+
+`lib/category-tree.ts` holds every walk of the hierarchy as pure functions
+(safe to import from client and server, like `lib/product-utils.ts`);
+`lib/api.ts` wraps them with data fetching as `getCategoryTree()`,
+`getCategoriesFlat()`, `getCategoryPath()` and
+`getCategoryWithDescendants()`. Nothing else should walk `parentSlug` by
+hand — the cycle guards live in those functions.
+
+> **Note:** `Category.parentSlug` is the structural hierarchy. The older
+> free-text `Product.subcategory` still exists for the seller-typed
+> groupings that predate it — it's a display label, not part of the tree.
+
+### Scanning
+
+`findByCode()` resolves a barcode or internal reference to a single sellable
+unit, and the storefront search box tries it **first** — scanning a code
+returns that one product rather than burying it in fuzzy name matches. In
+SQL the same lookup is `SELECT * FROM find_by_code('869…')`.
+
 ## Connecting Odoo (the recommended path)
 
-Your product/store/order data already lives in Odoo. To go from demo data to
-live data, **only `lib/api.ts` needs to change**:
+Your product/store/order data already lives in Odoo. The mapping is already
+written — `lib/odoo/mapping.ts` holds pure functions in both directions
+(`productFromOdoo`, `categoryFromOdoo`, `variantFromOdoo`, `productToOdoo`),
+so the remaining work is fetching and scheduling, not deciding what fields
+mean.
 
 1. Odoo exposes an external API over **JSON-RPC / XML-RPC**
    (`/web/session/authenticate` + `call_kw` with `search_read`).
-2. Map Odoo records to the types in `lib/types.ts`:
-   - `product.template` → `Product`
-   - `product.category` → `Category`
-   - vendor `res.partner` / companies → `Store`
-   - `sale.order` → `Order`
-3. Replace each function body in `lib/api.ts` with the corresponding fetch.
-   They are already `async`, so **no page or component changes are needed**.
-4. Add credentials via environment variables (`ODOO_URL`, `ODOO_DB`,
+2. Read `product.category` first, then `product.template` with its
+   `product.product` rows, and pass each through the mapper.
+3. **Match in this order** — `odooId`, then `barcode`, then
+   `internalReference` (case-insensitive), then create. Never match on
+   *name*: two vendors selling "Cotton Towel" would silently merge.
+4. Pass the existing product as the mapper's `base` argument on updates, so
+   merchandising done in the dashboard (photos, badges, feature bullets)
+   survives the sync instead of being reset to defaults.
+5. Add credentials via environment variables (`ODOO_URL`, `ODOO_DB`,
    `ODOO_USER`, `ODOO_API_KEY`) — never commit them.
-5. Consider caching (`unstable_cache` / revalidation) so the site stays fast
-   even if Odoo is slow.
+6. For incremental runs, ask Odoo for `write_date > max(odoo_synced_at)`
+   rather than re-reading the whole catalogue.
+
+**Do not push stock quantities to Odoo.** `productToOdoo` deliberately omits
+`qty_available`: writing it bypasses stock moves and corrupts inventory
+valuation. Stock flows Odoo → here, and sales flow back as `sale.order`.
 
 Until then, adding products manually = editing `lib/data/products.ts`
 (one object per product; the `P()` factory fills in the boilerplate).

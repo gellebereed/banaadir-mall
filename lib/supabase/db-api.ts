@@ -112,6 +112,9 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
         tagline: taglineClean,
         art: c.art || DEFAULT_ART,
         hidden: isHidden,
+        // Odoo product.category.parent_id — see supabase/migration-odoo-catalog.sql.
+        parentSlug: c.parent_slug || undefined,
+        odooId: c.odoo_id ?? undefined,
       };
     });
     // Filter to canonical categories in navbar order, appending any extra custom ones
@@ -182,6 +185,13 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       store: p.store,
       category: LEGACY_CATEGORY_MAP[p.category] ?? p.category,
       subcategory: p.subcategory || undefined,
+      // Odoo identity fields (supabase/migration-odoo-catalog.sql). `||
+      // undefined` collapses both NULL and the empty string, so a product
+      // with a blank code never looks like it has one.
+      internalReference: p.internal_reference || undefined,
+      barcode: p.barcode || undefined,
+      uom: p.uom || "Units",
+      odooId: p.odoo_id ?? undefined,
       price: Number(p.price),
       compareAt: p.compare_at ? Number(p.compare_at) : undefined,
       icon: p.icon || "🛍️",

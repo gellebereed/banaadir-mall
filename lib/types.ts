@@ -2,14 +2,31 @@
  * Core domain types for Banaadir Mall.
  *
  * These mirror the shapes you would get from an Odoo backend:
- *   Category  -> product.category
+ *   Category  -> product.category   (a TREE: parentSlug === Odoo parent_id)
  *   Store     -> res.partner (vendor) / website multi-company
- *   Product   -> product.template / product.product
+ *   Product   -> product.template
+ *   Variant   -> product.product    (the sellable unit that owns the barcode)
  *   Order     -> sale.order
  *
  * Keep these types stable — the whole UI is written against them, so
  * connecting Odoo later only means mapping Odoo records into these shapes
- * inside lib/api.ts.
+ * inside lib/odoo/mapping.ts.
+ *
+ * ── The identity fields (see lib/barcode.ts) ─────────────────────────────
+ * Three fields carry a product's identity between the two systems, and they
+ * behave exactly as they do in Odoo:
+ *
+ *   internalReference  Odoo `default_code`. The human key printed on price
+ *                      tags and typed into purchase orders. Unique.
+ *   barcode            Odoo `barcode`. The scannable GTIN. Unique across
+ *                      every sellable unit — product AND variant alike.
+ *   odooId             Odoo's own database id, written by the sync only.
+ *                      Never shown to sellers, never typed by hand.
+ *
+ * A product with variants keeps the template-level reference/barcode as the
+ * FALLBACK; each variant may carry its own, which is what actually gets
+ * scanned. That is Odoo's `product.template.barcode` vs
+ * `product.product.barcode` relationship.
  */
 
 /** Gradient pair used to render generated product/category artwork. */
@@ -24,6 +41,27 @@ export interface Category {
   art: Art;
   /** If true, hidden from customer navbar and homepage category lists. */
   hidden?: boolean;
+  /**
+   * Parent category slug — this is what makes categories a TREE rather than
+   * a flat list, matching Odoo's `product.category.parent_id`. A product
+   * filed under a child also appears on its ancestors' pages
+   * (see getProductsByCategory).
+   */
+  parentSlug?: string;
+  /** Odoo `product.category` id, set by the sync. */
+  odooId?: number;
+}
+
+/**
+ * A category with its position in the tree resolved. Built by
+ * getCategoryTree() / getCategoryPath() rather than stored.
+ */
+export interface CategoryNode extends Category {
+  /** 0 for a root category, 1 for its children, and so on. */
+  depth: number;
+  /** Odoo `complete_name`, e.g. "Home & Living / Cookware". */
+  completeName: string;
+  children: CategoryNode[];
 }
 
 export interface Store {
@@ -65,6 +103,26 @@ export interface Product {
   store: string;
   /** Category slug. */
   category: string;
+  /**
+   * Odoo `default_code` — the seller's own product code, e.g. "KRC-TENC-24".
+   * Uppercased and unique across the marketplace (lib/barcode.ts), so an
+   * Odoo import can match on it instead of creating duplicates.
+   */
+  internalReference?: string;
+  /**
+   * Odoo `barcode` — the GTIN printed on the packaging (EAN-13, UPC-A…).
+   * On a product WITH variants this is the template-level fallback; the
+   * variant's own barcode is what a scanner resolves to.
+   */
+  barcode?: string;
+  /**
+   * Odoo `uom_id` name, e.g. "Units", "kg", "Litre". Sales here are always
+   * in whole sellable units, so this is descriptive — it exists so the
+   * value round-trips to Odoo instead of being silently reset to Units.
+   */
+  uom?: string;
+  /** Odoo `product.template` id. Written by the sync, never by a seller. */
+  odooId?: number;
   /**
    * Free-text grouping inside a category, e.g. "Cookware" under
    * Home & Living. Created simply by a seller typing it on a product —
@@ -110,6 +168,10 @@ export interface Product {
  * Each variant carries its own stock, and may override the product's
  * price and photos. Products without variants just use their own
  * price/stock/images fields.
+ *
+ * This is Odoo's `product.product`: the record a warehouse actually counts
+ * and a scanner actually resolves to. Everything a picker needs to identify
+ * one physical item — sku, barcode, stock — lives here, not on the product.
  */
 export interface Variant {
   id: string;
@@ -122,7 +184,19 @@ export interface Variant {
   stock: number;
   /** Variant-specific photos; falls back to the product's photos. */
   images?: string[];
+  /**
+   * Odoo `default_code` on product.product — this variant's own internal
+   * reference. Falls back to the product's when empty.
+   */
   sku?: string;
+  /**
+   * Odoo `barcode` on product.product — the GTIN on THIS colour/size's
+   * packaging. Unique across the whole catalogue; falls back to the
+   * product's barcode when empty.
+   */
+  barcode?: string;
+  /** Odoo `product.product` id. Written by the sync, never by a seller. */
+  odooId?: number;
 }
 
 export type OrderStatus =

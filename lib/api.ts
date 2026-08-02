@@ -23,8 +23,18 @@ import {
   fetchPromotionsFromSupabase,
   fetchStoresFromSupabase,
 } from "./supabase/db-api";
+import { matchesCode, sellableUnits, type SellableUnit } from "./odoo/mapping";
+import { normalizeBarcode, normalizeReference } from "./barcode";
+import {
+  buildCategoryTree,
+  categoryPath,
+  categoryWithDescendants,
+  flattenCategoryTree,
+  visibleCategories,
+} from "./category-tree";
 import type {
   Category,
+  CategoryNode,
   Employee,
   FlashDeal,
   FlashRequest,
@@ -41,12 +51,41 @@ import type {
 export async function getCategories(includeHidden = false): Promise<Category[]> {
   const supabaseCategories = await fetchCategoriesFromSupabase();
   const list = (supabaseCategories && supabaseCategories.length > 0) ? supabaseCategories : seedCategories;
-  if (includeHidden) return list;
-  return list.filter((c) => !c.hidden);
+  // visibleCategories() drops hidden categories AND everything beneath
+  // them — see lib/category-tree.ts for why that matters.
+  return includeHidden ? list : visibleCategories(list);
 }
 
 export async function getCategory(slug: string): Promise<Category | undefined> {
   return (await getCategories(true)).find((c) => c.slug === slug);
+}
+
+// ── Category tree (Odoo product.category) ──────────────────────────────
+// The walking itself lives in lib/category-tree.ts so client components can
+// share it; these are the data-fetching wrappers.
+
+/** The category hierarchy, storefront view (hidden branches excluded). */
+export async function getCategoryTree(includeHidden = false): Promise<CategoryNode[]> {
+  return buildCategoryTree(await getCategories(includeHidden));
+}
+
+/**
+ * Every category flattened back into a list but in TREE order — parents
+ * immediately followed by their children. This is what dropdowns and admin
+ * tables render, with `depth` driving the indentation.
+ */
+export async function getCategoriesFlat(includeHidden = false): Promise<CategoryNode[]> {
+  return flattenCategoryTree(await getCategoryTree(includeHidden));
+}
+
+/** A category and all its ancestors, root first — the breadcrumb trail. */
+export async function getCategoryPath(slug: string): Promise<Category[]> {
+  return categoryPath(await getCategories(true), slug);
+}
+
+/** A category's slug plus every slug beneath it. */
+export async function getCategoryWithDescendants(slug: string): Promise<string[]> {
+  return categoryWithDescendants(await getCategories(true), slug);
 }
 
 // ── Stores ─────────────────────────────────────────────────────────────
@@ -236,8 +275,18 @@ export async function getAnyProduct(id: string): Promise<Product | undefined> {
   return (await getAllProducts()).find((p) => p.id === id || p.slug === id);
 }
 
+/**
+ * Products filed under a category OR any category beneath it. Browsing a
+ * parent has to include its children's products — a tree where the parent
+ * page is empty is worse than no tree at all.
+ */
 export async function getProductsByCategory(slug: string): Promise<Product[]> {
-  return (await getProducts()).filter((p) => p.category === slug);
+  const [products, slugs] = await Promise.all([
+    getProducts(),
+    getCategoryWithDescendants(slug),
+  ]);
+  const inBranch = new Set(slugs);
+  return products.filter((p) => inBranch.has(p.category));
 }
 
 /** Storefront listing for a store page. */
@@ -250,15 +299,91 @@ export async function getAllProductsByStore(slug: string): Promise<Product[]> {
   return (await getAllProducts()).filter((p) => p.store === slug);
 }
 
+/**
+ * Storefront search.
+ *
+ * A barcode or internal reference is matched FIRST and returned on its own.
+ * Scanning a code into the search box is an exact-identity lookup — burying
+ * that one product among fuzzy name matches is the difference between the
+ * search box being usable at a counter and not.
+ */
 export async function searchProducts(query: string): Promise<Product[]> {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return (await getProducts()).filter(
+
+  const products = await getProducts();
+
+  const exact = products.filter((p) => matchesCode(p, query));
+  if (exact.length > 0) return exact;
+
+  return products.filter(
     (p) =>
       p.name.toLowerCase().includes(q) ||
       p.description.toLowerCase().includes(q) ||
-      p.category.includes(q),
+      p.category.includes(q) ||
+      p.subcategory?.toLowerCase().includes(q) ||
+      p.internalReference?.toLowerCase().includes(q),
   );
+}
+
+// ── Barcode / internal-reference lookup (Odoo product.product) ─────────
+
+/** A scan result: the product, plus which of its units the code belongs to. */
+export interface CodeMatch {
+  product: Product;
+  unit: SellableUnit;
+}
+
+/**
+ * Resolve a scanned barcode or typed internal reference to a single
+ * sellable unit. Searches the catalogue as the SELLER maintains it
+ * (getBaseProducts) so hidden and out-of-stock goods are still findable —
+ * a warehouse still has to be able to scan a box it isn't selling today.
+ */
+export async function findByCode(code: string): Promise<CodeMatch | undefined> {
+  if (!code?.trim()) return undefined;
+  for (const product of await getBaseProducts()) {
+    const unit = matchesCode(product, code);
+    if (unit) return { product, unit };
+  }
+  return undefined;
+}
+
+/**
+ * Products already using a barcode or internal reference, excluding one id.
+ * This is the catalogue-wide uniqueness check the save actions run before
+ * writing — it produces a message naming the conflicting product, which a
+ * bare database constraint error cannot.
+ */
+export async function findCodeConflicts(
+  codes: { barcodes: string[]; references: string[] },
+  exceptProductId?: string,
+): Promise<{ code: string; product: Product; unitLabel?: string }[]> {
+  const barcodes = new Set(codes.barcodes.map(normalizeBarcode).filter(Boolean));
+  const references = new Set(codes.references.map(normalizeReference).filter(Boolean));
+  if (barcodes.size === 0 && references.size === 0) return [];
+
+  const conflicts: { code: string; product: Product; unitLabel?: string }[] = [];
+  for (const product of await getBaseProducts()) {
+    if (product.id === exceptProductId) continue;
+    for (const unit of sellableUnits(product)) {
+      // Stored codes are normalised too — rows written by an Odoo sync or a
+      // CSV import may still carry the supplier's spacing, and a conflict
+      // that isn't detected is a duplicate barcode let into the catalogue.
+      if (unit.barcode && barcodes.has(normalizeBarcode(unit.barcode))) {
+        conflicts.push({ code: unit.barcode, product, unitLabel: unit.label });
+      }
+      if (unit.reference && references.has(normalizeReference(unit.reference))) {
+        conflicts.push({ code: unit.reference, product, unitLabel: unit.label });
+      }
+    }
+  }
+  return conflicts;
+}
+
+/** Every sellable unit in a store — the label-printing / stock-count list. */
+export async function getSellableUnitsByStore(slug: string): Promise<SellableUnit[]> {
+  return (await getBaseProductsByStore(slug)).flatMap(sellableUnits);
 }
 
 /** Products currently on sale — powers the "Flash Deals" rail. */

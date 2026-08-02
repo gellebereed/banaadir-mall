@@ -51,6 +51,8 @@ async function tableExists(table) {
 console.log(`\n🔍 Checking ${url}\n`);
 
 let needsMigration = false;
+/** Set when migration-odoo-catalog.sql specifically hasn't been run. */
+let needsOdooMigration = false;
 
 const productColumns = ["stock", "icon", "art", "colors", "sizes", "default_variant_id", "features"];
 const storeColumns = ["icon", "followers", "joined_year", "verified", "official", "category", "art"];
@@ -71,6 +73,56 @@ for (const table of ["promotions", "employees", "flash_deals", "flash_requests",
   } else {
     needsMigration = true;
     console.log(`⚠️  table ${table} is MISSING`);
+  }
+}
+
+// ── Odoo catalogue structure (supabase/migration-odoo-catalog.sql) ─────
+const odooProductColumns = ["internal_reference", "barcode", "uom", "odoo_id"];
+const missingOdooProduct = await checkColumns("products", odooProductColumns);
+const missingOdooCategory = await checkColumns("categories", ["parent_slug", "odoo_id"]);
+const missingOdoo = [
+  ...missingOdooProduct.map((c) => `products.${c}`),
+  ...missingOdooCategory.map((c) => `categories.${c}`),
+];
+
+if (missingOdoo.length === 0) {
+  console.log("✅ Odoo identity columns present (internal_reference, barcode, uom, parent_slug)");
+} else {
+  needsMigration = true;
+  needsOdooMigration = true;
+  console.log(`⚠️  Odoo catalogue columns missing → ${missingOdoo.join(", ")}`);
+}
+
+// The views are what a barcode scan and the category navigation read.
+for (const view of ["product_variant_index", "category_tree"]) {
+  if (await tableExists(view)) {
+    console.log(`✅ view ${view} exists`);
+  } else {
+    needsMigration = true;
+    needsOdooMigration = true;
+    console.log(`⚠️  view ${view} is MISSING`);
+  }
+}
+
+// How much of the catalogue is actually scannable — the number that decides
+// whether an Odoo sync can match automatically or needs manual work.
+if (!needsOdooMigration) {
+  const unitsRes = await fetch(
+    `${url}/rest/v1/product_variant_index?select=barcode,default_code`,
+    { headers },
+  );
+  if (unitsRes.ok) {
+    const units = await unitsRes.json();
+    const scannable = units.filter((u) => u.barcode).length;
+    const referenced = units.filter((u) => u.default_code).length;
+    console.log(
+      `ℹ️  ${units.length} sellable units · ${scannable} with a barcode · ${referenced} with an internal reference`,
+    );
+    if (units.length > 0 && scannable < units.length) {
+      console.log(
+        `   ${units.length - scannable} unit(s) have no barcode — these will need matching by hand when Odoo is connected.`,
+      );
+    }
   }
 }
 
@@ -105,8 +157,13 @@ if (brandRes.ok) {
   );
 }
 
-console.log(
-  needsMigration
-    ? "\n📋 ACTION NEEDED: open Supabase → SQL Editor → paste supabase/migration.sql → Run\n"
-    : "\n✨ Supabase schema is fully migrated.\n",
-);
+if (!needsMigration) {
+  console.log("\n✨ Supabase schema is fully migrated.\n");
+} else {
+  console.log("\n📋 ACTION NEEDED — open Supabase → SQL Editor and run, in order:");
+  console.log("   1. supabase/migration.sql");
+  if (needsOdooMigration) {
+    console.log("   2. supabase/migration-odoo-catalog.sql   (barcodes, references, category tree)");
+  }
+  console.log("");
+}

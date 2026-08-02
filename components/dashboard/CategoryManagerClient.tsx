@@ -9,6 +9,11 @@ import {
 } from "@/app/actions";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubmitButton from "@/components/dashboard/SubmitButton";
+import {
+  categoryCompleteName,
+  categoryPath,
+  eligibleParents,
+} from "@/lib/category-tree";
 import type { Category } from "@/lib/types";
 
 export default function CategoryManagerClient({ initialCategories }: { initialCategories: Category[] }) {
@@ -17,9 +22,31 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
 
+  /** Depth of a category in the tree, for the row indentation. */
+  const depthOf = (slug: string) => categoryPath(initialCategories, slug).length - 1;
+
+  /** Odoo's `complete_name`, e.g. "Home & Living / Cookware". */
+  const categoryPathLabel = (slug: string) =>
+    categoryCompleteName(initialCategories, slug);
+
+  /**
+   * Categories that may be chosen as a parent. When editing, the category
+   * itself and everything beneath it are excluded — selecting a descendant
+   * would make it its own ancestor, which the server rejects anyway. Not
+   * offering the choice is friendlier than explaining the error afterwards.
+   */
+  const parentOptions = editingCat
+    ? eligibleParents(initialCategories, editingCat.slug)
+    : initialCategories;
+
   const filtered = initialCategories.filter((c) => {
     const q = search.toLowerCase();
-    return c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q) || c.tagline.toLowerCase().includes(q);
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.slug.toLowerCase().includes(q) ||
+      c.tagline.toLowerCase().includes(q) ||
+      categoryPathLabel(c.slug).toLowerCase().includes(q)
+    );
   });
 
   const totalCount = initialCategories.length;
@@ -98,11 +125,23 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
                 return (
                   <tr key={cat.slug} className="transition hover:bg-sand-50/50">
                     <td className="py-4 pl-6 pr-3 font-semibold text-ocean-950">
-                      <div className="flex items-center gap-3">
+                      <div
+                        className="flex items-center gap-3"
+                        // Indent by depth so the hierarchy is readable at a
+                        // glance, the way Odoo's own category list reads.
+                        style={{ paddingLeft: `${depthOf(cat.slug) * 20}px` }}
+                      >
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-2xl">
                           {cat.icon}
                         </span>
-                        <span>{cat.name}</span>
+                        <div className="min-w-0">
+                          <span>{cat.name}</span>
+                          {cat.parentSlug && (
+                            <p className="truncate text-[11px] font-normal text-slate-400">
+                              in {categoryPathLabel(cat.parentSlug)}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-4 font-mono text-xs text-slate-500">{cat.slug}</td>
@@ -251,6 +290,37 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
                   placeholder="e.g. Kitchen, laundry & smart home electronics"
                   className="input"
                 />
+              </div>
+
+              {/*
+                Odoo's product.category.parent_id. Categories are a tree, and
+                a product filed under a child also shows on its parent's page
+                — so "Cookware" under "Home & Living" adds depth to browsing
+                without splitting the catalogue in two.
+              */}
+              <div>
+                <label htmlFor="cat-parent" className="label">
+                  Parent category{" "}
+                  <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <select
+                  id="cat-parent"
+                  name="parentSlug"
+                  defaultValue={editingCat?.parentSlug ?? ""}
+                  className="input"
+                >
+                  <option value="">— None (top-level category) —</option>
+                  {parentOptions.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.icon} {categoryPathLabel(c.slug)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-400">
+                  Products in a subcategory also appear on the parent&apos;s
+                  page. A category cannot be placed inside itself or one of
+                  its own subcategories.
+                </p>
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-sand-200">
