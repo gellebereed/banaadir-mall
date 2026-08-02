@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { money } from "@/lib/format";
+import ColorPickerControl from "@/components/dashboard/ColorPickerControl";
 import { compressImageFile } from "@/lib/image-compress";
 import { colorSwatch } from "@/lib/product-utils";
 import type { Variant } from "@/lib/types";
@@ -157,18 +158,17 @@ export default function VariantEditor({
 
                 <div className="grid gap-3 sm:grid-cols-[1fr_1fr_110px_100px_auto]">
                   <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500">Colour</span>
+                    <span className="mb-1 block text-xs font-semibold text-slate-500">Colour & Swatch</span>
                     <div className="flex items-center gap-2">
-                      {v.color && colorSwatch(v.color) && (
-                        <span
-                          className="h-5 w-5 shrink-0 rounded-full border border-sand-200"
-                          style={{ background: colorSwatch(v.color) }}
-                        />
-                      )}
+                      <ColorPickerControl
+                        colorName={v.color}
+                        colorHex={v.colorHex}
+                        onChangeHex={(hex) => update(v.id, { colorHex: hex })}
+                      />
                       <input
                         value={v.color ?? ""}
                         onChange={(e) => update(v.id, { color: e.target.value })}
-                        placeholder="e.g. Black"
+                        placeholder="e.g. Navy Blue"
                         className="input !py-2 text-sm"
                       />
                     </div>

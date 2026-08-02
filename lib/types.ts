@@ -114,6 +114,8 @@ export interface Product {
 export interface Variant {
   id: string;
   color?: string;
+  /** Custom hex color override set via color picker or eyedropper. */
+  colorHex?: string;
   size?: string;
   /** Overrides the product price when set. */
   price?: number;

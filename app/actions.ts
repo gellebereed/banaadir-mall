@@ -138,6 +138,7 @@ async function resolveVariants(
       return {
         id: v.id,
         color: v.color?.trim() || undefined,
+        colorHex: v.colorHex?.trim() || undefined,
         size: v.size?.trim() || undefined,
         // Storing a price equal to the base price adds no information.
         price: price === basePrice ? undefined : price,

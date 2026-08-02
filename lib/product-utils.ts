@@ -68,7 +68,7 @@ export function colorOptions(
       seen.set(v.color, {
         color: v.color,
         image: v.images?.[0],
-        swatch: colorSwatch(v.color),
+        swatch: colorSwatch(v.color, v.colorHex),
         inStock: v.stock > 0,
       });
     }
@@ -278,7 +278,10 @@ export const COLOR_SWATCHES: Record<string, string> = {
  * Smart color resolver. Looks up exact matches, token substrings, or computes a
  * vibrant HSL color dynamically so EVERY color name gets an accurate swatch.
  */
-export function colorSwatch(name?: string): string {
+export function colorSwatch(name?: string, hexOverride?: string): string {
+  if (hexOverride && hexOverride.trim()) {
+    return hexOverride.trim();
+  }
   if (!name || !name.trim()) return "#9ca3af";
   const clean = name.trim().toLowerCase();
 
