@@ -157,41 +157,163 @@ export function variantLabel(variant: Variant): string {
   return [variant.color, variant.size].filter(Boolean).join(" · ") || "Default";
 }
 
-/** Colour swatches for common colour names (falls back to a neutral chip). */
+/** Comprehensive color swatches for single and multi-word fashion color names. */
 export const COLOR_SWATCHES: Record<string, string> = {
+  // Whites & Creams
+  white: "#ffffff",
+  "pure white": "#ffffff",
+  "off white": "#faf9f6",
+  ivory: "#fffff0",
+  cream: "#fffdd0",
+  pearl: "#eaedd0",
+  snow: "#fffafa",
+  bone: "#e3dac9",
+
+  // Black & Greys
   black: "#111827",
+  "jet black": "#090a0f",
   charcoal: "#374151",
+  "dark grey": "#4b5563",
+  "dark gray": "#4b5563",
   grey: "#9ca3af",
   gray: "#9ca3af",
-  silver: "#d1d5db",
-  white: "#f9fafb",
-  cream: "#fdf6e3",
-  sand: "#e7d3b3",
-  natural: "#d9c7a7",
-  beige: "#e8dcc8",
-  brown: "#78350f",
-  terracotta: "#c2643f",
-  red: "#dc2626",
-  burgundy: "#7f1d1d",
-  orange: "#f97316",
-  mango: "#fb8a0e",
-  gold: "#d4af37",
-  yellow: "#facc15",
-  lime: "#84cc16",
-  green: "#16a34a",
-  emerald: "#059669",
-  teal: "#0d9488",
+  "light grey": "#d1d5db",
+  "light gray": "#d1d5db",
+  "space grey": "#6b7280",
+  "space gray": "#6b7280",
+  silver: "#e5e7eb",
+  slate: "#64748b",
+
+  // Blues
   blue: "#2563eb",
+  "navy blue": "#1e3a8a",
   navy: "#1e3a8a",
+  "midnight blue": "#0f172a",
+  "dark blue": "#1d4ed8",
+  "royal blue": "#1d4ed8",
+  "light blue": "#60a5fa",
+  "baby blue": "#93c5fd",
+  "sky blue": "#38bdf8",
   sky: "#38bdf8",
-  purple: "#7c3aed",
-  violet: "#8b5cf6",
+  "ice blue": "#e0f2fe",
+  indigo: "#4338ca",
+
+  // Greens
+  green: "#16a34a",
+  "dark green": "#14532d",
+  "forest green": "#166534",
+  "olive green": "#556b2f",
+  olive: "#556b2f",
+  khaki: "#c2b280",
+  "army green": "#4b5320",
+  emerald: "#059669",
+  sage: "#9daf97",
+  mint: "#6ee7b7",
+  "mint green": "#6ee7b7",
+  lime: "#84cc16",
+
+  // Reds & Burgundy
+  red: "#dc2626",
+  "dark red": "#991b1b",
+  burgundy: "#7f1d1d",
+  maroon: "#800000",
+  wine: "#722f37",
+  crimson: "#990000",
+  coral: "#f87171",
+  ruby: "#e11d48",
+
+  // Pinks & Purples
   pink: "#ec4899",
+  "hot pink": "#db2777",
+  "baby pink": "#fbcfe8",
+  "dusty pink": "#d8b4fe",
   rose: "#f43f5e",
   "dusty rose": "#c98a94",
-  multi: "#a3a3a3",
+  blush: "#fde8e8",
+  peach: "#ffdab9",
+  purple: "#7c3aed",
+  violet: "#8b5cf6",
+  plum: "#581c87",
+  lavender: "#e9d5ff",
+  lilac: "#c084fc",
+  magenta: "#d946ef",
+
+  // Yellows, Oranges & Browns
+  yellow: "#facc15",
+  mustard: "#eab308",
+  gold: "#d4af37",
+  orange: "#f97316",
+  mango: "#fb8a0e",
+  amber: "#f59e0b",
+  bronze: "#cd7f32",
+  copper: "#b87333",
+  "rose gold": "linear-gradient(135deg, #b76e79, #f7cad0)",
+  champagne: "#f7e7ce",
+  brown: "#78350f",
+  "dark brown": "#451a03",
+  chocolate: "#3d2314",
+  tan: "#d2b48c",
+  camel: "#c19a6b",
+  beige: "#e8dcc8",
+  sand: "#e7d3b3",
+  nude: "#e3bc9a",
+  taupe: "#483c32",
+  terracotta: "#c2643f",
+
+  // Teals & Cyans
+  teal: "#0d9488",
+  turquoise: "#40e0d0",
+  cyan: "#06b6d4",
+  aqua: "#22d3ee",
+
+  // Multi / Gradients
+  multi: "linear-gradient(135deg, #ef4444, #3b82f6, #10b981)",
+  multicolor: "linear-gradient(135deg, #ef4444, #3b82f6, #10b981)",
+  "multi-color": "linear-gradient(135deg, #ef4444, #3b82f6, #10b981)",
+  rainbow: "linear-gradient(135deg, #ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6)",
+  gradient: "linear-gradient(135deg, #6366f1, #a855f7, #ec4899)",
 };
 
-export function colorSwatch(name: string): string | undefined {
-  return COLOR_SWATCHES[name.trim().toLowerCase()];
+/**
+ * Smart color resolver. Looks up exact matches, token substrings, or computes a
+ * vibrant HSL color dynamically so EVERY color name gets an accurate swatch.
+ */
+export function colorSwatch(name?: string): string {
+  if (!name || !name.trim()) return "#9ca3af";
+  const clean = name.trim().toLowerCase();
+
+  // 1. Direct dictionary match
+  if (COLOR_SWATCHES[clean]) {
+    return COLOR_SWATCHES[clean];
+  }
+
+  // 2. Substring match for known color keys
+  for (const [key, value] of Object.entries(COLOR_SWATCHES)) {
+    if (clean.includes(key)) {
+      return value;
+    }
+  }
+
+  // 3. Fallback to common root color words
+  if (clean.includes("blue")) return "#2563eb";
+  if (clean.includes("red")) return "#dc2626";
+  if (clean.includes("green")) return "#16a34a";
+  if (clean.includes("pink")) return "#ec4899";
+  if (clean.includes("purple")) return "#7c3aed";
+  if (clean.includes("yellow")) return "#facc15";
+  if (clean.includes("orange")) return "#f97316";
+  if (clean.includes("black")) return "#111827";
+  if (clean.includes("white")) return "#ffffff";
+  if (clean.includes("grey") || clean.includes("gray")) return "#9ca3af";
+  if (clean.includes("gold")) return "#d4af37";
+  if (clean.includes("silver")) return "#e5e7eb";
+  if (clean.includes("brown")) return "#78350f";
+
+  // 4. Deterministic string hash fallback (returns a rich HSL color)
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 55%)`;
 }

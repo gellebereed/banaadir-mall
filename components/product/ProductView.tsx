@@ -368,7 +368,9 @@ function OptionPicker({
             >
               {swatch && (
                 <span
-                  className="h-4 w-4 rounded-full border border-black/10"
+                  className={`h-4 w-4 rounded-full shrink-0 border border-black/10 shadow-xs ${
+                    value === opt ? "ring-2 ring-white/50" : ""
+                  }`}
                   style={{ background: swatch }}
                 />
               )}

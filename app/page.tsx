@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import BannerCarousel from "@/components/home/BannerCarousel";
+import FlashDealsRail from "@/components/home/FlashDealsRail";
 import CountdownTimer from "@/components/CountdownTimer";
 import ProductCard from "@/components/ProductCard";
 import SectionHeader from "@/components/SectionHeader";
@@ -49,7 +50,7 @@ export default async function HomePage() {
     brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} /> : null),
     flash: () =>
       flashProducts.length > 0 ? (
-        <FlashDeals deals={flashProducts} name={flash.name} endsAt={flash.endsAt} />
+        <FlashDealsRail deals={flashProducts} name={flash.name} endsAt={flash.endsAt} />
       ) : null,
     value: () => <ValueProps />,
     trending: () => <Bestsellers products={bestsellers} />,
