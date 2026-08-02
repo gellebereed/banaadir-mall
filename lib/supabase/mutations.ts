@@ -48,6 +48,12 @@ export async function upsertProduct(product: Product): Promise<boolean> {
       store: product.store,
       category: product.category,
       subcategory: product.subcategory || null,
+      // Odoo identity fields. NULL — never "" — because the unique indexes
+      // are partial (`WHERE ... IS NOT NULL`): empty strings would all
+      // collide with each other on the second product saved without a code.
+      internal_reference: product.internalReference || null,
+      barcode: product.barcode || null,
+      uom: product.uom || "Units",
       price: product.price,
       compare_at: product.compareAt ?? null,
       rating: product.rating ?? 5,
@@ -87,11 +93,15 @@ export async function upsertProduct(product: Product): Promise<boolean> {
     }
 
     if (error) {
+      assertNotConstraintViolation(error);
       console.error("[Supabase Mutations] upsertProduct error:", error.message);
       return false;
     }
     return true;
   } catch (err) {
+    // A duplicate code is the seller's to fix — let the message reach them
+    // instead of being flattened into "could not save".
+    if (err instanceof CatalogCodeError) throw err;
     console.error("[Supabase Mutations] upsertProduct exception:", err);
     return false;
   }
@@ -112,6 +122,10 @@ const EXTENDED_PRODUCT_COLUMNS = [
   "default_variant_id",
   "features",
   "subcategory",
+  // Added by supabase/migration-odoo-catalog.sql.
+  "internal_reference",
+  "barcode",
+  "uom",
 ] as const;
 
 /** Store columns added by supabase/migration.sql. */
@@ -131,6 +145,35 @@ function isMissingColumnError(error: { code?: string; message?: string }): boole
     error.code === "PGRST204" ||
     /column .* does not exist|could not find the .* column/i.test(error.message ?? "")
   );
+}
+
+/**
+ * Constraint violations from supabase/migration-odoo-catalog.sql — a
+ * duplicate barcode or internal reference, or a recursive category.
+ *
+ * These are the one class of database error the SELLER can fix, and the
+ * trigger already phrases them as a sentence ("Barcode 869… already belongs
+ * to another product"). Returning false here would surface the generic
+ * "could not save" message and hide the only useful part, so they are
+ * re-thrown and travel up to the form (see SafeForm).
+ */
+export class CatalogCodeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CatalogCodeError";
+  }
+}
+
+function assertNotConstraintViolation(error: { code?: string; message?: string }): void {
+  const isUniqueOrCheck = error.code === "23505" || error.code === "23514";
+  const mentionsCode = /barcode|internal reference|ancestor|own parent/i.test(
+    error.message ?? "",
+  );
+  if (isUniqueOrCheck || mentionsCode) {
+    throw new CatalogCodeError(
+      error.message || "That code is already used by another product.",
+    );
+  }
 }
 
 export async function updateProductFields(
@@ -157,6 +200,13 @@ export async function updateProductFields(
     if (fields.stock !== undefined) row.in_stock = fields.stock > 0;
 
     // ── Extended columns (added by the migration) ──────────────────
+    // Codes normalise "" → NULL so clearing one in the form really clears
+    // it, rather than storing a blank that trips the unique index.
+    if (fields.internalReference !== undefined) {
+      row.internal_reference = fields.internalReference || null;
+    }
+    if (fields.barcode !== undefined) row.barcode = fields.barcode || null;
+    if (fields.uom !== undefined) row.uom = fields.uom || "Units";
     if (fields.stock !== undefined) row.stock = fields.stock;
     if (fields.icon !== undefined) row.icon = fields.icon;
     if (fields.art !== undefined) row.art = fields.art;
@@ -198,6 +248,7 @@ export async function updateProductFields(
     }
 
     if (error) {
+      assertNotConstraintViolation(error);
       console.error("[Supabase Mutations] updateProductFields error:", error.message);
       return false;
     }
@@ -209,6 +260,7 @@ export async function updateProductFields(
     }
     return true;
   } catch (err) {
+    if (err instanceof CatalogCodeError) throw err;
     console.error("[Supabase Mutations] updateProductFields exception:", err);
     return false;
   }
@@ -560,6 +612,8 @@ export async function upsertCategoryInSupabase(category: {
   icon: string;
   tagline: string;
   hidden?: boolean;
+  /** Odoo product.category.parent_id. Pass null to move it back to a root. */
+  parentSlug?: string | null;
 }): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
@@ -575,14 +629,32 @@ export async function upsertCategoryInSupabase(category: {
     if (typeof category.hidden === "boolean") {
       row.hidden = category.hidden;
     }
+    // `undefined` means "don't touch the parent"; null means "make it a root".
+    if (category.parentSlug !== undefined) {
+      row.parent_slug = category.parentSlug || null;
+    }
 
-    const { error } = await supabase.from("categories").upsert(row, { onConflict: "slug" });
+    let { error } = await supabase.from("categories").upsert(row, { onConflict: "slug" });
+
+    // parent_slug arrived with migration-odoo-catalog.sql — retry without it
+    // so category edits still work on a database that hasn't been migrated.
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] categories is missing parent_slug — run " +
+          "supabase/migration-odoo-catalog.sql. Saving without the parent link.",
+      );
+      delete row.parent_slug;
+      ({ error } = await supabase.from("categories").upsert(row, { onConflict: "slug" }));
+    }
+
     if (error) {
+      assertNotConstraintViolation(error);
       console.error("[Supabase Mutations] upsertCategory error:", error.message);
       return false;
     }
     return true;
   } catch (err) {
+    if (err instanceof CatalogCodeError) throw err;
     console.error("[Supabase Mutations] upsertCategory exception:", err);
     return false;
   }

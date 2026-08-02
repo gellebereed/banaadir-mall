@@ -20,6 +20,14 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "images.unsplash.com",
       },
+      {
+        // Official brand logos in the seed catalogue (lib/data/stores.ts) and
+        // the pre-migration fallbacks in lib/supabase/db-api.ts point here.
+        // Without it `next/image` THROWS rather than degrading, which took
+        // down every page that renders a store avatar.
+        protocol: "https",
+        hostname: "upload.wikimedia.org",
+      },
     ],
   },
 };

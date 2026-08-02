@@ -14,7 +14,15 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
 import { redirect } from "next/navigation";
-import { getBaseProduct, getBaseProducts, getStore } from "@/lib/api";
+import {
+  findCodeConflicts,
+  getBaseProduct,
+  getBaseProducts,
+  getCategoryWithDescendants,
+  getStore,
+} from "@/lib/api";
+import { checkBarcode, checkReference } from "@/lib/barcode";
+import { sellableUnits, validateProductCodes } from "@/lib/odoo/mapping";
 import { can, type AccessArea, type Session } from "@/lib/auth";
 import { mutateDB } from "@/lib/db";
 import { getSession } from "@/lib/session";
@@ -144,7 +152,11 @@ async function resolveVariants(
         price: price === basePrice ? undefined : price,
         stock: Math.max(0, Number(v.stock) || 0),
         images: images.length > 0 ? images : undefined,
-        sku: v.sku,
+        // Odoo product.product identity — normalised here so what is stored
+        // is always what a later lookup will compare against.
+        sku: checkReference(v.sku).value || undefined,
+        barcode: checkBarcode(v.barcode).value || undefined,
+        odooId: v.odooId,
       } satisfies Variant;
     }),
   );
@@ -184,6 +196,66 @@ async function resolveCategory(submitted: string): Promise<string> {
   );
 }
 
+/**
+ * The Odoo identity fields as submitted, normalised (uppercased reference,
+ * whitespace-stripped barcode) so what we validate is exactly what we save.
+ */
+function readProductCodes(formData: FormData): {
+  internalReference?: string;
+  barcode?: string;
+  uom: string;
+} {
+  return {
+    internalReference:
+      checkReference(String(formData.get("internalReference") ?? "")).value || undefined,
+    barcode: checkBarcode(String(formData.get("barcode") ?? "")).value || undefined,
+    uom: String(formData.get("uom") ?? "").trim() || "Units",
+  };
+}
+
+/**
+ * Reject a product whose codes are malformed or already taken, BEFORE
+ * anything is written.
+ *
+ * The database enforces the same rules (see the trigger in
+ * supabase/migration-odoo-catalog.sql) — this layer exists because it can
+ * name the product you collided with, and a constraint error cannot. A
+ * seller told "barcode 8691… is already on Karaca Tencere Seti" can fix it;
+ * one told "duplicate key value violates unique constraint" cannot.
+ */
+async function assertCodesAreFree(product: Product): Promise<void> {
+  const problems = validateProductCodes(product);
+  if (problems.length > 0) {
+    throw new Error(problems.join("\n"));
+  }
+
+  const units = sellableUnits(product);
+  const conflicts = await findCodeConflicts(
+    {
+      barcodes: units.map((u) => u.barcode ?? "").filter(Boolean),
+      references: units.map((u) => u.reference ?? "").filter(Boolean),
+    },
+    product.id,
+  );
+
+  if (conflicts.length > 0) {
+    // One message per distinct code — repeating the same clash for every
+    // variant that inherits it is noise.
+    const seen = new Set<string>();
+    const messages = conflicts
+      .filter((c) => !seen.has(c.code) && seen.add(c.code))
+      .map(
+        (c) =>
+          `"${c.code}" is already used by ${c.product.name}` +
+          (c.unitLabel ? ` (${c.unitLabel})` : "") +
+          ` in the ${c.product.store} store.`,
+      );
+    throw new Error(
+      `A barcode or internal reference must identify exactly one item:\n${messages.join("\n")}`,
+    );
+  }
+}
+
 /** The chosen default variant, validated against the submitted list. */
 function pickDefaultVariantId(
   formData: FormData,
@@ -221,6 +293,7 @@ export async function updateProduct(formData: FormData): Promise<void> {
 
   const compareAtRaw = String(formData.get("compareAt") ?? "").trim();
   const badgeRaw = String(formData.get("badge") ?? "");
+  const codes = readProductCodes(formData);
 
   const updatedFields: Partial<Product> = {
     name: String(formData.get("name")),
@@ -231,6 +304,9 @@ export async function updateProduct(formData: FormData): Promise<void> {
       : Number(formData.get("stock")),
     category: await resolveCategory(String(formData.get("category"))),
     subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
+    internalReference: codes.internalReference,
+    barcode: codes.barcode,
+    uom: codes.uom,
     icon: String(formData.get("icon") ?? "").trim() || product.icon,
     badge: (badgeRaw || undefined) as Product["badge"],
     description: String(formData.get("description")),
@@ -241,6 +317,12 @@ export async function updateProduct(formData: FormData): Promise<void> {
     variants,
     defaultVariantId,
   };
+
+  // Validate against the catalogue before writing. Photos have already been
+  // uploaded at this point, but they are only referenced by this product —
+  // a rejected save leaves them orphaned in storage, which is far cheaper
+  // than letting a duplicate barcode into the catalogue.
+  await assertCodesAreFree({ ...product, ...updatedFields });
 
   const supabaseOk = await updateProductFields(id, updatedFields);
   if (!supabaseOk) {
@@ -315,6 +397,7 @@ export async function createProduct(formData: FormData): Promise<void> {
   const features = lines(formData.get("features"));
   const price = Number(formData.get("price"));
   const variants = await resolveVariants(formData, price);
+  const codes = readProductCodes(formData);
 
   const product: Product = {
     id: slug,
@@ -323,6 +406,9 @@ export async function createProduct(formData: FormData): Promise<void> {
     store: storeSlug,
     category: await resolveCategory(String(formData.get("category"))),
     subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
+    internalReference: codes.internalReference,
+    barcode: codes.barcode,
+    uom: codes.uom,
     price,
     compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
     icon: String(formData.get("icon") ?? "🛍️").trim() || "🛍️",
@@ -342,6 +428,8 @@ export async function createProduct(formData: FormData): Promise<void> {
     variants,
     defaultVariantId: pickDefaultVariantId(formData, variants),
   };
+
+  await assertCodesAreFree(product);
 
   const supabaseOk = await upsertProduct(product);
   if (!supabaseOk) {
@@ -1169,6 +1257,43 @@ async function requireAdminSession(): Promise<Session> {
   return session;
 }
 
+/**
+ * Validate a proposed parent for a category (Odoo `product.category.parent_id`).
+ *
+ * Rejects a cycle, because a category that is its own ancestor makes the
+ * tree infinite: every walk up the parents — breadcrumbs, the navbar, the
+ * "products in this branch" query — would never terminate.
+ */
+async function resolveParentCategory(
+  submitted: string,
+  ownSlug: string,
+): Promise<string | null> {
+  const parentSlug = submitted.trim();
+  if (!parentSlug) return null;
+
+  if (parentSlug === ownSlug) {
+    throw new Error("A category cannot be its own parent.");
+  }
+
+  const { getCategories } = await import("@/lib/api");
+  const categories = await getCategories(true);
+  if (!categories.some((c) => c.slug === parentSlug)) {
+    throw new Error(`"${parentSlug}" is not an existing category.`);
+  }
+
+  // Walk down from this category: meeting the proposed parent among our own
+  // descendants means the link would close a loop.
+  const descendants = await getCategoryWithDescendants(ownSlug);
+  if (descendants.includes(parentSlug)) {
+    throw new Error(
+      `"${parentSlug}" sits below "${ownSlug}" already — filing it the other ` +
+        `way round would make the category its own ancestor.`,
+    );
+  }
+
+  return parentSlug;
+}
+
 export async function createCategory(formData: FormData): Promise<void> {
   await requireAdminSession();
   const name = String(formData.get("name") || "").trim();
@@ -1181,6 +1306,11 @@ export async function createCategory(formData: FormData): Promise<void> {
     slug = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   }
 
+  const parentSlug = await resolveParentCategory(
+    String(formData.get("parentSlug") || ""),
+    slug,
+  );
+
   const category = {
     slug,
     name,
@@ -1188,10 +1318,13 @@ export async function createCategory(formData: FormData): Promise<void> {
     tagline,
     art: { from: "#e0f2fe", to: "#bae6fd" },
     hidden: false,
+    // The Category type uses undefined for "no parent"; the mutation layer
+    // needs null to actually CLEAR the column rather than leave it alone.
+    parentSlug: parentSlug ?? undefined,
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase(category);
+    await upsertCategoryInSupabase({ ...category, parentSlug });
   } else {
     await mutateDB((db) => {
       db.categories = db.categories || [];
@@ -1214,16 +1347,22 @@ export async function updateCategory(formData: FormData): Promise<void> {
 
   if (!name || !slug) throw new Error("Category name and slug are required.");
 
+  const parentSlug = await resolveParentCategory(
+    String(formData.get("parentSlug") || ""),
+    originalSlug || slug,
+  );
+
   const category = {
     slug,
     name,
     icon,
     tagline,
     art: { from: "#e0f2fe", to: "#bae6fd" },
+    parentSlug: parentSlug ?? undefined,
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase(category);
+    await upsertCategoryInSupabase({ ...category, parentSlug });
   } else {
     await mutateDB((db) => {
       db.categories = db.categories || [];

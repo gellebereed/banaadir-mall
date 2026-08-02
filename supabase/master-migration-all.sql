@@ -94,5 +94,14 @@ CREATE POLICY "banaadir_uploads_update"
 CREATE POLICY "banaadir_uploads_delete"
   ON storage.objects FOR DELETE USING (bucket_id = 'uploads');
 
+-- ═════════════════════════════════════════════════════════════════════════
+--  NEXT: run supabase/migration-odoo-catalog.sql
+--  It adds the Odoo product identity fields (internal_reference, barcode,
+--  uom), turns categories into a tree via parent_slug, and installs the
+--  uniqueness rules + the product_variant_index / category_tree views.
+--  Kept separate because it creates triggers and views that are easier to
+--  review — and to re-run on their own — than another 200 lines here.
+-- ═════════════════════════════════════════════════════════════════════════
+
 -- VERIFICATION
 SELECT 'Migration completed successfully!' AS result;

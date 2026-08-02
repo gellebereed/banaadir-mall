@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
 import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
+import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
@@ -19,7 +20,7 @@ export const metadata: Metadata = { title: "Add Product" };
  * (server action → data/db.json) and it appears in the storefront at once.
  */
 export default async function NewProductPage() {
-  const { session } = await requireVendor();
+  const { session, storeSlug } = await requireVendor();
   if (!can(session, "products")) redirect("/vendor");
   const [categories, subcategories] = await Promise.all([
     getCategories(),
@@ -78,6 +79,18 @@ export default async function NewProductPage() {
             <input id="stock" name="stock" required type="number" min="0" placeholder="50" className="input" />
           </div>
           <SubcategoryField existing={subcategories} />
+
+          {/*
+            Product codes. Kept next to the category rather than hidden in an
+            "advanced" panel: these are the fields the warehouse and the Odoo
+            sync key on, and a code added at creation is a code that never has
+            to be reconciled later.
+          */}
+          <fieldset className="grid gap-5 sm:col-span-2 sm:grid-cols-2">
+            <legend className="label mb-0">Product codes</legend>
+            <ProductCodesFields storeSlug={storeSlug} productNameFieldId="name" />
+          </fieldset>
+
           <div>
             <label htmlFor="colors" className="label">
               Colours <span className="font-normal text-slate-400">(comma separated)</span>

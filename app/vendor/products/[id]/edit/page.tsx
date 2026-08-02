@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
 import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoManager from "@/components/dashboard/PhotoManager";
+import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
@@ -167,6 +168,33 @@ export default async function EditProductPage({
                 </select>
               </div>
             </div>
+          </section>
+
+          {/* ── Product codes (Odoo identity) ────────────────────── */}
+          <section>
+            <h2 className="mb-1 font-display font-bold text-ocean-950">
+              🏷️ Product codes
+            </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              How this product is identified in the warehouse and in Odoo.
+              Both must be unique across the whole marketplace — scanning a
+              barcode has to land on exactly one item.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ProductCodesFields
+                storeSlug={product.store}
+                defaultReference={product.internalReference ?? ""}
+                defaultBarcode={product.barcode ?? ""}
+                defaultUom={product.uom ?? "Units"}
+              />
+            </div>
+            {usesVariants && (
+              <p className="mt-3 rounded-xl bg-ocean-50 px-4 py-3 text-xs text-ocean-900">
+                This product has variants. Each one can carry its own SKU and
+                barcode below — that is what a scanner reads. The codes above
+                are the fallback for variants that have none.
+              </p>
+            )}
           </section>
 
           {/* ── Variants ─────────────────────────────────────────── */}

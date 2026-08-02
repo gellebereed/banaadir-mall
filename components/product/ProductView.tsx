@@ -137,6 +137,18 @@ export default function ProductView({
           <span className="text-sm text-slate-400">{compact(product.sold)} sold</span>
         </div>
 
+        {/*
+          The reference for the option currently selected — the variant's own
+          code when it has one, else the product's. Customers quote this when
+          they phone the store, so it must track the colour/size they are
+          actually looking at rather than showing the template's code always.
+        */}
+        {(variant?.sku || product.internalReference) && (
+          <p className="mt-1 font-mono text-xs text-slate-400">
+            Ref: {variant?.sku || product.internalReference}
+          </p>
+        )}
+
         {/* Price reflects the selected variant */}
         <div className="mt-4 flex items-baseline gap-3">
           <span className="font-display text-4xl font-extrabold text-ocean-950">

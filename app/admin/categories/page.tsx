@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import CategoryManagerClient from "@/components/dashboard/CategoryManagerClient";
-import { getCategories } from "@/lib/api";
+import { getCategoriesFlat } from "@/lib/api";
 
 export const metadata: Metadata = {
   title: "Categories",
@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
  * toggle visibility (hide/show on storefront navbar), or delete categories.
  */
 export default async function AdminCategoriesPage() {
-  const categories = await getCategories(true);
+  // Flattened in TREE order — each parent immediately followed by its
+  // children — so the indentation in the table lines up with the hierarchy.
+  const categories = await getCategoriesFlat(true);
 
   return <CategoryManagerClient initialCategories={categories} />;
 }
