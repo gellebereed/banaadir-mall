@@ -234,7 +234,12 @@ function HeaderIcon({
     >
       <span aria-hidden>{icon}</span>
       {badge !== undefined && badge > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white">
+        <span
+          /* Re-keying on the number remounts the span, which replays the
+             pop animation every time the count changes. */
+          key={badge}
+          className="animate-badge-pop absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white"
+        >
           {badge > 99 ? "99+" : badge}
         </span>
       )}

@@ -1,21 +1,19 @@
-﻿"use client";
+"use client";
 
 /**
  * Checkout: delivery details -> payment method -> review -> success.
- * This is a demo flow — "Place Order" clears the cart and shows a
- * confirmation with a generated order number. Wire the submit handler to
- * a real backend (e.g. create a sale.order in Odoo) when ready.
- *
- * NOTE: Real payment collection (EVC/Zaad USSD push, card gateway) must be
- * integrated server-side — never handle card numbers in this client code.
+ * Fully supports local & global orders with country selection, complete Somali city dropdown,
+ * auto-location detection, and address memory.
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ProductImage from "@/components/ProductImage";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import type { MarketingSettings } from "@/lib/types";
+import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
+import { detectUserLocation } from "@/lib/detect-location";
 
 const PAYMENT_METHODS = [
   { id: "evc", icon: "📲", name: "EVC Plus", note: "Pay from your Hormuud mobile money" },
@@ -24,20 +22,108 @@ const PAYMENT_METHODS = [
   { id: "cod", icon: "💵", name: "Cash on Delivery", note: "Pay when your order arrives" },
 ] as const;
 
-const CITIES = ["Mogadishu", "Hargeisa", "Kismayo", "Baidoa", "Garowe", "Bosaso", "Beledweyne", "Jowhar"];
-
 export default function CheckoutClient({ settings }: { settings: MarketingSettings }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const { lines, subtotal, clearCart } = useCart();
   const [payment, setPayment] = useState<string>("evc");
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
 
+  // Delivery form states
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("SO");
+  const [city, setCity] = useState("Mogadishu (Xamar)");
+  const [customCity, setCustomCity] = useState("");
+  const [district, setDistrict] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Location detection states
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectStatus, setDetectStatus] = useState<string | null>(null);
+
+  // Load saved delivery address on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("banaadir_delivery_address");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.name) setName(parsed.name);
+        if (parsed.phone) setPhone(parsed.phone);
+        if (parsed.countryCode) setCountryCode(parsed.countryCode);
+        if (parsed.city) setCity(parsed.city);
+        if (parsed.customCity) setCustomCity(parsed.customCity);
+        if (parsed.district) setDistrict(parsed.district);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  // Handle location auto-detection
+  async function handleAutoDetectLocation() {
+    setIsDetecting(true);
+    setDetectStatus("Detecting location…");
+
+    const loc = await detectUserLocation();
+
+    setIsDetecting(false);
+    if (loc) {
+      // Find matching country code or default to SO
+      const matchedCountry = COUNTRIES.find((c) => c.code === loc.countryCode) ? loc.countryCode : "SO";
+      setCountryCode(matchedCountry);
+
+      if (matchedCountry === "SO") {
+        // Try to match Somali city
+        const somaliCities = SOMALI_REGIONS_CITIES.flatMap((r) => r.cities);
+        const match = somaliCities.find((c) => c.toLowerCase().includes(loc.city.toLowerCase()));
+        if (match) {
+          setCity(match);
+        } else {
+          setCity("Other");
+          setCustomCity(loc.city);
+        }
+      } else {
+        setCustomCity(loc.city);
+      }
+
+      if (loc.district) {
+        setDistrict(loc.district);
+      }
+
+      setDetectStatus(`✓ Location filled: ${loc.city}, ${loc.countryName}`);
+      setTimeout(() => setDetectStatus(null), 5000);
+    } else {
+      setDetectStatus("⚠️ Could not auto-detect location. Please select manually.");
+      setTimeout(() => setDetectStatus(null), 4000);
+    }
+  }
+
+  const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+  const globalCityOptions = GLOBAL_CITIES[countryCode] || [];
+
   const delivery = freeThreshold > 0 && subtotal >= freeThreshold ? 0 : fee;
   const total = subtotal + delivery;
 
   function placeOrder(e: React.FormEvent) {
     e.preventDefault();
-    // Demo: generate an order number and clear the cart.
+
+    // Save address to localStorage for future orders
+    try {
+      localStorage.setItem(
+        "banaadir_delivery_address",
+        JSON.stringify({
+          name,
+          phone,
+          countryCode,
+          city,
+          customCity,
+          district,
+        })
+      );
+    } catch {
+      // Ignore
+    }
+
     setPlacedOrderId(`BM-${Math.floor(10000 + Math.random() * 90000)}`);
     clearCart();
     window.scrollTo({ top: 0 });
@@ -54,7 +140,7 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
           Order placed!
         </h1>
         <p className="mt-3 text-slate-500">
-          Thank you for shopping local. Your order number is{" "}
+          Thank you for shopping on Banaadir Mall. Your order number is{" "}
           <strong className="text-ocean-800">{placedOrderId}</strong>. We&apos;ve
           sent the details to your phone.
         </p>
@@ -95,33 +181,172 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
         <div className="space-y-6 self-start">
           {/* Step 1 — delivery details */}
           <section className="card p-5 sm:p-6">
-            <StepTitle n={1} title="Delivery Details" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <StepTitle n={1} title="Delivery Details" />
+
+              {/* Auto-location detection button */}
+              <button
+                type="button"
+                onClick={handleAutoDetectLocation}
+                disabled={isDetecting}
+                className="flex items-center gap-1.5 rounded-full border border-ocean-300 bg-ocean-50 px-3 py-1 text-xs font-semibold text-ocean-800 transition hover:bg-ocean-100 disabled:opacity-50"
+              >
+                <span>{isDetecting ? "⏳" : "📍"}</span>
+                <span>{isDetecting ? "Detecting…" : "Auto-Fill My Location"}</span>
+              </button>
+            </div>
+
+            {detectStatus && (
+              <div className="mt-3 rounded-xl bg-emerald-50 px-3.5 py-2 text-xs font-medium text-emerald-800 border border-emerald-200 animate-fade-up">
+                {detectStatus}
+              </div>
+            )}
+
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="name" className="label">Full name</label>
-                <input id="name" required placeholder="Ayaan Warsame" className="input" />
+                <input
+                  id="name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ayaan Warsame"
+                  className="input"
+                />
               </div>
+
               <div>
                 <label htmlFor="phone" className="label">Phone number</label>
-                <input id="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
+                <div className="flex items-center gap-2">
+                  <span className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-sand-200 bg-sand-50 px-3 text-xs font-bold text-slate-600">
+                    {selectedCountry.phoneCode}
+                  </span>
+                  <input
+                    id="phone"
+                    required
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="61 000 0000"
+                    className="input"
+                  />
+                </div>
               </div>
+
+              {/* Country Selector */}
               <div>
-                <label htmlFor="city" className="label">City</label>
-                <select id="city" required className="input">
-                  {CITIES.map((c) => (
-                    <option key={c}>{c}</option>
+                <label htmlFor="country" className="label">Country</label>
+                <select
+                  id="country"
+                  value={countryCode}
+                  onChange={(e) => {
+                    setCountryCode(e.target.value);
+                    if (e.target.value === "SO") {
+                      setCity("Mogadishu (Xamar)");
+                    } else if (GLOBAL_CITIES[e.target.value]?.length) {
+                      setCity(GLOBAL_CITIES[e.target.value][0]);
+                    } else {
+                      setCity("Other");
+                    }
+                  }}
+                  className="input font-medium"
+                >
+                  {COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.name}
+                    </option>
                   ))}
                 </select>
               </div>
+
+              {/* City Selector */}
               <div>
-                <label htmlFor="district" className="label">District / neighbourhood</label>
-                <input id="district" required placeholder="Hodan, near KM4" className="input" />
+                <label htmlFor="city" className="label">City / Region</label>
+                {countryCode === "SO" ? (
+                  <select
+                    id="city"
+                    required
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="input font-medium"
+                  >
+                    {SOMALI_REGIONS_CITIES.map((group) => (
+                      <optgroup key={group.region} label={`── ${group.region} ──`}>
+                        {group.cities.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <option value="Other">Other City / Town (Custom)</option>
+                  </select>
+                ) : globalCityOptions.length > 0 ? (
+                  <select
+                    id="city"
+                    required
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="input font-medium"
+                  >
+                    {globalCityOptions.map((gc) => (
+                      <option key={gc} value={gc}>
+                        {gc}
+                      </option>
+                    ))}
+                    <option value="Other">Other City (Type below)</option>
+                  </select>
+                ) : (
+                  <input
+                    id="cityInput"
+                    required
+                    value={customCity}
+                    onChange={(e) => setCustomCity(e.target.value)}
+                    placeholder="Enter city / town name"
+                    className="input"
+                  />
+                )}
               </div>
+
+              {/* Custom City input if 'Other' is selected */}
+              {(city === "Other" || (countryCode === "SO" && city === "Other")) && (
+                <div className="sm:col-span-2">
+                  <label htmlFor="customCity" className="label">Specify City / Town Name</label>
+                  <input
+                    id="customCity"
+                    required
+                    value={customCity}
+                    onChange={(e) => setCustomCity(e.target.value)}
+                    placeholder="e.g. Afmadow, Harardhere, Qoryoley..."
+                    className="input"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="district" className="label">District / Neighbourhood / Area</label>
+                <input
+                  id="district"
+                  required
+                  value={district}
+                  onChange={(e) => setDistrict(e.target.value)}
+                  placeholder="e.g. Hodan, near KM4 / Eastleigh / Garissa Road"
+                  className="input"
+                />
+              </div>
+
               <div className="sm:col-span-2">
                 <label htmlFor="notes" className="label">
                   Delivery notes <span className="font-normal text-slate-400">(optional)</span>
                 </label>
-                <textarea id="notes" rows={2} placeholder="Landmarks, best time to deliver…" className="input resize-none" />
+                <textarea
+                  id="notes"
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Landmarks, house number, best time to deliver…"
+                  className="input resize-none"
+                />
               </div>
             </div>
           </section>

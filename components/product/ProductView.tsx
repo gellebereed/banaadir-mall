@@ -221,7 +221,13 @@ export default function ProductView({
             </Link>
             <button
               aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
-              onClick={() => toggleWishlist(product.id)}
+              onClick={() =>
+                toggleWishlist(product.id, {
+                  name: product.name,
+                  icon: product.icon,
+                  images: images.length > 0 ? images : product.images,
+                })
+              }
               className={`flex h-12 w-12 items-center justify-center rounded-full border-2 text-xl transition ${
                 wished
                   ? "border-coral-500 bg-coral-500 text-white"

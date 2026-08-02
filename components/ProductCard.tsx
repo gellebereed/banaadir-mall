@@ -82,7 +82,13 @@ export default function ProductCard({ product }: { product: Product }) {
 
       <button
         aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
-        onClick={() => toggleWishlist(product.id)}
+        onClick={() =>
+          toggleWishlist(product.id, {
+            name: product.name,
+            icon: product.icon,
+            images: mainImage ? [mainImage] : product.images,
+          })
+        }
         className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full shadow-md transition active:scale-90 ${
           wished ? "bg-coral-500 text-white" : "bg-white/90 text-slate-500 hover:text-coral-500"
         }`}

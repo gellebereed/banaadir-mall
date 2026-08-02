@@ -23,6 +23,16 @@ interface CartLine extends CartItem {
   product: Product;
 }
 
+/** A transient confirmation shown after a cart or wishlist action. */
+export interface Toast {
+  id: number;
+  kind: "cart" | "wishlist" | "removed";
+  title: string;
+  subtitle?: string;
+  image?: string;
+  icon?: string;
+}
+
 interface CartContextValue {
   /** Cart lines joined with their product records. */
   lines: CartLine[];
@@ -34,8 +44,11 @@ interface CartContextValue {
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
   wishlist: string[];
-  toggleWishlist: (productId: string) => void;
+  toggleWishlist: (productId: string, product?: Pick<Product, "name" | "icon" | "images">) => void;
   isWishlisted: (productId: string) => boolean;
+  /** Live confirmations rendered by <Toaster />. */
+  toasts: Toast[];
+  dismissToast: (id: number) => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -52,9 +65,13 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
+/** How long a confirmation stays on screen. */
+const TOAST_MS = 3200;
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   // Hydration guard: localStorage is only read after mount so the first
   // client render matches the server-rendered HTML.
   const [hydrated, setHydrated] = useState(false);
@@ -121,11 +138,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
       })
       .filter((l): l is CartLine => l !== null);
 
+    /** Queue a confirmation and schedule its removal. */
+    const pushToast = (toast: Omit<Toast, "id">) => {
+      const id = Date.now() + Math.random();
+      // Keep at most three on screen so a burst of clicks can't cover the page.
+      setToasts((prev) => [...prev.slice(-2), { ...toast, id }]);
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), TOAST_MS);
+    };
+
     return {
       lines,
       count: lines.reduce((sum, l) => sum + l.qty, 0),
       subtotal: lines.reduce((sum, l) => sum + l.qty * l.product.price, 0),
-      addToCart: (item) =>
+      toasts,
+      dismissToast: (id) => setToasts((prev) => prev.filter((t) => t.id !== id)),
+      addToCart: (item) => {
+        pushToast({
+          kind: "cart",
+          title: item.snapshot?.name ?? "Added to your cart",
+          subtitle: [item.color, item.size].filter(Boolean).join(" · ") || undefined,
+          image: item.snapshot?.image,
+          icon: item.snapshot?.icon,
+        });
         setItems((prev) => {
           const existing = prev.find((i) => i.productId === item.productId);
           if (existing) {
@@ -142,7 +176,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
             );
           }
           return [...prev, item];
-        }),
+        });
+      },
       updateQty: (productId, qty) =>
         setItems((prev) =>
           qty <= 0
@@ -153,15 +188,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
         setItems((prev) => prev.filter((i) => i.productId !== productId)),
       clearCart: () => setItems([]),
       wishlist,
-      toggleWishlist: (productId) =>
+      toggleWishlist: (productId, product) => {
+        const removing = wishlist.includes(productId);
+        pushToast({
+          kind: removing ? "removed" : "wishlist",
+          title: product?.name ?? (removing ? "Removed from wishlist" : "Saved to wishlist"),
+          subtitle: removing ? "Removed from your wishlist" : "Saved to your wishlist",
+          image: product?.images?.[0],
+          icon: product?.icon,
+        });
         setWishlist((prev) =>
-          prev.includes(productId)
-            ? prev.filter((id) => id !== productId)
-            : [...prev, productId],
-        ),
+          removing ? prev.filter((id) => id !== productId) : [...prev, productId],
+        );
+      },
       isWishlisted: (productId) => wishlist.includes(productId),
     };
-  }, [items, wishlist]);
+  }, [items, wishlist, toasts]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

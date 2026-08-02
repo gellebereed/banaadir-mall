@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { compressImageFile } from "@/lib/image-compress";
+import { compressImageFiles } from "@/lib/image-compress";
+
+/** "1.4 MB" / "870 KB" */
+function fileSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
+}
 
 /**
  * File input styled as a drop zone, with instant local previews of the
@@ -20,14 +27,16 @@ export default function PhotoPicker({
 }) {
   const [previews, setPreviews] = useState<string[]>([]);
   const [compressing, setCompressing] = useState(false);
+  const [saved, setSaved] = useState<{ bytes: number; total: number } | null>(null);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const rawFiles = Array.from(e.target.files ?? []);
     if (rawFiles.length === 0) return;
 
     setCompressing(true);
+    setSaved(null);
     try {
-      const compressedFiles = await Promise.all(rawFiles.map((f) => compressImageFile(f)));
+      const { files: compressedFiles, savedBytes } = await compressImageFiles(rawFiles);
 
       try {
         const dt = new DataTransfer();
@@ -39,6 +48,10 @@ export default function PhotoPicker({
 
       previews.forEach(URL.revokeObjectURL);
       setPreviews(compressedFiles.map((f) => URL.createObjectURL(f)));
+      setSaved({
+        bytes: savedBytes,
+        total: compressedFiles.reduce((sum, f) => sum + f.size, 0),
+      });
     } finally {
       setCompressing(false);
     }
@@ -81,6 +94,11 @@ export default function PhotoPicker({
           <p className="w-full text-xs font-semibold text-emerald-600">
             ✓ {previews.length} photo{previews.length === 1 ? "" : "s"} ready —
             save the form to upload.
+            {saved && saved.bytes > 0 && (
+              <span className="ml-1 font-medium text-slate-500">
+                Optimised to {fileSize(saved.total)}, saving {fileSize(saved.bytes)}.
+              </span>
+            )}
           </p>
         </div>
       )}

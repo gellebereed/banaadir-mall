@@ -8,6 +8,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
+import Toaster from "@/components/Toaster";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -60,6 +61,8 @@ export default async function RootLayout({
           <main className="flex-1 pb-20 md:pb-0">{children}</main>
           <Footer session={session} />
           <BottomNav />
+          {/* Cart / wishlist confirmations */}
+          <Toaster />
         </CartProvider>
       </body>
     </html>
