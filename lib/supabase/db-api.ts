@@ -147,6 +147,21 @@ function mapFeatures(p: { features?: unknown; specs?: unknown }): string[] {
   return [];
 }
 
+/**
+ * Categories that were renamed. Products still stored under the old slug
+ * would otherwise appear in NO category page — the slug isn't in the
+ * navigation, so they're unreachable. Remapping on read makes them visible
+ * immediately, without needing a data migration first.
+ * Keep in sync with LEGACY_CATEGORY_MAP in app/actions.ts.
+ */
+const LEGACY_CATEGORY_MAP: Record<string, string> = {
+  "fashion-apparel": "mens-fashion",
+  "beauty-perfume": "beauty",
+  "groceries-food": "groceries",
+  "sports-fitness": "sports-outdoor",
+  "baby-kids": "kids-baby",
+};
+
 async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
@@ -158,7 +173,7 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       slug: p.slug,
       name: p.name,
       store: p.store,
-      category: p.category,
+      category: LEGACY_CATEGORY_MAP[p.category] ?? p.category,
       subcategory: p.subcategory || undefined,
       price: Number(p.price),
       compareAt: p.compare_at ? Number(p.compare_at) : undefined,

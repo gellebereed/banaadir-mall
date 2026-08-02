@@ -208,7 +208,12 @@ export interface Employee {
 /** A full-width promotional banner in the home-page carousel. */
 export interface Banner {
   id: string;
-  title: string;
+  /**
+   * All copy is optional. Uploaded artwork usually already contains the
+   * headline, so an image-only banner is a normal case — it renders with
+   * no text overlay and no darkening scrim.
+   */
+  title?: string;
   subtitle?: string;
   cta?: string;
   /** Where the banner links to, e.g. /category/electronics. */
@@ -218,6 +223,12 @@ export interface Banner {
   from: string;
   to: string;
   active: boolean;
+  /**
+   * How the artwork fills its frame. "cover" crops to fill (good for
+   * photos), "contain" shows the whole image (good for ready-made banner
+   * graphics that must not be cut off).
+   */
+  fit?: "cover" | "contain";
 }
 
 /** A small tile in the "shop by discount / campaign" strip. */

@@ -68,9 +68,14 @@ export default async function AdminMarketingPage() {
                 {b.image && <Image src={b.image} alt="" fill sizes="112px" className="object-cover" />}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-slate-800">{b.title}</p>
+                <p className="truncate font-semibold text-slate-800">
+                  {b.title || (
+                    <span className="text-slate-500">🖼️ Image-only banner</span>
+                  )}
+                </p>
                 <p className="truncate text-xs text-slate-400">
-                  {b.subtitle ?? "No subtitle"} · links to {b.link}
+                  {b.subtitle || (b.title ? "No subtitle" : "No text overlay")} · links to {b.link}
+                  {b.fit === "contain" && " · whole image"}
                 </p>
               </div>
               <div className="flex items-center gap-1">
@@ -104,9 +109,17 @@ export default async function AdminMarketingPage() {
               <span className="label">Artwork</span>
               <PhotoPicker name="image" multiple={false} label="Upload banner image" hint="Wide images work best (about 1600 × 500)" />
             </div>
+            <div className="sm:col-span-2 rounded-xl bg-ocean-50 px-4 py-3 text-xs text-ocean-900">
+              💡 <strong>Text is optional.</strong> If your artwork already
+              contains the headline, leave the fields below empty — the banner
+              shows the image alone with nothing over it, and clicking it still
+              goes to the link.
+            </div>
             <div>
-              <label htmlFor="b-title" className="label">Headline</label>
-              <input id="b-title" name="title" required placeholder="Eid Mega Sale" className="input" />
+              <label htmlFor="b-title" className="label">
+                Headline <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input id="b-title" name="title" placeholder="Eid Mega Sale" className="input" />
             </div>
             <div>
               <label htmlFor="b-subtitle" className="label">Subtitle</label>
@@ -119,6 +132,17 @@ export default async function AdminMarketingPage() {
             <div>
               <label htmlFor="b-link" className="label">Links to</label>
               <input id="b-link" name="link" placeholder="/products?sort=discount" className="input" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="b-fit" className="label">Image display</label>
+              <select id="b-fit" name="fit" className="input" defaultValue="cover">
+                <option value="cover">Fill the frame — crops edges (best for photos)</option>
+                <option value="contain">Show the whole image — never cropped (best for ready-made banners)</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Pick &ldquo;show the whole image&rdquo; if your banner already
+                has text or a logo that must not be cut off.
+              </p>
             </div>
             <div>
               <label htmlFor="b-from" className="label">Gradient start</label>

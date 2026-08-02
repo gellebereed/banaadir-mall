@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -148,6 +148,40 @@ async function resolveVariants(
   );
 }
 
+/**
+ * Older category slugs that were renamed. Products saved under them became
+ * unreachable: the slug isn't in the navigation, so the product appeared in
+ * no category page at all — which is what made subcategories look broken.
+ */
+const LEGACY_CATEGORY_MAP: Record<string, string> = {
+  "fashion-apparel": "mens-fashion",
+  "beauty-perfume": "beauty",
+  "groceries-food": "groceries",
+  "sports-fitness": "sports-outdoor",
+  "baby-kids": "kids-baby",
+};
+
+/**
+ * Never let a product be saved into a category that doesn't exist.
+ * Renamed slugs are mapped to their replacement; anything else unknown is
+ * rejected loudly rather than silently orphaning the product.
+ */
+async function resolveCategory(submitted: string): Promise<string> {
+  const slug = (submitted || "").trim();
+  const { getCategories } = await import("@/lib/api");
+  const categories = await getCategories();
+
+  if (categories.some((c) => c.slug === slug)) return slug;
+
+  const mapped = LEGACY_CATEGORY_MAP[slug];
+  if (mapped && categories.some((c) => c.slug === mapped)) return mapped;
+
+  throw new Error(
+    `"${slug || "(empty)"}" is not a valid category, so the product would not ` +
+      `appear anywhere on the site. Pick one of: ${categories.map((c) => c.slug).join(", ")}.`,
+  );
+}
+
 /** The chosen default variant, validated against the submitted list. */
 function pickDefaultVariantId(
   formData: FormData,
@@ -193,7 +227,7 @@ export async function updateProduct(formData: FormData): Promise<void> {
     stock: variants
       ? variants.reduce((sum, v) => sum + v.stock, 0)
       : Number(formData.get("stock")),
-    category: String(formData.get("category")),
+    category: await resolveCategory(String(formData.get("category"))),
     subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
     icon: String(formData.get("icon") ?? "").trim() || product.icon,
     badge: (badgeRaw || undefined) as Product["badge"],
@@ -285,7 +319,7 @@ export async function createProduct(formData: FormData): Promise<void> {
     slug,
     name,
     store: storeSlug,
-    category: String(formData.get("category")),
+    category: await resolveCategory(String(formData.get("category"))),
     subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
     price,
     compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
@@ -704,12 +738,13 @@ export async function saveBanner(formData: FormData): Promise<void> {
     const current = await getMarketingSettings();
     const next: Banner = {
       id: id || "ban-" + Date.now().toString(36),
-      title: String(formData.get("title")).trim(),
+      title: String(formData.get("title") ?? "").trim() || undefined,
       subtitle: String(formData.get("subtitle") ?? "").trim() || undefined,
       cta: String(formData.get("cta") ?? "").trim() || undefined,
       link: String(formData.get("link") ?? "/products").trim() || "/products",
       from: String(formData.get("from") ?? "#1f6270"),
       to: String(formData.get("to") ?? "#fb8a0e"),
+      fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
       image,
       active: true,
     };
@@ -725,12 +760,13 @@ export async function saveBanner(formData: FormData): Promise<void> {
     await mutateDB((db) => {
       const next: Banner = {
         id: id || "ban-" + Date.now().toString(36),
-        title: String(formData.get("title")).trim(),
+        title: String(formData.get("title") ?? "").trim() || undefined,
         subtitle: String(formData.get("subtitle") ?? "").trim() || undefined,
         cta: String(formData.get("cta") ?? "").trim() || undefined,
         link: String(formData.get("link") ?? "/products").trim() || "/products",
         from: String(formData.get("from") ?? "#1f6270"),
         to: String(formData.get("to") ?? "#fb8a0e"),
+        fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
         image,
         active: true,
       };
