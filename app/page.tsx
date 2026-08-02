@@ -7,6 +7,8 @@ import ProductCard from "@/components/ProductCard";
 import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
+import ProductImage from "@/components/ProductImage";
+import { money } from "@/lib/format";
 import {
   getBestsellers,
   getCategories,
@@ -15,6 +17,7 @@ import {
   getMarketingSettings,
   getNewArrivals,
   getStores,
+  getBaseProducts,
 } from "@/lib/api";
 import type { Category, MarketingSettings, Product, SectionKey, Store } from "@/lib/types";
 
@@ -26,7 +29,7 @@ import type { Category, MarketingSettings, Product, SectionKey, Store } from "@/
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, flashProducts, flash, bestsellers, newArrivals, stores, marketing] =
+  const [categories, flashProducts, flash, bestsellers, newArrivals, stores, marketing, allProducts] =
     await Promise.all([
       getCategories(),
       getFlashProducts(),
@@ -35,12 +38,36 @@ export default async function HomePage() {
       getNewArrivals(4),
       getStores(),
       getMarketingSettings(),
+      getBaseProducts(),
     ]);
 
   const officialBrands = stores.filter((s) => s.official);
   const localStores = stores.filter((s) => !s.official).slice(0, 4);
   const activeBanners = marketing.banners.filter((b) => b.active);
   const activeTiles = marketing.promoTiles.filter((t) => t.active);
+
+  // Select 1 real product from each of 4 distinct stores for the Hero section
+  const heroProducts: Product[] = [];
+  const seenStores = new Set<string>();
+  const targetStores = ["karaca-home", "us-polo-assn", "altinyildiz-classics", "ozdilek-home"];
+
+  for (const slug of targetStores) {
+    const p = allProducts.find((item) => item.store === slug);
+    if (p) {
+      heroProducts.push(p);
+      seenStores.add(p.store);
+    }
+  }
+
+  if (heroProducts.length < 4) {
+    for (const p of allProducts) {
+      if (!seenStores.has(p.store)) {
+        heroProducts.push(p);
+        seenStores.add(p.store);
+        if (heroProducts.length === 4) break;
+      }
+    }
+  }
 
   /** Every section the admin can place, keyed by its section id. */
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
@@ -60,7 +87,7 @@ export default async function HomePage() {
 
   return (
     <div>
-      <Hero marketing={marketing} />
+      <Hero marketing={marketing} heroProducts={heroProducts} />
       {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
 
       {marketing.sections
@@ -87,7 +114,20 @@ function CampaignBanner({ campaign }: { campaign: MarketingSettings["campaign"] 
 
 /* ── Hero ─────────────────────────────────────────────────────────── */
 
-function Hero({ marketing }: { marketing: MarketingSettings }) {
+function Hero({
+  marketing,
+  heroProducts,
+}: {
+  marketing: MarketingSettings;
+  heroProducts: Product[];
+}) {
+  const cardPositions = [
+    { cls: "left-0 top-2", delay: "0s" },
+    { cls: "right-0 top-8", delay: "0.8s" },
+    { cls: "left-4 bottom-8", delay: "1.6s" },
+    { cls: "right-2 bottom-2", delay: "2.4s" },
+  ];
+
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-ocean-950 via-ocean-800 to-ocean-600">
       <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-mango-500/20 blur-3xl" />
@@ -132,28 +172,37 @@ function Hero({ marketing }: { marketing: MarketingSettings }) {
           </dl>
         </div>
 
-        <div className="relative mx-auto hidden h-96 w-full max-w-md lg:block">
-          {[
-            { icon: "🎧", label: "AuraPods Pro", price: "$49", cls: "left-0 top-6", delay: "0s" },
-            { icon: "👗", label: "Amal Maxi Dress", price: "$39", cls: "right-0 top-0", delay: "0.8s" },
-            { icon: "🍯", label: "Qasil Face Mask", price: "$14", cls: "left-8 bottom-8", delay: "1.6s" },
-            { icon: "🐪", label: "Plush Camel", price: "$15", cls: "right-6 bottom-16", delay: "2.4s" },
-          ].map((t) => (
-            <div
-              key={t.label}
-              className={`animate-float absolute ${t.cls} flex items-center gap-3 rounded-2xl bg-white/95 p-3 pr-5 shadow-2xl`}
-              style={{ animationDelay: t.delay }}
-            >
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sand-100 text-2xl">
-                {t.icon}
-              </span>
-              <div>
-                <p className="text-xs font-semibold text-slate-700">{t.label}</p>
-                <p className="font-display font-bold text-ocean-800">{t.price}</p>
-              </div>
-            </div>
-          ))}
-          <div className="absolute inset-8 rounded-full bg-white/5 ring-1 ring-white/10" />
+        <div className="relative mx-auto hidden h-[420px] w-full max-w-lg lg:block">
+          {heroProducts.map((p, idx) => {
+            const pos = cardPositions[idx % cardPositions.length];
+            const storeLabel = p.store.replace(/-/g, " ").toUpperCase();
+
+            return (
+              <Link
+                key={p.id}
+                href={`/product/${p.slug}`}
+                className={`animate-float absolute ${pos.cls} group flex items-center gap-3.5 rounded-2xl bg-white/95 p-3 pr-5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80 z-10 max-w-[260px] sm:max-w-[280px]`}
+                style={{ animationDelay: pos.delay }}
+              >
+                <ProductImage
+                  product={p}
+                  className="h-14 w-14 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="inline-block rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900 truncate max-w-[140px]">
+                    {storeLabel}
+                  </span>
+                  <p className="mt-0.5 truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
+                    {p.name}
+                  </p>
+                  <p className="mt-0.5 font-display font-extrabold text-sm text-ocean-950">
+                    {money(p.price)}
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
+          <div className="absolute inset-10 rounded-full bg-white/5 ring-1 ring-white/10" />
         </div>
       </div>
     </section>
