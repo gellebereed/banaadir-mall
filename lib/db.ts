@@ -119,9 +119,14 @@ const DB_PATH = path.join(process.cwd(), "data", "db.json");
 let cache: { data: DB; mtimeMs: number } | null = null;
 
 export async function getDB(): Promise<DB> {
-  if (cache) return cache.data;
   try {
     const stat = await fs.stat(DB_PATH);
+    // The cache is only good while the file is unchanged. Returning it
+    // without this check — which is what the code used to do, despite the
+    // comment above — meant a worker that had read the file before a save
+    // kept serving the old data indefinitely, so a seller's saved settings
+    // read back as empty and looked like they hadn't saved at all.
+    if (cache && cache.mtimeMs === stat.mtimeMs) return cache.data;
     const raw = JSON.parse(await fs.readFile(DB_PATH, "utf8")) as Partial<DB>;
     // Merge over defaults so adding new fields never breaks an old db.json.
     const data: DB = {
@@ -150,19 +155,28 @@ export async function getDB(): Promise<DB> {
     cache = { data, mtimeMs: stat.mtimeMs };
     return data;
   } catch {
-    // First run (or read-only / corrupted file): start from defaults.
+    // No readable file. On a read-only filesystem (Netlify / Vercel) the
+    // in-memory copy is the only state there is, so keep it rather than
+    // resetting every mutation back to the defaults.
+    if (cache) return cache.data;
+    // First run, or a corrupted file: start from defaults.
     const data = structuredClone(DEFAULT_DB);
-    cache = { data, mtimeMs: Date.now() };
+    cache = { data, mtimeMs: 0 };
     return data;
   }
 }
 
 /** Writes to disk. Returns false when the filesystem is read-only. */
 async function saveDB(db: DB): Promise<boolean> {
-  cache = { data: db, mtimeMs: Date.now() };
+  // Cache with mtime 0 first: if the write fails we still hold the newest
+  // data, and any real file will have a different mtime and be re-read.
+  cache = { data: db, mtimeMs: 0 };
   try {
     await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
     await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf8");
+    // Adopt the file's real mtime so the next read is served from cache
+    // instead of parsing the file again.
+    cache = { data: db, mtimeMs: (await fs.stat(DB_PATH)).mtimeMs };
     return true;
   } catch {
     // Serverless platforms (Netlify / Vercel) have a read-only filesystem.
