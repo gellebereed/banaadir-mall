@@ -91,6 +91,37 @@ export function belongsToOrder(candidate: string, baseId: string): boolean {
 }
 
 /**
+ * Rank used to decide an order's overall status from its parcels.
+ * Cancelled sits outside the progression, so it is handled separately.
+ */
+const STATUS_RANK: Record<string, number> = {
+  cancelled: -1, pending: 0, processing: 1, shipped: 2, delivered: 3,
+};
+
+/**
+ * The status of a whole order given its parcels: the LEAST advanced one.
+ *
+ * An order is only "delivered" once every parcel has arrived — reporting
+ * delivered while a second parcel is still with a courier is the kind of
+ * thing customers open disputes over.
+ *
+ * A cancelled parcel does not hold the rest back. One vendor cancelling
+ * shouldn't make the whole order read as cancelled while the others ship;
+ * only an order where EVERY parcel is cancelled is cancelled.
+ */
+export function mergeParcelStatuses<T extends { status: string }>(parcels: T[]): string {
+  if (parcels.length === 0) return "pending";
+
+  const live = parcels.filter((p) => p.status !== "cancelled");
+  if (live.length === 0) return "cancelled";
+
+  return live.reduce(
+    (worst, p) => (STATUS_RANK[p.status] < STATUS_RANK[worst] ? p.status : worst),
+    live[0].status,
+  );
+}
+
+/**
  * The customer-facing base id for any vendor parcel id:
  * "BM-12345-KARA" → "BM-12345". Ids are "BM-<digits>" plus an optional
  * suffix, so only a trailing non-numeric segment is stripped — a base id

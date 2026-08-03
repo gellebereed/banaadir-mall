@@ -23,7 +23,13 @@ import {
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
 import { sellableUnits, validateProductCodes } from "@/lib/odoo/mapping";
-import { baseOrderId, belongsToOrder, groupByStore, vendorOrderIds } from "@/lib/order-utils";
+import {
+  baseOrderId,
+  belongsToOrder,
+  groupByStore,
+  mergeParcelStatuses,
+  vendorOrderIds,
+} from "@/lib/order-utils";
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp";
 import { can, type AccessArea, type Session } from "@/lib/auth";
 import { mutateDB } from "@/lib/db";
@@ -1121,17 +1127,7 @@ export async function getOrderAction(id: string): Promise<Order | undefined> {
   const parcels = (await getOrders()).filter((o) => belongsToOrder(o.id, id));
   if (parcels.length === 0) return undefined;
 
-  const RANK: Record<OrderStatus, number> = {
-    cancelled: -1, pending: 0, processing: 1, shipped: 2, delivered: 3,
-  };
-  // Cancelled parcels don't hold the order back — one vendor cancelling
-  // shouldn't make the whole order read as cancelled while others ship.
-  const live = parcels.filter((o) => o.status !== "cancelled");
-  const overall = (live.length > 0 ? live : parcels).reduce(
-    (worst, o) => (RANK[o.status] < RANK[worst] ? o.status : worst),
-    (live[0] ?? parcels[0]).status,
-  );
-
+  const overall = mergeParcelStatuses(parcels) as OrderStatus;
   const first = parcels[0];
   return {
     ...first,

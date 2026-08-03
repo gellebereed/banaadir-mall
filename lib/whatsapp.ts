@@ -133,6 +133,26 @@ export interface VendorOrderMessage {
 /** WhatsApp renders *this* bold. Only works when it hugs a non-space character. */
 const b = (text: string) => `*${text}*`;
 
+/**
+ * Address lines, without repeating the city.
+ *
+ * Checkout assembles the address as "District, City, Country", so printing
+ * the city underneath it produced:
+ *
+ *     Hodan District, Mogadishu (Xamar), Somalia
+ *     Mogadishu (Xamar)
+ *
+ * which reads like a mistake on an otherwise precise document.
+ */
+function addressLines(address: string, city: string): string[] {
+  const lines = [address].filter(Boolean);
+  const trimmedCity = city.trim();
+  if (trimmedCity && !address.toLowerCase().includes(trimmedCity.toLowerCase())) {
+    lines.push(trimmedCity);
+  }
+  return lines;
+}
+
 /** "3 Aug 2026, 14:22" — unambiguous for a bilingual audience, unlike 03/08. */
 function stamp(date: Date): string {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -191,8 +211,7 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
     customerPhone,
     ``,
     b("DELIVERY ADDRESS"),
-    address,
-    city,
+    ...addressLines(address, city),
     ``,
     b(`ITEMS TO PACK (${lines.length})`),
     ``,
@@ -249,8 +268,7 @@ export function buildCustomerReceipt(input: CustomerReceipt): string {
     `${b("Name:")} ${customerName}`,
     ``,
     b("DELIVERING TO"),
-    address,
-    city,
+    ...addressLines(address, city),
     ``,
     // Only worth explaining when it actually applies — a single-vendor
     // order arriving in one parcel needs no explanation.
