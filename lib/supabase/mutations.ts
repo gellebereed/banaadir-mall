@@ -137,6 +137,8 @@ const EXTENDED_STORE_COLUMNS = [
   "followers",
   "joined_year",
   "art",
+  // Added by supabase/migration-vendor-whatsapp.sql.
+  "whatsapp",
 ] as const;
 
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
@@ -309,6 +311,12 @@ export async function updateStoreFields(
     if (fields.followers !== undefined) row.followers = fields.followers;
     if (fields.joinedYear !== undefined) row.joined_year = fields.joinedYear;
     if (fields.art !== undefined) row.art = fields.art;
+    // Kept in sync with `phone` so the older column stays truthful for
+    // anything still reading it (and for a seller who only ever filled one).
+    if (fields.whatsapp !== undefined) {
+      row.whatsapp = fields.whatsapp || null;
+      row.phone = fields.whatsapp || null;
+    }
 
     if (Object.keys(row).length === 0) return true;
 

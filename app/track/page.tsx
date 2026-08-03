@@ -32,7 +32,18 @@ function TrackContent() {
   const [notFound, setNotFound] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [brandStatuses, setBrandStatuses] = useState<
-    Record<string, { status: OrderStatus; store: string; total: number }>
+    Record<
+      string,
+      {
+        status: OrderStatus;
+        store: string;
+        storeName: string;
+        storeIcon: string;
+        storeLogo?: string;
+        orderId: string;
+        total: number;
+      }
+    >
   >({});
 
   async function performLookup(searchId: string) {
@@ -108,15 +119,29 @@ function TrackContent() {
 
   const reached = order ? STATUS_INDEX[order.status] : -1;
 
-  // Group order items by vendor store / brand
+  /**
+   * The parcels to show, one per store.
+   *
+   * Items are grouped by their own `store` when they carry one — that's the
+   * case for the copy saved in this browser at checkout. An order fetched
+   * from the server has items of just {productId, qty}, so grouping them
+   * would collapse every parcel into one; there we build the list from the
+   * per-parcel statuses instead, which always know their store.
+   */
   const itemsWithStore = order?.items || [];
   const groupedStores: Record<string, typeof itemsWithStore> = {};
-  itemsWithStore.forEach((item) => {
-    const storeKey = item.store || order?.store || "banaadir-mall";
-    groupedStores[storeKey] = groupedStores[storeKey] || [];
-    groupedStores[storeKey].push(item);
-  });
-  const storeEntries = Object.entries(groupedStores);
+  for (const item of itemsWithStore) {
+    if (!item.store) continue;
+    groupedStores[item.store] = groupedStores[item.store] || [];
+    groupedStores[item.store].push(item);
+  }
+
+  const storeEntries =
+    Object.keys(groupedStores).length > 0
+      ? Object.entries(groupedStores)
+      : Object.keys(brandStatuses).map(
+          (slug) => [slug, [] as typeof itemsWithStore] as const,
+        );
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -225,29 +250,55 @@ function TrackContent() {
           {/* Per-Vendor Brand Status Breakdown */}
           {storeEntries.length > 0 && (
             <div className="border-t border-sand-200 pt-6">
-              <h3 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400 mb-3">
-                Per-Brand Delivery Status ({storeEntries.length})
+              <h3 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400 mb-1">
+                {storeEntries.length > 1
+                  ? `Your ${storeEntries.length} parcels`
+                  : "Your parcel"}
               </h3>
+              {storeEntries.length > 1 && (
+                <p className="mb-3 text-xs text-slate-500">
+                  Each store ships separately, so your parcels may arrive on
+                  different days.
+                </p>
+              )}
               <div className="space-y-3">
                 {storeEntries.map(([storeSlug, storeItems]) => {
-                  const storeName = storeSlug.replace(/-/g, " ").toUpperCase();
-                  const brandStatus = brandStatuses[storeSlug]?.status || order.status;
+                  const brand = brandStatuses[storeSlug];
+                  // Fall back to a readable name rather than the raw slug —
+                  // customers were being told their parcel was with
+                  // "US-POLO-ASSN" instead of "U.S. Polo Assn."
+                  const storeName = brand?.storeName ?? storeSlug.replace(/-/g, " ");
+                  const brandStatus = brand?.status || order.status;
 
                   return (
                     <div
                       key={storeSlug}
                       className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sand-50 p-4 border border-sand-200"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ocean-900 text-white font-bold text-sm">
-                          🏪
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-lg">
+                          {brand?.storeIcon ?? "🏪"}
                         </span>
-                        <div>
-                          <p className="font-display text-sm font-bold text-ocean-950">
+                        <div className="min-w-0">
+                          <p className="truncate font-display text-sm font-bold capitalize text-ocean-950">
                             {storeName}
                           </p>
                           <p className="text-xs text-slate-500">
-                            {storeItems.length} item{storeItems.length === 1 ? "" : "s"} in this brand parcel
+                            {/* Item counts are only known for the copy saved
+                                in this browser; a server-fetched order shows
+                                the parcel's value instead of "0 items". */}
+                            {storeItems.length > 0
+                              ? `${storeItems.length} item${storeItems.length === 1 ? "" : "s"}`
+                              : brand
+                                ? money(brand.total)
+                                : "In progress"}
+                            {/* The parcel's own number — what the store
+                                searches for if the customer calls them. */}
+                            {brand?.orderId && brand.orderId !== order.id && (
+                              <span className="ml-1.5 font-mono text-[11px] text-slate-400">
+                                {brand.orderId}
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>

@@ -6,6 +6,7 @@ import { updateStoreSettings, type SaveState } from "@/app/actions";
 import PhotoPicker from "./PhotoPicker";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
+import { formatWhatsAppNumber } from "@/lib/whatsapp";
 import type { Store } from "@/lib/types";
 
 const INITIAL: SaveState = { ok: false, message: "" };
@@ -107,6 +108,38 @@ export default function StoreSettingsForm({
           Icon <span className="font-normal text-slate-400">(used when there is no logo)</span>
         </label>
         <input id="store-icon" name="icon" maxLength={4} defaultValue={store.icon} className="input" />
+      </div>
+
+      {/*
+        Without a number here, orders for this store go to Banaadir Mall
+        support to be relayed by hand — so this field is the difference
+        between hearing about a sale instantly and hearing about it later.
+      */}
+      <div className="sm:col-span-2">
+        <label htmlFor="whatsapp" className="label">
+          Order WhatsApp number
+        </label>
+        <input
+          id="whatsapp"
+          name="whatsapp"
+          type="tel"
+          inputMode="tel"
+          defaultValue={store.whatsapp ? formatWhatsAppNumber(store.whatsapp) : ""}
+          placeholder="+252 61 333 4444"
+          className="input"
+        />
+        {store.whatsapp ? (
+          <p className="mt-1 text-xs text-emerald-600">
+            ✓ Orders are sent straight to {formatWhatsAppNumber(store.whatsapp)} on
+            WhatsApp, with only your own items and your own order number.
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-mango-700">
+            ⚠ No number yet — customers can&apos;t message you directly, so
+            their orders go to Banaadir Mall support to be passed on. Add
+            your number to receive them the moment they&apos;re placed.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-4 sm:col-span-2">

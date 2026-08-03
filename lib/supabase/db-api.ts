@@ -78,6 +78,10 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       art: s.art || DEFAULT_ART,
       logo: s.logo || STORE_LOGO_FALLBACK[s.slug] || undefined,
       banner: s.banner || undefined,
+      // `phone` is the older column and was never read until now — falling
+      // back to it means any number already entered there starts receiving
+      // order notifications without the seller re-typing it.
+      whatsapp: s.whatsapp || s.phone || undefined,
     }));
   } catch {
     return null;

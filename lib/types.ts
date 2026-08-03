@@ -93,6 +93,17 @@ export interface Store {
   logo?: string;
   /** Uploaded banner URL — replaces the gradient banner when set. */
   banner?: string;
+  /**
+   * WhatsApp number orders are sent to, in international form
+   * ("252613334444"). Sellers type it every possible way, so it is
+   * normalised on save — see lib/whatsapp.ts.
+   *
+   * Falls back to the older `stores.phone` column on read, so a number
+   * already entered there starts working without being re-typed. When it
+   * is missing entirely, order notifications go to the platform number
+   * instead of rendering a dead button.
+   */
+  whatsapp?: string;
 }
 
 export interface Product {

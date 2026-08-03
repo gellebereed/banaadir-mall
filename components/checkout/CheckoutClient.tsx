@@ -8,10 +8,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import OrderConfirmation, { type PlacedOrder } from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
-import type { MarketingSettings } from "@/lib/types";
+import { groupByStore, vendorOrderIds } from "@/lib/order-utils";
+import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
+import type { MarketingSettings, Store } from "@/lib/types";
 import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
 import { detectUserLocation } from "@/lib/detect-location";
 
@@ -22,11 +25,24 @@ const PAYMENT_METHODS = [
   { id: "cod", icon: "💵", name: "Cash on Delivery", note: "Pay when your order arrives" },
 ] as const;
 
-export default function CheckoutClient({ settings }: { settings: MarketingSettings }) {
+export default function CheckoutClient({
+  settings,
+  stores,
+}: {
+  settings: MarketingSettings;
+  stores: Store[];
+}) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const { lines, subtotal, clearCart } = useCart();
   const [payment, setPayment] = useState<string>("evc");
-  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  /**
+   * A full snapshot of what was ordered, captured BEFORE the cart is
+   * cleared. The confirmation screen needs the items to build each
+   * vendor's WhatsApp message, and by the time it renders `lines` is
+   * already empty — which is why the old screen could only ever send a
+   * message with no items in it.
+   */
+  const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
 
   // Delivery form states
   const [name, setName] = useState("");
@@ -182,61 +198,62 @@ export default function CheckoutClient({ settings }: { settings: MarketingSettin
       console.warn("Order submission sync warning:", err);
     }
 
-    setPlacedOrderId(orderId);
+    // Snapshot the order BEFORE clearing the cart — the confirmation screen
+    // builds each vendor's message from it, and `lines` is empty by then.
+    const grouped = groupByStore(lines.map((l) => ({ ...l, store: l.product.store })));
+    const parcelIds = vendorOrderIds(orderId, [...grouped.keys()]);
+    const paymentLabel =
+      PAYMENT_METHODS.find((m) => m.id === payment)?.name ?? payment;
+
+    setPlacedOrder({
+      baseId: orderId,
+      placedAt: new Date().toISOString(),
+      customerName: name,
+      customerPhone: fullPhone,
+      address: fullAddress,
+      city: destinationCity,
+      paymentLabel,
+      subtotal,
+      delivery,
+      total,
+      parcels: [...grouped.entries()].map(([storeSlug, storeLines]) => {
+        const store = stores.find((s) => s.slug === storeSlug);
+        return {
+          storeSlug,
+          // A store missing from the list (deactivated mid-checkout) still
+          // gets a readable name rather than a raw slug.
+          storeName: store?.name ?? storeSlug.replace(/-/g, " "),
+          storeIcon: store?.icon ?? "🏪",
+          storeLogo: store?.logo,
+          whatsapp: store?.whatsapp,
+          orderId: parcelIds.get(storeSlug) ?? orderId,
+          subtotal: storeLines.reduce((sum, l) => sum + l.product.price * l.qty, 0),
+          lines: storeLines.map((l) => {
+            // The variant the customer actually chose decides both the
+            // options label and which SKU the vendor should pick.
+            const variant =
+              findVariant(l.product, l.color, l.size) ?? defaultVariant(l.product);
+            return {
+              name: l.product.name,
+              qty: l.qty,
+              price: l.product.price,
+              options: variant ? variantLabel(variant) : undefined,
+              reference: variant?.sku || l.product.internalReference,
+              image: l.product.images?.[0],
+            };
+          }),
+        };
+      }),
+    });
+
     clearCart();
     setIsSubmitting(false);
     window.scrollTo({ top: 0 });
   }
 
   // ── Success screen ───────────────────────────────────────────────
-  if (placedOrderId) {
-    const waText = encodeURIComponent(
-      `Hello Banaadir Mall / Vendor! 🛍️\n\nI just placed order *${placedOrderId}* on Banaadir Mall.\n\n👤 *Customer:* ${name}\n📞 *Phone:* ${selectedCountry.phoneCode} ${phone}\n📍 *Delivery:* ${city === "Other" ? customCity : city}, ${selectedCountry.name}\n💰 *Total:* $${total.toFixed(2)}\n\nPlease confirm my order delivery status. Thank you!`
-    );
-
-    return (
-      <div className="mx-auto flex max-w-lg flex-col items-center px-4 py-16 text-center animate-fade-up">
-        <span className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-5xl shadow-sm">
-          🎉
-        </span>
-        <h1 className="mt-6 font-display text-3xl font-extrabold text-ocean-950">
-          Order Placed Successfully!
-        </h1>
-        <p className="mt-3 text-sm text-slate-600">
-          Thank you for shopping on Banaadir Mall. Your order number is{" "}
-          <strong className="rounded-lg bg-sand-100 px-2 py-1 font-mono text-base font-bold text-ocean-900">
-            {placedOrderId}
-          </strong>.
-        </p>
-
-        {/* WhatsApp Seller Notification Button */}
-        <div className="mt-6 w-full rounded-2xl border-2 border-emerald-300 bg-emerald-50/70 p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-            ⚡ Instant Vendor Notification
-          </p>
-          <p className="mt-1 text-xs text-emerald-700">
-            Send order confirmation directly to the vendor via WhatsApp for faster processing & live updates.
-          </p>
-          <a
-            href={`https://wa.me/252610000000?text=${waText}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700"
-          >
-            <span>💬 Notify Vendor on WhatsApp</span>
-          </a>
-        </div>
-
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link href={`/track?id=${placedOrderId}`} className="btn-primary !py-2.5 text-sm">
-            📦 Track Order Status
-          </Link>
-          <Link href="/products" className="btn-secondary !py-2.5 text-sm">
-            Keep Shopping
-          </Link>
-        </div>
-      </div>
-    );
+  if (placedOrder) {
+    return <OrderConfirmation order={placedOrder} deliveryEstimate={estimate} />;
   }
 
   // ── Empty cart guard ─────────────────────────────────────────────

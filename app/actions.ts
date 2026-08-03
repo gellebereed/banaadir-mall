@@ -23,6 +23,8 @@ import {
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
 import { sellableUnits, validateProductCodes } from "@/lib/odoo/mapping";
+import { baseOrderId, belongsToOrder, groupByStore, vendorOrderIds } from "@/lib/order-utils";
+import { normalizeWhatsAppNumber } from "@/lib/whatsapp";
 import { can, type AccessArea, type Session } from "@/lib/auth";
 import { mutateDB } from "@/lib/db";
 import { getSession } from "@/lib/session";
@@ -532,6 +534,19 @@ export async function updateStoreSettings(
   if (removeLogo && store.logo) await deleteUpload(store.logo);
   if (removeBanner && store.banner) await deleteUpload(store.banner);
 
+  // Normalise here, not on display: what's stored is then always the bare
+  // international form wa.me needs, whichever way the seller typed it.
+  const whatsappRaw = String(formData.get("whatsapp") ?? "").trim();
+  const whatsapp = normalizeWhatsAppNumber(whatsappRaw);
+  if (whatsappRaw && !whatsapp) {
+    return {
+      ok: false,
+      message:
+        `"${whatsappRaw}" doesn't look like a WhatsApp number. Use the ` +
+        `international form, e.g. +252 61 333 4444 — nothing else was saved.`,
+    };
+  }
+
   const updatedFields: Partial<Store> = {
     name: String(formData.get("name")).trim() || store.name,
     tagline: String(formData.get("tagline")).trim(),
@@ -539,6 +554,7 @@ export async function updateStoreSettings(
     icon: String(formData.get("icon") ?? "").trim() || store.icon,
     logo: removeLogo ? undefined : (logo ?? store.logo),
     banner: removeBanner ? undefined : (banner ?? store.banner),
+    whatsapp: whatsapp || undefined,
   };
 
   const supabaseOk = await updateStoreFields(storeSlug, updatedFields);
@@ -1047,19 +1063,19 @@ export async function submitOrderAction(payload: {
 }): Promise<{ ok: boolean; message: string; orderId: string }> {
   const { id, customerName, customerPhone, customerEmail, address, city, items } = payload;
 
-  const itemsByStore = new Map<string, typeof items>();
-  for (const item of items) {
-    const list = itemsByStore.get(item.store) || [];
-    list.push(item);
-    itemsByStore.set(item.store, list);
-  }
+  const itemsByStore = groupByStore(items);
+
+  // The SAME helper the checkout screen uses to label parcels and address
+  // WhatsApp messages. These two used to compute ids independently, so the
+  // number the customer was shown matched no stored record.
+  const orderIds = vendorOrderIds(id, [...itemsByStore.keys()]);
 
   const { createOrderInSupabase } = await import("@/lib/supabase/mutations");
 
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
     const storeSubtotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
     const orderRecord: Order = {
-      id: itemsByStore.size > 1 ? `${id}-${storeSlug.slice(0, 4)}` : id,
+      id: orderIds.get(storeSlug) ?? id,
       date: new Date().toISOString().slice(0, 10),
       customer: customerName,
       email: customerEmail || "",
@@ -1086,8 +1102,45 @@ export async function submitOrderAction(payload: {
 }
 
 export async function getOrderAction(id: string): Promise<Order | undefined> {
-  const { getOrder } = await import("@/lib/api");
-  return getOrder(id);
+  const { getOrder, getOrders } = await import("@/lib/api");
+
+  const exact = await getOrder(id);
+  if (exact) return exact;
+
+  /**
+   * Nothing matched exactly, so this is very likely the BASE id of a
+   * multi-vendor order — the only number the customer was ever given,
+   * while the records actually stored are "BM-12345-KARA" and friends.
+   * Looking that up used to return nothing, so tracking a multi-vendor
+   * order silently reported "not found".
+   *
+   * The parcels are merged into one view: their items combined, their
+   * totals summed, and the LEAST advanced status shown, because an order
+   * is only "delivered" once every parcel has arrived.
+   */
+  const parcels = (await getOrders()).filter((o) => belongsToOrder(o.id, id));
+  if (parcels.length === 0) return undefined;
+
+  const RANK: Record<OrderStatus, number> = {
+    cancelled: -1, pending: 0, processing: 1, shipped: 2, delivered: 3,
+  };
+  // Cancelled parcels don't hold the order back — one vendor cancelling
+  // shouldn't make the whole order read as cancelled while others ship.
+  const live = parcels.filter((o) => o.status !== "cancelled");
+  const overall = (live.length > 0 ? live : parcels).reduce(
+    (worst, o) => (RANK[o.status] < RANK[worst] ? o.status : worst),
+    (live[0] ?? parcels[0]).status,
+  );
+
+  const first = parcels[0];
+  return {
+    ...first,
+    id: baseOrderId(first.id),
+    store: parcels.length === 1 ? first.store : "",
+    items: parcels.flatMap((o) => o.items),
+    total: parcels.reduce((sum, o) => sum + o.total, 0),
+    status: overall,
+  };
 }
 
 export async function getUserOrdersAction(query: {
@@ -1111,22 +1164,56 @@ export async function getUserOrdersAction(query: {
   });
 }
 
-export async function getBrandOrderStatusesAction(
-  baseOrderId: string
-): Promise<Record<string, { status: OrderStatus; store: string; total: number }>> {
-  const { getOrders } = await import("@/lib/api");
-  const allOrders = await getOrders();
-
-  const cleanBase = baseOrderId.trim().toLowerCase();
-  const matches = allOrders.filter(
-    (o) => o.id.toLowerCase() === cleanBase || o.id.toLowerCase().startsWith(`${cleanBase}-`)
-  );
-
-  const result: Record<string, { status: OrderStatus; store: string; total: number }> = {};
-  for (const o of matches) {
-    if (o.store) {
-      result[o.store] = { status: o.status, store: o.store, total: o.total };
+/**
+ * Per-parcel status for an order, keyed by store slug. Accepts the base id
+ * ("BM-12345") or any single parcel id.
+ *
+ * Carries the store's display NAME and icon as well as its status: the
+ * tracking page used to render the slug uppercased, so customers were told
+ * their parcel was with "US-POLO-ASSN" rather than "U.S. Polo Assn."
+ */
+export async function getBrandOrderStatusesAction(orderId: string): Promise<
+  Record<
+    string,
+    {
+      status: OrderStatus;
+      store: string;
+      storeName: string;
+      storeIcon: string;
+      storeLogo?: string;
+      orderId: string;
+      total: number;
     }
+  >
+> {
+  const { getOrders, getAllStores } = await import("@/lib/api");
+  const [allOrders, stores] = await Promise.all([getOrders(), getAllStores()]);
+
+  const base = baseOrderId(orderId);
+  const matches = allOrders.filter((o) => belongsToOrder(o.id, base));
+
+  const result: Record<
+    string,
+    {
+      status: OrderStatus; store: string; storeName: string; storeIcon: string;
+      storeLogo?: string; orderId: string; total: number;
+    }
+  > = {};
+
+  for (const o of matches) {
+    if (!o.store) continue;
+    const store = stores.find((s) => s.slug === o.store);
+    result[o.store] = {
+      status: o.status,
+      store: o.store,
+      // Fall back to a de-slugified name rather than showing nothing for a
+      // store that has since been removed.
+      storeName: store?.name ?? o.store.replace(/-/g, " "),
+      storeIcon: store?.icon ?? "🏪",
+      storeLogo: store?.logo,
+      orderId: o.id,
+      total: o.total,
+    };
   }
   return result;
 }
