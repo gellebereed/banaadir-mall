@@ -48,6 +48,8 @@ export interface DB {
    * db.json without it still loads.
    */
   orderDelivery?: Record<string, Pick<Order, "delivery" | "timeline">>;
+  /** orderId → ISO timestamp the seller first opened it (unread badge). */
+  ordersSeen?: Record<string, string>;
   /** Status overrides per store slug (approve / reject / suspend). */
   storeStatus: Record<string, Store["status"]>;
   /** Store profile edits per slug (name, tagline, logo, banner, …). */

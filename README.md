@@ -347,6 +347,35 @@ through `money()`, which drops trailing zeros: right for a price tag
 The product's **internal reference** is included per line when it has one,
 so the parcel can be picked off a shelf without opening the dashboard.
 
+### Telling the seller an order arrived
+
+A seller used to find out an order existed whenever they next happened to
+open the dashboard — the WhatsApp hand-off at checkout only fires if the
+*customer* taps it. Run `supabase/migration-order-notifications.sql`, then:
+
+- **A bell with an unread count** in the dashboard header (desktop *and*
+  mobile, since a seller on a phone is exactly who needs telling), plus a
+  badge on the Orders tab and a **New** tag on the rows themselves.
+- **New orders arrive live** over Supabase Realtime — the row is pushed the
+  moment it's inserted, filtered server-side to that store.
+- **A chime and a desktop notification** when one lands. Permission is never
+  requested on page load (the pattern everyone denies); it's only used if
+  already granted.
+
+Delivery is layered so the useful part always works: realtime → a 60s poll
+(covers a dropped socket or a slept laptop, and re-checks on tab focus) →
+the server-rendered count, which is correct on every page load regardless.
+The dot on the bell says which mode is active rather than pretending.
+
+**Unread state lives in `orders.seen_at`, not the browser.** A seller who
+checks orders on their phone shouldn't find the same badge waiting on their
+laptop. Opening the orders page clears it — but *after* paint, so the "New"
+tags are still visible on the visit that clears them.
+
+> The migration marks pre-existing orders as seen. Greeting someone with a
+> badge of 40 for orders they handled weeks ago is the fastest way to teach
+> them to ignore badges forever.
+
 ### Parcels, drivers and tracking
 
 Each parcel travels on its own. `orders.delivery` holds **who is carrying

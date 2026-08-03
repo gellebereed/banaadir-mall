@@ -439,6 +439,36 @@ export async function setOrderStatusInSupabase(
 }
 
 /**
+ * Mark parcels as seen by the seller — what clears the unread badge.
+ *
+ * Only ever stamps rows that are still NULL, so re-opening the orders page
+ * doesn't keep moving the timestamp and lose when they were first seen.
+ */
+export async function markOrdersSeenInSupabase(orderIds: string[]): Promise<boolean> {
+  if (!useSupabaseMutations() || orderIds.length === 0) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("orders")
+      .update({ seen_at: new Date().toISOString() })
+      .in("id", orderIds)
+      .is("seen_at", null);
+
+    if (error) {
+      // Pre-migration the column doesn't exist. Nothing is broken — there
+      // is simply no badge to clear — so don't shout about it.
+      if (isMissingColumnError(error)) return false;
+      console.error("[Supabase Mutations] markOrdersSeen error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] markOrdersSeen exception:", err);
+    return false;
+  }
+}
+
+/**
  * Status, courier and timeline in ONE write.
  *
  * These three always change together — a parcel becomes "shipped" *because*

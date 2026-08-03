@@ -12,6 +12,21 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
  *
  * Never use this for anything user-specific or permission-sensitive.
  */
+/**
+ * Are real Supabase credentials configured?
+ *
+ * Lives here, not in ./storage, because storage imports ./server which
+ * imports `next/headers` — so a CLIENT component asking this simple
+ * question used to drag a server-only module into the browser bundle and
+ * fail the build. This module has no server dependencies, so it is safe
+ * from either side.
+ */
+export function isSupabaseConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  return Boolean(url && !url.includes("your-project") && key && !key.includes("your-anon-key"));
+}
+
 let client: SupabaseClient | null = null;
 
 export function getPublicClient(): SupabaseClient {

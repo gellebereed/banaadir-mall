@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import MarkOrdersSeen from "@/components/dashboard/MarkOrdersSeen";
 import ParcelDispatch from "@/components/dashboard/ParcelDispatch";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { getAnyProduct, getOrdersByStore, getStore } from "@/lib/api";
@@ -33,6 +34,11 @@ export default async function VendorOrdersPage() {
   const uncontactable = rows.filter(
     (o) => o.status === "shipped" && !o.delivery?.courier?.phone,
   );
+
+  // Which parcels were new when this page was opened. Captured BEFORE
+  // clearing them, so the seller still sees what arrived rather than the
+  // badge silently vanishing and leaving them to guess.
+  const newIds = new Set(rows.filter((o) => !o.seenAt).map((o) => o.id));
 
   return (
     <div>
@@ -74,7 +80,14 @@ export default async function VendorOrdersPage() {
           <tbody>
             {rows.map((o) => (
               <tr key={o.id} className="border-b border-sand-100 last:border-0 align-top">
-                <td className="px-5 py-3.5 font-bold text-ocean-800">{o.id}</td>
+                <td className="px-5 py-3.5 font-bold text-ocean-800">
+                  {o.id}
+                  {newIds.has(o.id) && (
+                    <span className="ml-1.5 rounded-full bg-coral-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white">
+                      New
+                    </span>
+                  )}
+                </td>
                 <td className="max-w-52 truncate px-5 py-3.5 text-slate-600">
                   {o.productName} ×{o.qty}
                 </td>
@@ -102,6 +115,12 @@ export default async function VendorOrdersPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Opening this page IS reading them, so the badge clears — but only
+          after render, so the "New" tags above stay visible this time
+          round. Silently clearing without showing what arrived is how a
+          seller ends up not knowing which order was the new one. */}
+      {mayManage && newIds.size > 0 && <MarkOrdersSeen orderIds={[...newIds]} />}
     </div>
   );
 }

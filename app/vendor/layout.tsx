@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
-import { getStore } from "@/lib/api";
+import OrderNotifications from "@/components/dashboard/OrderNotifications";
+import { getOrdersByStore, getStore } from "@/lib/api";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -19,7 +20,16 @@ export default async function VendorLayout({
   children: React.ReactNode;
 }) {
   const { session, storeSlug } = await requireVendor();
-  const store = await getStore(storeSlug);
+  const [store, orders] = await Promise.all([
+    getStore(storeSlug),
+    getOrdersByStore(storeSlug),
+  ]);
+
+  // Rendered on the server so the badge is already correct before any
+  // JavaScript runs — the bell then keeps it live.
+  const newOrders = orders
+    .filter((o) => !o.seenAt)
+    .sort((a, b) => b.id.localeCompare(a.id));
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row">
@@ -37,7 +47,7 @@ export default async function VendorLayout({
             ) : (
               <span className="text-xl">{store?.icon ?? "🏪"}</span>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="truncate font-display text-sm font-extrabold text-white">
                 {store?.name ?? "My Store"}
               </p>
@@ -45,13 +55,23 @@ export default async function VendorLayout({
                 {session.access ? `Employee · ${session.access}` : "Store owner"}
               </p>
             </div>
+            <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
+          </div>
+
+          {/* The sidebar is hidden on mobile, so the bell needs a home there
+              too — a seller on a phone is exactly who needs telling. */}
+          <div className="mb-2 flex items-center justify-between gap-2 px-1 lg:hidden">
+            <p className="truncate font-display text-sm font-extrabold text-white">
+              {store?.name ?? "My Store"}
+            </p>
+            <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
           </div>
           <DashboardSidebar
             items={[
               { href: "/vendor", icon: "📊", label: "Overview", exact: true },
               { href: "/vendor/products", icon: "📦", label: "Products" },
               { href: "/vendor/photos", icon: "📸", label: "Bulk Photos" },
-              { href: "/vendor/orders", icon: "🧾", label: "Orders" },
+              { href: "/vendor/orders", icon: "🧾", label: "Orders", badge: newOrders.length },
               { href: "/vendor/promotions", icon: "🏷️", label: "Promotions" },
               { href: "/vendor/flash", icon: "⚡", label: "Flash Deals" },
               { href: "/vendor/team", icon: "👥", label: "Team" },

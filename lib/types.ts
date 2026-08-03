@@ -304,6 +304,15 @@ export interface Order {
   delivery?: ParcelDelivery;
   /** Stamped status history, oldest first. */
   timeline?: ParcelEvent[];
+  /**
+   * When the seller first opened this parcel. `undefined` means NEW — it is
+   * what the unread badge counts.
+   *
+   * Deliberately server-side rather than in the browser: a seller who
+   * checks orders on their phone and then their laptop should not be shown
+   * the same "new" order twice.
+   */
+  seenAt?: string;
 }
 
 /** A line in the client-side shopping cart (persisted to localStorage). */

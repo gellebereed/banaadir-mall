@@ -1,13 +1,12 @@
 import { createClient } from "./server";
+import { isSupabaseConfigured } from "./public-client";
+
+// Re-exported for the server-side callers that already import it from here.
+// Client components must import it from ./public-client directly — reaching
+// it through this module pulls in `next/headers` and breaks the build.
+export { isSupabaseConfigured };
 
 export const DEFAULT_BUCKET = "uploads";
-
-/** Check if valid Supabase environment variables are configured. */
-export function isSupabaseConfigured(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-  return Boolean(url && !url.includes("your-project") && key && !key.includes("your-anon-key"));
-}
 
 /**
  * Upload a array of File objects to Supabase Storage and return public URLs.

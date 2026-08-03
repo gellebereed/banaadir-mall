@@ -7,6 +7,9 @@ export { isSupabaseConfigured };
 
 const DEFAULT_ART = { from: "#e0f2fe", to: "#bae6fd" };
 
+/** Stands in for "seen long ago" — see the seenAt mapping in orders. */
+const EPOCH = new Date(0).toISOString();
+
 const ICON_MAP: Record<string, string> = {
   Tv: "📱",
   Shirt: "👗",
@@ -249,6 +252,13 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
       // Added by supabase/migration-order-delivery.sql.
       delivery: o.delivery || undefined,
       timeline: Array.isArray(o.timeline) ? o.timeline : [],
+      // Added by supabase/migration-order-notifications.sql.
+      //   column present, NULL   → new, badge it
+      //   column present, a date → seen
+      //   column absent entirely → treat every parcel as seen, so a
+      //     database without the migration shows no badge rather than
+      //     claiming every order is new.
+      seenAt: "seen_at" in o ? (o.seen_at ?? undefined) : EPOCH,
     }));
   } catch {
     return null;

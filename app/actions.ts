@@ -55,6 +55,7 @@ import {
   deleteProductFromSupabase,
   updateStoreFields,
   setStoreStatusInSupabase,
+  markOrdersSeenInSupabase,
   setOrderStatusInSupabase,
   updateOrderDeliveryInSupabase,
   insertPromotion,
@@ -1272,6 +1273,48 @@ export async function getUserOrdersAction(query: {
     if (cleanName && o.customer.toLowerCase().includes(cleanName)) return true;
     return false;
   });
+}
+
+/**
+ * Unseen parcels for a store, newest first — what the bell drops down.
+ *
+ * Read straight from the orders table rather than kept in the browser, so
+ * a seller who checks on their phone doesn't see the same "new" order again
+ * on their laptop.
+ */
+export async function getNewOrdersAction(storeSlug: string): Promise<Order[]> {
+  const session = await getSession();
+  if (!session || session.role === "customer") return [];
+  if (session.role === "seller" && session.store !== storeSlug) return [];
+
+  const { getOrdersByStore } = await import("@/lib/api");
+  return (await getOrdersByStore(storeSlug))
+    .filter((o) => !o.seenAt)
+    .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+/** Clear the unread badge for these parcels. */
+export async function markOrdersSeen(orderIds: string[]): Promise<void> {
+  const session = await getSession();
+  if (!session || session.role === "customer" || orderIds.length === 0) return;
+
+  // A seller may only clear their own store's badge.
+  if (session.role === "seller") {
+    const { getOrdersByStore } = await import("@/lib/api");
+    const mine = new Set((await getOrdersByStore(session.store!)).map((o) => o.id));
+    orderIds = orderIds.filter((id) => mine.has(id));
+    if (orderIds.length === 0) return;
+  }
+
+  const ok = await markOrdersSeenInSupabase(orderIds);
+  if (!ok) {
+    await mutateDB((db) => {
+      db.ordersSeen = db.ordersSeen ?? {};
+      const at = new Date().toISOString();
+      for (const id of orderIds) db.ordersSeen[id] ??= at;
+    });
+  }
+  refresh();
 }
 
 /** A parcel plus the shop that packed it — what the tracking page renders. */

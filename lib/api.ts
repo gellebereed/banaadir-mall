@@ -472,6 +472,10 @@ export async function getOrders(): Promise<Order[]> {
     // path. Without this the seller saves a driver and the tracking page
     // keeps showing no contact.
     ...(db.orderDelivery?.[o.id] ?? {}),
+    // Demo orders are pre-existing, so they count as already seen unless
+    // the overlay says otherwise — a badge of 40 on first login is the
+    // fastest way to teach someone to ignore badges forever.
+    seenAt: db.ordersSeen?.[o.id] ?? o.seenAt ?? new Date(0).toISOString(),
   }));
 }
 
