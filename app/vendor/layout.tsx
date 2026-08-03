@@ -40,9 +40,10 @@ export default async function VendorLayout({
             mobile, the row itself does not.
 
             This used to be two rows (a desktop one and a mobile one), which
-            meant two OrderNotifications on the page. Both subscribed to the
-            same Supabase realtime topic, and the second `subscribe()` throws
-            — taking the whole dashboard down. Keep this to a single instance.
+            put two live OrderNotifications on the page. `supabase.channel()`
+            returns the EXISTING channel for a topic, and subscribing to the
+            same channel twice throws — which took the whole dashboard down
+            with a client-side exception. Keep this to a single instance.
           */}
           <div className="mb-2 flex items-center gap-2 px-1 pt-1 lg:px-3 lg:pt-2">
             {store?.logo ? (

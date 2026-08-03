@@ -31,11 +31,15 @@ const POLL_MS = 60_000;
 /**
  * Order ids already announced, shared across every mounted instance.
  *
- * The dashboard layout renders twice in the DOM (one copy hidden — see the
- * duplicate `<aside>` in any dashboard page), so this component mounts more
- * than once. Per-instance state would mean two chimes and two desktop
- * notifications for one order. Module scope is what makes a second mount
- * harmless instead of merely survivable.
+ * Module scope rather than a ref: React StrictMode mounts effects twice in
+ * development, and this component previously appeared twice in the layout —
+ * either would produce two chimes and two desktop notifications for a
+ * single order. Sharing the set makes a duplicate mount harmless instead of
+ * merely survivable.
+ *
+ * (Dashboard pages do contain a second, hidden copy of the sidebar markup.
+ * That is React's Suspense streaming container — inert HTML that is never
+ * hydrated — not a second component instance.)
  */
 const announcedIds = new Set<string>();
 
@@ -166,7 +170,9 @@ export default function OrderNotifications({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={count > 0 ? `${count} new orders` : "Notifications"}
+        aria-label={
+          count > 0 ? `${count} new order${count === 1 ? "" : "s"}` : "Notifications"
+        }
         className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20"
       >
         🔔
