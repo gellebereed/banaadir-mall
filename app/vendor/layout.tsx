@@ -35,35 +35,35 @@ export default async function VendorLayout({
     <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row">
       <aside className="lg:w-56 lg:shrink-0">
         <div className="rounded-2xl bg-ocean-950 p-3 lg:sticky lg:top-40 lg:flex lg:min-h-[70vh] lg:flex-col">
-          <div className="mb-2 hidden items-center gap-2 px-3 pt-2 lg:flex">
+          {/*
+            ONE header row for both breakpoints — the logo and role hide on
+            mobile, the row itself does not.
+
+            This used to be two rows (a desktop one and a mobile one), which
+            meant two OrderNotifications on the page. Both subscribed to the
+            same Supabase realtime topic, and the second `subscribe()` throws
+            — taking the whole dashboard down. Keep this to a single instance.
+          */}
+          <div className="mb-2 flex items-center gap-2 px-1 pt-1 lg:px-3 lg:pt-2">
             {store?.logo ? (
               <Image
                 src={store.logo}
                 alt=""
                 width={28}
                 height={28}
-                className="h-7 w-7 shrink-0 rounded-lg object-cover"
+                className="hidden h-7 w-7 shrink-0 rounded-lg object-cover lg:block"
               />
             ) : (
-              <span className="text-xl">{store?.icon ?? "🏪"}</span>
+              <span className="hidden text-xl lg:inline">{store?.icon ?? "🏪"}</span>
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-sm font-extrabold text-white">
                 {store?.name ?? "My Store"}
               </p>
-              <p className="truncate text-[10px] text-ocean-300">
+              <p className="hidden truncate text-[10px] text-ocean-300 lg:block">
                 {session.access ? `Employee · ${session.access}` : "Store owner"}
               </p>
             </div>
-            <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
-          </div>
-
-          {/* The sidebar is hidden on mobile, so the bell needs a home there
-              too — a seller on a phone is exactly who needs telling. */}
-          <div className="mb-2 flex items-center justify-between gap-2 px-1 lg:hidden">
-            <p className="truncate font-display text-sm font-extrabold text-white">
-              {store?.name ?? "My Store"}
-            </p>
             <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
           </div>
           <DashboardSidebar

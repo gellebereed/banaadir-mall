@@ -28,6 +28,17 @@ import type { Order } from "@/lib/types";
 /** How often to re-check when realtime isn't carrying the news. */
 const POLL_MS = 60_000;
 
+/**
+ * Order ids already announced, shared across every mounted instance.
+ *
+ * The dashboard layout renders twice in the DOM (one copy hidden — see the
+ * duplicate `<aside>` in any dashboard page), so this component mounts more
+ * than once. Per-instance state would mean two chimes and two desktop
+ * notifications for one order. Module scope is what makes a second mount
+ * harmless instead of merely survivable.
+ */
+const announcedIds = new Set<string>();
+
 export default function OrderNotifications({
   storeSlug,
   initialNewOrders,
@@ -41,18 +52,24 @@ export default function OrderNotifications({
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-  /** Ids already announced, so a re-fetch doesn't chime for the same order. */
-  const announced = useRef(new Set(initialNewOrders.map((o) => o.id)));
+
+  // Orders already on screen at first render are not "new" — they were
+  // counted on the server and shouldn't chime on arrival.
+  useEffect(() => {
+    initialNewOrders.forEach((o) => announcedIds.add(o.id));
+  }, [initialNewOrders]);
 
   const refetch = useCallback(async () => {
     try {
       const fresh = await getNewOrdersAction(storeSlug);
       setOrders(fresh);
-      const unseenIds = fresh.map((o) => o.id).filter((id) => !announced.current.has(id));
-      if (unseenIds.length > 0) {
-        unseenIds.forEach((id) => announced.current.add(id));
+      const unannounced = fresh.map((o) => o.id).filter((id) => !announcedIds.has(id));
+      if (unannounced.length > 0) {
+        // Claim them BEFORE the await-free announce, so a second mounted
+        // instance racing this same fetch finds nothing left to announce.
+        unannounced.forEach((id) => announcedIds.add(id));
         chime();
-        notify(unseenIds.length);
+        notify(unannounced.length);
       }
     } catch {
       // A failed refresh must never break the dashboard around it.
@@ -60,27 +77,47 @@ export default function OrderNotifications({
   }, [storeSlug]);
 
   // ── 1. Realtime ──────────────────────────────────────────────────────
+  //
+  // Render this component ONCE per page. `supabase.channel(topic)` returns
+  // the EXISTING channel when one already has that topic, and
+  // RealtimeChannel.subscribe() throws if called twice on the same
+  // instance — so a second copy of this bell threw inside its effect and
+  // took the whole dashboard down with an "Application error" screen.
+  //
+  // The try/catch is the belt to that braces: live updates are a
+  // convenience, and nothing about them is worth breaking a seller's main
+  // screen for. Losing realtime silently drops us to the poll below.
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
     let cancelled = false;
-    const supabase = getPublicClient();
-    const channel = supabase
-      .channel(`orders:${storeSlug}`)
-      .on(
-        "postgres_changes",
-        // Filtered server-side: a busy marketplace shouldn't push every
-        // shop's orders to every shop's browser.
-        { event: "INSERT", schema: "public", table: "orders", filter: `store=eq.${storeSlug}` },
-        () => { if (!cancelled) void refetch(); },
-      )
-      .subscribe((status) => {
-        if (!cancelled) setLive(status === "SUBSCRIBED");
-      });
+    let cleanup: (() => void) | undefined;
+
+    try {
+      const supabase = getPublicClient();
+      const channel = supabase
+        .channel(`orders:${storeSlug}`)
+        .on(
+          "postgres_changes",
+          // Filtered server-side: a busy marketplace shouldn't push every
+          // shop's orders to every shop's browser.
+          { event: "INSERT", schema: "public", table: "orders", filter: `store=eq.${storeSlug}` },
+          () => { if (!cancelled) void refetch(); },
+        )
+        .subscribe((status) => {
+          if (!cancelled) setLive(status === "SUBSCRIBED");
+        });
+
+      cleanup = () => { void supabase.removeChannel(channel); };
+    } catch {
+      // Realtime unavailable — the poll still carries new orders, and the
+      // dot on the bell already says which mode is running.
+      setLive(false);
+    }
 
     return () => {
       cancelled = true;
-      void supabase.removeChannel(channel);
+      cleanup?.();
     };
   }, [storeSlug, refetch]);
 
