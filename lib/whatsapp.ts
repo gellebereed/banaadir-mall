@@ -78,15 +78,24 @@ export function isValidWhatsAppNumber(raw: string | null | undefined): boolean {
   return normalizeWhatsAppNumber(raw).length > 0;
 }
 
-/** Display form for a normalised number, e.g. "252613334444" → "+252 613 334 444". */
+/**
+ * Display form for a normalised number: "252613334444" → "+252 613 334 444".
+ *
+ * Grouped in threes from the RIGHT, which leaves the country code as the
+ * leading remainder for every country worth supporting here — +252 613 334
+ * 444 and +254 798 100 616 both come out right without a table of dialling
+ * plans. An unbroken run of twelve digits is the kind of thing people
+ * mis-key when reading it off a screen.
+ */
 export function formatWhatsAppNumber(raw: string | null | undefined): string {
   const digits = normalizeWhatsAppNumber(raw);
   if (!digits) return "";
-  if (digits.startsWith("252")) {
-    const local = digits.slice(3);
-    return `+252 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`.trim();
+
+  const groups: string[] = [];
+  for (let end = digits.length; end > 0; end -= 3) {
+    groups.unshift(digits.slice(Math.max(0, end - 3), end));
   }
-  return `+${digits}`;
+  return `+${groups.join(" ")}`;
 }
 
 /**

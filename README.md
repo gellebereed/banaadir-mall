@@ -347,6 +347,44 @@ through `money()`, which drops trailing zeros: right for a price tag
 The product's **internal reference** is included per line when it has one,
 so the parcel can be picked off a shelf without opening the dashboard.
 
+### Parcels, drivers and tracking
+
+Each parcel travels on its own. `orders.delivery` holds **who is carrying
+that box** — name, phone, optional company and waybill — and
+`orders.timeline` stamps when each step happened. Run
+`supabase/migration-order-delivery.sql` to add both.
+
+A customer tracking an order sees one card per parcel: what's inside, its
+own journey with timestamps, and **Call / WhatsApp buttons for that
+parcel's driver**. There is deliberately no order-wide timeline — one shop
+can have delivered while another hasn't packed, so a combined bar has to
+pick one of those to show, and it ends up contradicting the cards beneath it.
+
+Sellers dispatch from **Vendor → Orders**. Two things make this stick:
+
+- **A parcel can't be marked "on the way" without a driver's phone.** The
+  server refuses it. A shipped parcel nobody can chase is the exact problem
+  this feature exists to prevent, and the orders page counts any older
+  parcels already in that state.
+- **Drivers are saved on the shop** (`stores.couriers`) and offered as
+  one-tap buttons. Re-typing a name and number on every order is the step
+  that gets skipped when a shop is busy.
+
+When one driver carries several parcels of the same order, that's detected
+by comparing normalised numbers (`sharedCourierGroups`) and stated once —
+"Cabdi Xasan is bringing 2 of your parcels together" — instead of showing
+the same number on three cards.
+
+Timeline honesty is enforced in `lib/delivery.ts`: re-saving courier details
+doesn't restamp a step, so a parcel can't look like it shipped twice; and
+moving one backwards drops the steps that no longer apply, so a parcel
+returned to "packing" stops claiming it was delivered an hour ago.
+
+> **Dev note:** without Supabase configured, new orders are never persisted
+> server-side (`submitOrderAction` only writes them to Supabase), so they
+> won't appear in the seller dashboard locally. Seed orders still work for
+> testing dispatch.
+
 ### Vendor numbers
 
 Sellers add theirs in **Store Settings → Order WhatsApp number**. It's

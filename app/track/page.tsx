@@ -10,21 +10,8 @@ import { orders as demoOrders } from "@/lib/data/orders";
 import { money, shortDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
 
-/** The delivery journey shown as a timeline. */
-const JOURNEY: { status: OrderStatus; icon: string; label: string; text: string }[] = [
-  { status: "pending", icon: "🧾", label: "Order Placed", text: "We received your order" },
-  { status: "processing", icon: "📦", label: "Processing", text: "The store is packing your items" },
-  { status: "shipped", icon: "🚚", label: "On the Way", text: "Your order is with the courier" },
-  { status: "delivered", icon: "🎉", label: "Delivered", text: "Enjoy your purchase!" },
-];
-
-const STATUS_INDEX: Record<OrderStatus, number> = {
-  pending: 0,
-  processing: 1,
-  shipped: 2,
-  delivered: 3,
-  cancelled: -1,
-};
+// The journey steps live in lib/delivery.ts (JOURNEY_STEPS) and are rendered
+// per parcel by ParcelCard — there is no order-wide timeline to define here.
 
 function TrackContent() {
   const searchParams = useSearchParams();
@@ -128,8 +115,6 @@ function TrackContent() {
     void performLookup(input);
   }
 
-  const reached = order ? STATUS_INDEX[order.status] : -1;
-
   /**
    * The parcels to show, one per store.
    *
@@ -228,54 +213,25 @@ function TrackContent() {
             <StatusBadge status={order.status} />
           </div>
 
-          {/* Timeline Journey */}
-          {order.status === "cancelled" ? (
+          {/*
+            There is deliberately NO order-wide timeline here.
+
+            Progress belongs to a parcel, not an order: one shop can have
+            delivered while another hasn't packed. A single combined
+            timeline has to pick one of those to display, and it was
+            actively contradicting the cards below it — the order read
+            "Processing" while the parcel underneath said "On the way".
+            Each parcel now carries its own, which is also how every large
+            marketplace presents a multi-seller order.
+          */}
+          {order.status === "cancelled" && (
             <p className="mt-5 text-sm text-slate-500">
               This order was cancelled. If that doesn&apos;t look right,
               contact us via the Help page and we&apos;ll sort it out.
             </p>
-          ) : (
-            <ol className="mt-6 space-y-0">
-              {JOURNEY.map((step, i) => {
-                const done = i <= reached;
-                const current = i === reached;
-                return (
-                  <li key={step.status} className="relative flex gap-4 pb-8 last:pb-0">
-                    {/* connector line */}
-                    {i < JOURNEY.length - 1 && (
-                      <span
-                        className={`absolute left-5 top-10 h-full w-0.5 ${
-                          i < reached ? "bg-ocean-600" : "bg-sand-200"
-                        }`}
-                      />
-                    )}
-                    <span
-                      className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${
-                        done
-                          ? "bg-ocean-700 text-white shadow-md shadow-ocean-700/30"
-                          : "bg-sand-100 text-slate-400"
-                      }`}
-                    >
-                      {step.icon}
-                    </span>
-                    <div className={done ? "" : "opacity-40"}>
-                      <p className="font-display font-bold text-ocean-950">
-                        {step.label}
-                        {current && (
-                          <span className="ml-2 rounded-full bg-mango-100 px-2.5 py-0.5 text-[10px] font-bold text-mango-900">
-                            Current Status
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm text-slate-500">{step.text}</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
           )}
 
-          {/* Per-Vendor Brand Status Breakdown */}
+          {/* Per-parcel status, courier and journey */}
           {storeEntries.length > 0 && (
             <div className="border-t border-sand-200 pt-6">
               <h3 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400 mb-1">
