@@ -461,9 +461,14 @@ export async function getOrders(): Promise<Order[]> {
     return supabaseOrders;
   }
   const db = await getDB();
-  return seedOrders.map((o) =>
-    db.orderStatus[o.id] ? { ...o, status: db.orderStatus[o.id] } : o,
-  );
+  return seedOrders.map((o) => ({
+    ...o,
+    ...(db.orderStatus[o.id] ? { status: db.orderStatus[o.id] } : {}),
+    // Courier and timeline edits made in the dashboard, for the local-dev
+    // path. Without this the seller saves a driver and the tracking page
+    // keeps showing no contact.
+    ...(db.orderDelivery?.[o.id] ?? {}),
+  }));
 }
 
 export async function getOrdersByStore(storeSlug: string): Promise<Order[]> {

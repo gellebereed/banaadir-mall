@@ -42,6 +42,12 @@ export interface DB {
   promotions: Promotion[];
   /** Status overrides per order id. */
   orderStatus: Record<string, OrderStatus>;
+  /**
+   * Courier + stamped timeline per order id, for the local-dev path where
+   * Supabase isn't configured. Kept separate from orderStatus so an older
+   * db.json without it still loads.
+   */
+  orderDelivery?: Record<string, Pick<Order, "delivery" | "timeline">>;
   /** Status overrides per store slug (approve / reject / suspend). */
   storeStatus: Record<string, Store["status"]>;
   /** Store profile edits per slug (name, tagline, logo, banner, …). */

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatWhatsAppNumber, SUPPORT_WHATSAPP } from "@/lib/whatsapp";
 
 export const metadata: Metadata = { title: "Help & FAQ" };
 
@@ -59,8 +60,10 @@ export default function HelpPage() {
       {/* Contact cards */}
       <div className="mt-10 grid gap-4 sm:grid-cols-3">
         {[
-          { icon: "📞", title: "Call us", text: "+252 61 BANAADIR", sub: "Sat–Thu, 8am–8pm" },
-          { icon: "💚", title: "WhatsApp", text: "+252 61 000 0000", sub: "Fastest response" },
+          // Driven by NEXT_PUBLIC_SUPPORT_WHATSAPP so there is one number to
+          // change, not a copy of it in every file that mentions support.
+          { icon: "📞", title: "Call us", text: formatWhatsAppNumber(SUPPORT_WHATSAPP), sub: "Sat–Thu, 8am–8pm" },
+          { icon: "💚", title: "WhatsApp", text: formatWhatsAppNumber(SUPPORT_WHATSAPP), sub: "Fastest response" },
           { icon: "✉️", title: "Email", text: "salaam@banaadirmall.so", sub: "Reply within 24h" },
         ].map((c) => (
           <div key={c.title} className="card p-5 text-center">

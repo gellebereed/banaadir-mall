@@ -104,6 +104,15 @@ export interface Store {
    * instead of rendering a dead button.
    */
   whatsapp?: string;
+  /**
+   * Drivers this shop uses regularly. Saved once, then picked from a list
+   * when dispatching a parcel.
+   *
+   * Retyping a name and phone number on every order is the step that
+   * actually gets skipped in a busy shop — and a parcel dispatched without
+   * a contact is one the customer cannot chase.
+   */
+  couriers?: Courier[];
 }
 
 export interface Product {
@@ -234,6 +243,45 @@ export interface OrderItem {
   selectedSize?: string;
 }
 
+/**
+ * Who is carrying a parcel, and how to reach them.
+ *
+ * Marketplaces split an order into one shipment per seller, and each
+ * shipment travels with its own driver. The customer's question is never
+ * "what is the status of my order" — it is "where is the box with my shoes
+ * in it, and who do I call". That needs a contact per parcel, not per order.
+ */
+export interface Courier {
+  name: string;
+  /** International digits, normalised on save (see lib/whatsapp.ts). */
+  phone: string;
+  /** Delivery firm, or the shop's own name when they deliver themselves. */
+  company?: string;
+}
+
+/** Delivery details a seller attaches to one parcel. */
+export interface ParcelDelivery {
+  courier?: Courier;
+  /** Waybill / tracking code from the delivery firm, when there is one. */
+  trackingCode?: string;
+  /** Free note from the seller, e.g. "Call before arriving, gate is locked". */
+  note?: string;
+  /** ISO date the seller expects it to arrive. */
+  estimatedAt?: string;
+}
+
+/**
+ * One stamped step in a parcel's journey. The status alone says WHAT;
+ * these say *when*, which is the difference between "shipped" and
+ * "shipped four days ago and nobody has touched it since".
+ */
+export interface ParcelEvent {
+  status: OrderStatus;
+  /** ISO timestamp. */
+  at: string;
+  note?: string;
+}
+
 export interface Order {
   id: string;
   customer: string;
@@ -248,6 +296,14 @@ export interface Order {
   status: OrderStatus;
   /** ISO date string, e.g. "2026-07-28". */
   date: string;
+  /**
+   * Who is delivering THIS parcel. Set by the seller when they hand it to a
+   * driver — an order spanning three shops has three of these, and they are
+   * usually three different drivers.
+   */
+  delivery?: ParcelDelivery;
+  /** Stamped status history, oldest first. */
+  timeline?: ParcelEvent[];
 }
 
 /** A line in the client-side shopping cart (persisted to localStorage). */

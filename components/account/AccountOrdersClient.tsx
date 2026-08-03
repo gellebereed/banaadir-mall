@@ -6,6 +6,7 @@ import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { getBrandOrderStatusesAction, getUserOrdersAction } from "@/app/actions";
 import { money, shortDate } from "@/lib/format";
+import { SUPPORT_WHATSAPP } from "@/lib/whatsapp";
 import type { Order, OrderStatus } from "@/lib/types";
 
 interface OrderItemExt {
@@ -292,7 +293,7 @@ export default function AccountOrdersClient({
                           <div className="flex items-center gap-2">
                             <StatusBadge status={currentBrandStatus} />
                             <a
-                              href={`https://wa.me/252610000000?text=${waMsg}`}
+                              href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${waMsg}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 transition"

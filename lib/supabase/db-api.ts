@@ -82,6 +82,7 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // back to it means any number already entered there starts receiving
       // order notifications without the seller re-typing it.
       whatsapp: s.whatsapp || s.phone || undefined,
+      couriers: Array.isArray(s.couriers) ? s.couriers : [],
     }));
   } catch {
     return null;
@@ -241,6 +242,9 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
       total: Number(o.total),
       items: o.items || [],
       status: o.status as Order["status"],
+      // Added by supabase/migration-order-delivery.sql.
+      delivery: o.delivery || undefined,
+      timeline: Array.isArray(o.timeline) ? o.timeline : [],
     }));
   } catch {
     return null;

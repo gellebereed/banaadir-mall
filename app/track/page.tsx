@@ -3,6 +3,9 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/dashboard/StatusBadge";
+import ParcelCard from "@/components/track/ParcelCard";
+import type { OrderParcel } from "@/app/actions";
+import { sharedCourierGroups } from "@/lib/delivery";
 import { orders as demoOrders } from "@/lib/data/orders";
 import { money, shortDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
@@ -31,6 +34,7 @@ function TrackContent() {
   const [order, setOrder] = useState<Order | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [parcels, setParcels] = useState<OrderParcel[]>([]);
   const [brandStatuses, setBrandStatuses] = useState<
     Record<
       string,
@@ -90,10 +94,17 @@ function TrackContent() {
       setOrder(foundOrder);
       setIsSearching(false);
 
-      // Fetch per-brand live statuses from backend
+      // The parcels themselves — each with its own courier, timeline and
+      // estimate. This is the authoritative view; the localStorage copy
+      // above only exists so the page works before the order syncs.
       try {
-        const { getBrandOrderStatusesAction } = await import("@/app/actions");
-        const statuses = await getBrandOrderStatusesAction(foundOrder.id);
+        const { getOrderParcelsAction, getBrandOrderStatusesAction } =
+          await import("@/app/actions");
+        const [fetchedParcels, statuses] = await Promise.all([
+          getOrderParcelsAction(foundOrder.id),
+          getBrandOrderStatusesAction(foundOrder.id),
+        ]);
+        setParcels(fetchedParcels);
         setBrandStatuses(statuses);
       } catch {
         // Ignore
@@ -142,6 +153,23 @@ function TrackContent() {
       : Object.keys(brandStatuses).map(
           (slug) => [slug, [] as typeof itemsWithStore] as const,
         );
+
+  /**
+   * Parcels sharing one driver, so the customer is told once instead of
+   * being shown the same number three times and left to work out it's one
+   * person making one trip.
+   */
+  const shared = sharedCourierGroups(
+    parcels.map((p) => ({ order: p.order, storeName: p.storeName })),
+  );
+  const sharedWith = (storeSlug: string): string[] => {
+    const group = shared.find((g) =>
+      g.parcels.some((p) => p.order.store === storeSlug),
+    );
+    return group
+      ? group.parcels.filter((p) => p.order.store !== storeSlug).map((p) => p.storeName)
+      : [];
+  };
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -261,58 +289,63 @@ function TrackContent() {
                   different days.
                 </p>
               )}
-              <div className="space-y-3">
-                {storeEntries.map(([storeSlug, storeItems]) => {
-                  const brand = brandStatuses[storeSlug];
-                  // Live server data first, then the name captured at
-                  // checkout, then a de-slugified last resort — customers
-                  // were being told their parcel was with "US-POLO-ASSN"
-                  // instead of "U.S. Polo Assn."
-                  const storeName =
-                    brand?.storeName ??
-                    storeItems.find((i) => i.storeName)?.storeName ??
-                    storeSlug.replace(/-/g, " ");
-                  const brandStatus = brand?.status || order.status;
+              {/* Same driver across several parcels — say it once, at the
+                  top, instead of repeating the number on each card. */}
+              {shared.map((group) => (
+                <p
+                  key={group.courier.phone}
+                  className="mb-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-xs text-emerald-900"
+                >
+                  🚚 <strong>{group.courier.name}</strong> is bringing{" "}
+                  {group.parcels.length} of your parcels together —{" "}
+                  {group.parcels.map((p) => p.storeName).join(", ")}. One
+                  delivery, one number to call.
+                </p>
+              ))}
 
-                  return (
-                    <div
-                      key={storeSlug}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sand-50 p-4 border border-sand-200"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-lg">
-                          {brand?.storeIcon ?? "🏪"}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate font-display text-sm font-bold capitalize text-ocean-950">
-                            {storeName}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {/* Item counts are only known for the copy saved
-                                in this browser; a server-fetched order shows
-                                the parcel's value instead of "0 items". */}
-                            {storeItems.length > 0
-                              ? `${storeItems.length} item${storeItems.length === 1 ? "" : "s"}`
-                              : brand
-                                ? money(brand.total)
-                                : "In progress"}
-                            {/* The parcel's own number — what the store
-                                searches for if the customer calls them. */}
-                            {brand?.orderId && brand.orderId !== order.id && (
-                              <span className="ml-1.5 font-mono text-[11px] text-slate-400">
-                                {brand.orderId}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={brandStatus} />
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="space-y-4">
+                {/* The server's parcels carry courier, timeline and estimate.
+                    Before an order syncs (or without Supabase) fall back to
+                    the copy saved in this browser, which has the items but
+                    no dispatch details yet. */}
+                {parcels.length > 0
+                  ? parcels.map((p, i) => (
+                      <ParcelCard
+                        key={p.order.id}
+                        order={p.order}
+                        storeName={p.storeName}
+                        storeIcon={p.storeIcon}
+                        storeLogo={p.storeLogo}
+                        items={groupedStores[p.order.store] ?? p.order.items}
+                        index={i + 1}
+                        total={parcels.length}
+                        sharedWith={sharedWith(p.order.store)}
+                      />
+                    ))
+                  : storeEntries.map(([storeSlug, storeItems], i) => {
+                      const brand = brandStatuses[storeSlug];
+                      const storeName =
+                        brand?.storeName ??
+                        storeItems.find((it) => it.storeName)?.storeName ??
+                        storeSlug.replace(/-/g, " ");
+                      return (
+                        <ParcelCard
+                          key={storeSlug}
+                          order={{
+                            ...order,
+                            id: brand?.orderId ?? order.id,
+                            store: storeSlug,
+                            status: brand?.status ?? order.status,
+                          }}
+                          storeName={storeName}
+                          storeIcon={brand?.storeIcon}
+                          storeLogo={brand?.storeLogo}
+                          items={storeItems}
+                          index={i + 1}
+                          total={storeEntries.length}
+                        />
+                      );
+                    })}
               </div>
             </div>
           )}

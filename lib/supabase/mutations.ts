@@ -139,6 +139,8 @@ const EXTENDED_STORE_COLUMNS = [
   "art",
   // Added by supabase/migration-vendor-whatsapp.sql.
   "whatsapp",
+  // Added by supabase/migration-order-delivery.sql.
+  "couriers",
 ] as const;
 
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
@@ -317,6 +319,7 @@ export async function updateStoreFields(
       row.whatsapp = fields.whatsapp || null;
       row.phone = fields.whatsapp || null;
     }
+    if (fields.couriers !== undefined) row.couriers = fields.couriers ?? [];
 
     if (Object.keys(row).length === 0) return true;
 
@@ -411,6 +414,57 @@ export async function setOrderStatusInSupabase(
     return true;
   } catch (err) {
     console.error("[Supabase Mutations] setOrderStatus exception:", err);
+    return false;
+  }
+}
+
+/**
+ * Status, courier and timeline in ONE write.
+ *
+ * These three always change together — a parcel becomes "shipped" *because*
+ * it was handed to a driver, at a particular moment. Writing them
+ * separately leaves windows where a parcel is shipped with no contact, or
+ * has a driver but still reads as being packed.
+ */
+export async function updateOrderDeliveryInSupabase(
+  orderId: string,
+  fields: Partial<Pick<Order, "status" | "delivery" | "timeline">>,
+): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const row: Record<string, unknown> = {};
+    if (fields.status !== undefined) row.status = fields.status;
+    if (fields.delivery !== undefined) row.delivery = fields.delivery ?? null;
+    if (fields.timeline !== undefined) row.timeline = fields.timeline ?? [];
+    if (Object.keys(row).length === 0) return true;
+
+    let { data, error } = await supabase
+      .from("orders").update(row).eq("id", orderId).select("id");
+
+    // delivery/timeline arrived with migration-order-delivery.sql — retry
+    // with just the status so the seller's update still lands.
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] orders is missing delivery/timeline — run " +
+          "supabase/migration-order-delivery.sql. Saving the status only; " +
+          "courier details will NOT persist.",
+      );
+      ({ data, error } = await supabase
+        .from("orders").update({ status: fields.status }).eq("id", orderId).select("id"));
+    }
+
+    if (error) {
+      console.error("[Supabase Mutations] updateOrderDelivery error:", error.message);
+      return false;
+    }
+    if ((data?.length ?? 0) === 0) {
+      console.error(`[Supabase Mutations] updateOrderDelivery matched no order "${orderId}".`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] updateOrderDelivery exception:", err);
     return false;
   }
 }

@@ -31,15 +31,18 @@ import {
   vendorOrderIds,
 } from "@/lib/order-utils";
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp";
+import { recordEvent, sameCourier } from "@/lib/delivery";
 import { can, type AccessArea, type Session } from "@/lib/auth";
 import { mutateDB } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import type {
   Banner,
+  Courier,
   EmployeeRole,
   HomeSection,
   Order,
   OrderStatus,
+  ParcelDelivery,
   Product,
   Store,
   Variant,
@@ -53,6 +56,7 @@ import {
   updateStoreFields,
   setStoreStatusInSupabase,
   setOrderStatusInSupabase,
+  updateOrderDeliveryInSupabase,
   insertPromotion,
   togglePromotionInSupabase,
   deletePromotionFromSupabase,
@@ -686,6 +690,116 @@ export async function deletePromotion(id: string): Promise<void> {
 
 // ── Orders ─────────────────────────────────────────────────────────────
 
+/**
+ * Dispatch a parcel: set its status and, when it goes out for delivery, who
+ * is carrying it.
+ *
+ * Status and courier are saved together because they change together — a
+ * parcel becomes "shipped" *because* it was handed to a driver. Saving them
+ * separately leaves a window where a parcel is shipped with no contact,
+ * which is exactly the moment a customer starts asking where it is.
+ *
+ * Optionally remembers the driver on the shop, so the next parcel is a pick
+ * from a list rather than a re-typed number.
+ */
+export async function updateParcelDelivery(formData: FormData): Promise<SaveState> {
+  const session = await requireAccess("orders");
+  const orderId = String(formData.get("orderId") ?? "").trim();
+
+  const { getOrder } = await import("@/lib/api");
+  const order = await getOrder(orderId);
+  if (!order) return { ok: false, message: "Parcel not found." };
+  if (session.role === "seller" && order.store !== session.store) {
+    return { ok: false, message: "You can only manage your own store's parcels." };
+  }
+
+  const status = String(formData.get("status") ?? order.status) as OrderStatus;
+  const courierName = String(formData.get("courierName") ?? "").trim();
+  const courierPhoneRaw = String(formData.get("courierPhone") ?? "").trim();
+  const courierCompany = String(formData.get("courierCompany") ?? "").trim();
+  const trackingCode = String(formData.get("trackingCode") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const estimatedAt = String(formData.get("estimatedAt") ?? "").trim();
+  const remember = formData.get("rememberCourier") === "on";
+
+  const courierPhone = normalizeWhatsAppNumber(courierPhoneRaw);
+  if (courierPhoneRaw && !courierPhone) {
+    return {
+      ok: false,
+      message: `"${courierPhoneRaw}" doesn't look like a phone number. Use the international form, e.g. +252 61 333 4444 — nothing was saved.`,
+    };
+  }
+
+  // A shipped parcel the customer cannot chase is the whole problem this
+  // feature exists to solve, so refuse to create one.
+  if (status === "shipped" && !courierPhone) {
+    return {
+      ok: false,
+      message:
+        "Add the driver's phone number before marking this parcel as on its way — " +
+        "otherwise the customer has no way to chase it.",
+    };
+  }
+
+  const courier: Courier | undefined = courierPhone
+    ? { name: courierName || "Driver", phone: courierPhone, ...(courierCompany ? { company: courierCompany } : {}) }
+    : undefined;
+
+  const delivery: ParcelDelivery | undefined =
+    courier || trackingCode || note || estimatedAt
+      ? {
+          ...(courier ? { courier } : {}),
+          ...(trackingCode ? { trackingCode } : {}),
+          ...(note ? { note } : {}),
+          ...(estimatedAt ? { estimatedAt } : {}),
+        }
+      : undefined;
+
+  // Only stamp the timeline when the status actually moved, so re-saving
+  // courier details doesn't make a parcel look like it shipped twice.
+  const timeline =
+    status !== order.status
+      ? recordEvent(order.timeline, status, new Date().toISOString(), note || undefined)
+      : order.timeline;
+
+  const fields = { status, delivery, timeline };
+  const supabaseOk = await updateOrderDeliveryInSupabase(orderId, fields);
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.orderStatus[orderId] = status;
+      db.orderDelivery = db.orderDelivery ?? {};
+      db.orderDelivery[orderId] = { delivery, timeline };
+    });
+  }
+
+  if (remember && courier) {
+    const store = await getStore(order.store);
+    const existing = store?.couriers ?? [];
+    // Match on the number: a driver whose name was typed differently the
+    // second time is still the same driver, and two entries for one person
+    // is how a list becomes useless.
+    const isKnown = existing.some((c) => sameCourier(c, courier));
+    if (!isKnown) {
+      const couriers = [...existing, courier];
+      const ok = await updateStoreFields(order.store, { couriers });
+      if (!ok) {
+        await mutateDB((db) => {
+          db.storeOverrides[order.store] = { ...db.storeOverrides[order.store], couriers };
+        });
+      }
+    }
+  }
+
+  refresh();
+  return {
+    ok: true,
+    message:
+      status === "shipped" && courier
+        ? `Parcel is on its way with ${courier.name}. The customer can now call them.`
+        : "Parcel updated.",
+  };
+}
+
 export async function setOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   const session = await requireAccess("orders");
   // Sellers may only manage orders of their own store.
@@ -1158,6 +1272,44 @@ export async function getUserOrdersAction(query: {
     if (cleanName && o.customer.toLowerCase().includes(cleanName)) return true;
     return false;
   });
+}
+
+/** A parcel plus the shop that packed it — what the tracking page renders. */
+export interface OrderParcel {
+  order: Order;
+  storeName: string;
+  storeIcon: string;
+  storeLogo?: string;
+  storeWhatsapp?: string;
+}
+
+/**
+ * Every parcel of an order, in full. Accepts the customer-facing base id
+ * ("BM-12345") or any single parcel id.
+ *
+ * Returns whole Order records rather than a status summary, because each
+ * parcel carries its own courier, timeline and estimate — the things the
+ * customer is actually asking about when they open the tracking page.
+ */
+export async function getOrderParcelsAction(orderId: string): Promise<OrderParcel[]> {
+  const { getOrders, getAllStores } = await import("@/lib/api");
+  const [allOrders, stores] = await Promise.all([getOrders(), getAllStores()]);
+
+  const base = baseOrderId(orderId);
+  return allOrders
+    .filter((o) => belongsToOrder(o.id, base))
+    .map((order) => {
+      const store = stores.find((s) => s.slug === order.store);
+      return {
+        order,
+        storeName: store?.name ?? order.store.replace(/-/g, " "),
+        storeIcon: store?.icon ?? "🏪",
+        storeLogo: store?.logo,
+        storeWhatsapp: store?.whatsapp,
+      };
+    })
+    // Stable order so parcels don't shuffle between refreshes.
+    .sort((a, b) => a.order.id.localeCompare(b.order.id));
 }
 
 /**
