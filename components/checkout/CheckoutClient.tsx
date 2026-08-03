@@ -163,6 +163,9 @@ export default function CheckoutClient({
           price: l.product.price,
           qty: l.qty,
           store: l.product.store,
+          // Captured now so tracking can name the shop properly later,
+          // without depending on the order having reached the server.
+          storeName: stores.find((s) => s.slug === l.product.store)?.name,
           image: l.product.images?.[0] || l.product.art?.from,
           selectedColor: l.color,
           selectedSize: l.size,

@@ -221,6 +221,12 @@ export interface OrderItem {
   productId: string;
   qty: number;
   store?: string;
+  /**
+   * The store's display name, captured at checkout. Tracking otherwise has
+   * to de-slugify `store`, which turns "sahra-fashion" into "Sahra Fashion"
+   * when the shop is actually called "Sahra Fashion House".
+   */
+  storeName?: string;
   name?: string;
   price?: number;
   image?: string;

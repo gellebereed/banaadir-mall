@@ -264,10 +264,14 @@ function TrackContent() {
               <div className="space-y-3">
                 {storeEntries.map(([storeSlug, storeItems]) => {
                   const brand = brandStatuses[storeSlug];
-                  // Fall back to a readable name rather than the raw slug —
-                  // customers were being told their parcel was with
-                  // "US-POLO-ASSN" instead of "U.S. Polo Assn."
-                  const storeName = brand?.storeName ?? storeSlug.replace(/-/g, " ");
+                  // Live server data first, then the name captured at
+                  // checkout, then a de-slugified last resort — customers
+                  // were being told their parcel was with "US-POLO-ASSN"
+                  // instead of "U.S. Polo Assn."
+                  const storeName =
+                    brand?.storeName ??
+                    storeItems.find((i) => i.storeName)?.storeName ??
+                    storeSlug.replace(/-/g, " ");
                   const brandStatus = brand?.status || order.status;
 
                   return (
