@@ -457,7 +457,11 @@ export async function getFlashRequests(storeSlug?: string): Promise<FlashRequest
 
 export async function getOrders(): Promise<Order[]> {
   const supabaseOrders = await fetchOrdersFromSupabase();
-  if (supabaseOrders && supabaseOrders.length > 0) {
+  // Not `length > 0`: once Supabase answers, it is the truth — including
+  // when the answer is "no orders". Falling back on empty meant a real shop
+  // with no sales yet saw a dashboard full of generated demo orders, and a
+  // cleared table silently refilled itself.
+  if (supabaseOrders) {
     return supabaseOrders;
   }
   const db = await getDB();

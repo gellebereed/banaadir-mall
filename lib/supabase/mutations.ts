@@ -369,22 +369,42 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = await createClient();
-    const { error } = await supabase.from("orders").upsert(
-      {
-        id: order.id,
-        date: order.date || new Date().toISOString().slice(0, 10),
-        customer: order.customer,
-        email: order.email || "",
-        phone: order.phone || "",
-        address: order.address || "",
-        city: order.city || "",
-        store: order.store,
-        total: order.total,
-        items: order.items || [],
-        status: order.status || "pending",
-      },
-      { onConflict: "id" }
-    );
+    const row: Record<string, unknown> = {
+      id: order.id,
+      date: order.date || new Date().toISOString().slice(0, 10),
+      customer: order.customer,
+      email: order.email || "",
+      phone: order.phone || "",
+      address: order.address || "",
+      city: order.city || "",
+      store: order.store,
+      total: order.total,
+      items: order.items || [],
+      status: order.status || "pending",
+      // Stamp the moment it was placed. Without this a new parcel starts
+      // with an empty history and its "Order placed" step can only show the
+      // date, losing the time the customer actually ordered.
+      timeline: order.timeline ?? [
+        { status: order.status || "pending", at: new Date().toISOString() },
+      ],
+    };
+
+    let { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
+
+    // `timeline` arrived with migration-order-delivery.sql. On a database
+    // without it the whole insert would fail — and a failed insert here
+    // means the customer's order is silently lost at checkout. Retry
+    // without it so the order always lands.
+    if (error && isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] orders is missing `timeline` — run " +
+          "supabase/migration-order-delivery.sql. Saving the order without " +
+          "its placed-at stamp.",
+      );
+      delete row.timeline;
+      ({ error } = await supabase.from("orders").upsert(row, { onConflict: "id" }));
+    }
+
     if (error) {
       console.error("[Supabase Mutations] createOrderInSupabase error:", error.message);
       return false;

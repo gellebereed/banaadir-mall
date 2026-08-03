@@ -229,7 +229,11 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
   try {
     const supabase = getPublicClient();
     const { data, error } = await supabase.from("orders").select("*");
-    if (error || !data || data.length === 0) return null;
+    // `null` means "no answer" (unconfigured or failed) — only then should
+    // the caller fall back to demo data. An EMPTY table is a real answer:
+    // this shop has no orders yet. Treating the two the same made a
+    // freshly-cleared database repopulate the dashboard with fake orders.
+    if (error || !data) return null;
     return data.map((o) => ({
       id: o.id,
       date: o.date,
