@@ -303,6 +303,68 @@ applied. **Dashboards and edit forms must use the base functions.** Editing
 a discounted price would save the discount as the new normal price and
 then discount it a second time.
 
+## Multi-vendor orders & WhatsApp notifications
+
+One cart can hold items from several stores, and each store packs and ships
+its own parcel. So one checkout produces **one order record per store**:
+
+```
+BM-12345                 ← the number the customer is given
+  ├─ BM-12345-HODA       store: hodan-electronics
+  └─ BM-12345-SAHR       store: sahra-fashion
+```
+
+`lib/order-utils.ts` owns that id scheme — `vendorOrderIds()`. Both
+`submitOrderAction` and the confirmation screen call it, because they used
+to derive ids independently and disagreed: the customer was shown
+`BM-12345`, which matched no stored record. It also disambiguates stores
+whose slugs share four characters (`karaca-home` / `karaca-kids` both gave
+`KARA`), where two identical ids in one order would upsert over each other
+and silently lose a vendor's parcel.
+
+**Tracking accepts the base id.** That's the only number the customer ever
+has, while the stored records are the per-vendor ones. `getOrderAction`
+falls back to collecting the parcels and merging them, showing the *least
+advanced* status — an order isn't delivered until every parcel has arrived.
+One cancelled parcel doesn't sink the rest (`mergeParcelStatuses`).
+
+### The messages
+
+`lib/whatsapp.ts` composes every message. Two rules it exists to enforce:
+
+- **A vendor never sees the whole-order total.** They're owed for their
+  items only. Sending the grand total to three vendors means three vendors
+  each believing they're owed the full amount — a payment dispute later.
+- **The message quotes the vendor's real id** (`BM-12345-HODA`). Quoting an
+  id that matches no record is worse than quoting none: they search, find
+  nothing, and stop trusting the system.
+
+Messages use WhatsApp's own markers (`*bold*`, `_italic_`) — not markdown,
+which it doesn't render. Amounts are written to two decimals rather than
+through `money()`, which drops trailing zeros: right for a price tag
+(`$49`), wrong for an order document, where it yields `$29.5`.
+
+The product's **internal reference** is included per line when it has one,
+so the parcel can be picked off a shelf without opening the dashboard.
+
+### Vendor numbers
+
+Sellers add theirs in **Store Settings → Order WhatsApp number**. It's
+normalised on save, so every way it gets typed (`+252…`, `00252…`, `061…`,
+spaced, bracketed) resolves to the bare international digits `wa.me` needs.
+
+A store with no number falls back to `NEXT_PUBLIC_SUPPORT_WHATSAPP` (or the
+platform default), and the confirmation screen **says so plainly** rather
+than implying a direct line to the shop.
+
+Run `supabase/migration-vendor-whatsapp.sql` to add the column. It
+backfills from the older `stores.phone` column, which existed but was never
+read, so no seller re-types a number they already gave.
+
+> **This is customer-initiated**, not a push notification — the customer
+> taps to send. Server-side delivery would need the WhatsApp Business API;
+> the message composition here is reusable as-is if you add it.
+
 ## Official brand stores
 
 Four franchised international brands are seeded alongside the local stores
@@ -394,9 +456,9 @@ fallback for variants that have none. Same precedence as Odoo.
 A barcode that identifies two items is worse than no barcode at all, so the
 rule is enforced three times over:
 
-1. **In the browser** (`components/dashboard/ProductCodesFields.tsx`) — the
-   GS1 mod-10 check digit is verified as the seller types, while the box is
-   still in their hand to re-scan.
+1. **In the browser** (`components/dashboard/ProductCodesFields.tsx`) — a
+   barcode reused across two variants of the same product is flagged while
+   the seller is still filling the rows in.
 2. **In the server action** (`assertCodesAreFree` in `app/actions.ts`) — the
    only layer that can say *"8691… is already on Karaca Tencere Seti"*. A
    database constraint can't name the conflict, and an error you can't act
@@ -406,10 +468,15 @@ rule is enforced three times over:
    live inside JSONB where no unique index reaches, which is why this is a
    trigger and not just an index.
 
-`lib/barcode.ts` is shared by layers 1 and 2, so they can't disagree. A wrong
-check digit is **rejected** (a scanner never produces one — it's always a
-typo); a non-GTIN code like `KRC-TENC-24` is **accepted** as an internal
-barcode, because plenty of suppliers label goods with their own scheme.
+`lib/barcode.ts` is shared by layers 1 and 2, so they can't disagree.
+
+**Codes are sanitised, not rejected.** `normalizeBarcode` and
+`normalizeReference` clean what's typed — scanner preambles, invisible
+characters pasted from Excel, stray symbols — and store the result.
+Validation never blocks a save, because a seller who can't save their
+product will simply stop entering codes at all, which is a worse outcome
+than an imperfect one. `gtinCheckDigit()` is still exported if you want to
+warn (not block) on a GTIN whose check digit doesn't add up.
 
 ### Categories are a tree
 
