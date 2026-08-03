@@ -93,6 +93,26 @@ if (missingOdoo.length === 0) {
   console.log(`⚠️  Odoo catalogue columns missing → ${missingOdoo.join(", ")}`);
 }
 
+// ── Vendor WhatsApp numbers (supabase/migration-vendor-whatsapp.sql) ───
+const missingWhatsApp = await checkColumns("stores", ["whatsapp"]);
+if (missingWhatsApp.length === 0) {
+  const res = await fetch(`${url}/rest/v1/stores?select=slug,whatsapp,status`, { headers });
+  const stores = res.ok ? await res.json() : [];
+  const active = stores.filter((s) => s.status === "active");
+  const reachable = active.filter((s) => s.whatsapp);
+  console.log(
+    reachable.length === active.length
+      ? `✅ all ${active.length} active store(s) can receive WhatsApp orders`
+      : `⚠️  ${active.length - reachable.length} of ${active.length} active store(s) have no WhatsApp number — their orders go to the platform number`,
+  );
+  for (const s of active.filter((x) => !x.whatsapp)) {
+    console.log(`      ${s.slug} → add one in Store Settings`);
+  }
+} else {
+  needsMigration = true;
+  console.log("⚠️  stores.whatsapp is MISSING → run supabase/migration-vendor-whatsapp.sql");
+}
+
 // The views are what a barcode scan and the category navigation read.
 for (const view of ["product_variant_index", "category_tree"]) {
   if (await tableExists(view)) {
@@ -160,10 +180,9 @@ if (brandRes.ok) {
 if (!needsMigration) {
   console.log("\n✨ Supabase schema is fully migrated.\n");
 } else {
-  console.log("\n📋 ACTION NEEDED — open Supabase → SQL Editor and run, in order:");
-  console.log("   1. supabase/migration.sql");
-  if (needsOdooMigration) {
-    console.log("   2. supabase/migration-odoo-catalog.sql   (barcodes, references, category tree)");
-  }
-  console.log("");
+  console.log("\n📋 ACTION NEEDED — open Supabase → SQL Editor and run whichever is flagged above:");
+  console.log("   · supabase/migration.sql                  (core columns)");
+  console.log("   · supabase/migration-odoo-catalog.sql     (barcodes, references, category tree)");
+  console.log("   · supabase/migration-vendor-whatsapp.sql  (vendor order numbers)");
+  console.log("   Each is idempotent — running one that's already applied does nothing.\n");
 }
