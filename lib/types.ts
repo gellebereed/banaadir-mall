@@ -332,6 +332,14 @@ export interface CartItem {
     icon: string;
     slug: string;
     /**
+     * Store slug that sells it. Without this the cart rebuilds a product
+     * with no store, and the checkout screen can't tell which shop each
+     * parcel belongs to. The server re-resolves it from the catalogue
+     * anyway (submitOrderAction) — this is what keeps the CONFIRMATION
+     * screen's per-vendor grouping right.
+     */
+    store?: string;
+    /**
      * Photo shown in the cart and checkout. Without it those screens fall
      * back to the emoji icon, because the catalog they used to look the
      * product up in is now Supabase, not the bundled seed data.

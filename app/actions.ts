@@ -1182,7 +1182,36 @@ export async function submitOrderAction(payload: {
   total: number;
   paymentMethod: string;
 }): Promise<{ ok: boolean; message: string; orderId: string }> {
-  const { id, customerName, customerPhone, customerEmail, address, city, items } = payload;
+  const { id, customerName, customerPhone, customerEmail, address, city } = payload;
+
+  /**
+   * Resolve every line's store from the CATALOGUE, not from what the
+   * browser sent.
+   *
+   * The cart synthesises a product from its snapshot whenever the item
+   * isn't in the bundled seed data — which is every real product once the
+   * catalogue lives in Supabase — and that synthesised product carried
+   * `store: ""`. Orders were therefore filed under no store at all: the
+   * seller's dashboard filters by slug, so the order existed in the
+   * database but was invisible to the shop that had to pack it, and
+   * triggered no notification.
+   *
+   * The client is the wrong place to settle this even once the snapshot
+   * carries a store, because a stale cart in someone's browser would still
+   * be wrong. The product record is the authority on which shop sells it.
+   */
+  const { getBaseProducts } = await import("@/lib/api");
+  const catalog = await getBaseProducts();
+  const items = payload.items.map((item) => {
+    const store = catalog.find((p) => p.id === item.productId)?.store || item.store || "";
+    if (!store) {
+      console.error(
+        `[submitOrder] "${item.name}" (${item.productId}) resolved to no store — ` +
+          `this parcel will not appear in any seller's dashboard.`,
+      );
+    }
+    return { ...item, store };
+  });
 
   const itemsByStore = groupByStore(items);
 

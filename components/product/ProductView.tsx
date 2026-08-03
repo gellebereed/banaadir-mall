@@ -75,6 +75,9 @@ export default function ProductView({
         price,
         icon: product.icon,
         slug: product.slug,
+        // Which shop sells it — without this the order is filed under no
+        // store and never reaches the seller's dashboard.
+        store: product.store,
         // The photo for the variant they actually chose.
         image: images[0],
       },

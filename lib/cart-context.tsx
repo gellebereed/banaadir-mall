@@ -104,7 +104,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
         id: item.productId,
         slug: item.snapshot.slug,
         name: item.snapshot.name,
-        store: "",
+        // Captured when the item was added. It used to be hardcoded empty,
+        // which meant every order for a product outside the bundled seed
+        // catalogue — i.e. every real one — was filed under no store.
+        store: item.snapshot.store ?? "",
         category: "",
         price: item.snapshot.price,
         icon: item.snapshot.icon,
@@ -122,6 +125,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
         price: item.snapshot.price,
         icon: item.snapshot.icon,
         slug: item.snapshot.slug,
+        // Prefer the catalogue's store when we have the real product;
+        // fall back to the snapshot for items that only exist in Supabase.
+        store: base.store || item.snapshot.store || "",
         // The bundled seed catalog no longer holds Supabase products, so the
         // snapshot is the only source of a photo for the cart and checkout.
         images: item.snapshot.image ? [item.snapshot.image] : base.images,
