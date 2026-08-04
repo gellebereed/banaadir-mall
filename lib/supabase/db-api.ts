@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { categoryIcon } from "../category-icons";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type { Category, Employee, MarketingSettings, Order, Product, Promotion, Store } from "../types";
 import { isSupabaseConfigured } from "./storage";
@@ -113,10 +114,14 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
       const taglineRaw = c.description || "";
       const isHidden = Boolean(c.hidden) || taglineRaw.startsWith("[HIDDEN]");
       const taglineClean = taglineRaw.replace(/^\[HIDDEN\]\s*/, "");
+      const name = (c.name || "").replace(/^\[HIDDEN\]\s*/, "");
       return {
         slug: c.slug,
-        name: (c.name || "").replace(/^\[HIDDEN\]\s*/, ""),
-        icon: ICON_MAP[c.icon] || c.icon || "📦",
+        name,
+        // A stored glyph wins; a missing or placeholder one is derived from
+        // the name. Without this, every category an import or an admin
+        // created rendered as the same brown parcel.
+        icon: categoryIcon(name, ICON_MAP[c.icon] || c.icon),
         tagline: taglineClean,
         art: c.art || DEFAULT_ART,
         hidden: isHidden,

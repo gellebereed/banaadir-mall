@@ -265,23 +265,57 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
 
 /* ── Category rail ────────────────────────────────────────────────── */
 
+/**
+ * The department row: TOP-LEVEL categories only.
+ *
+ * `getCategories()` returns the whole tree flattened, so rendering it as-is
+ * put every child beside every root — a supplier import that created
+ * thirteen menswear categories pushed "Bags", "Bracelets" and "Socks" onto
+ * the front page next to "Electronics", each with the same placeholder
+ * icon. Departments belong here; the categories underneath them belong on
+ * the department's own page.
+ */
 function CategoryRail({ categories }: { categories: Category[] }) {
+  const roots = categories.filter((c) => !c.parentSlug && !c.hidden);
+
+  // Count what sits under each root, so a department can say how much is in
+  // it rather than looking identical to an empty one.
+  const childCount = new Map<string, number>();
+  for (const category of categories) {
+    if (!category.parentSlug || category.hidden) continue;
+    childCount.set(category.parentSlug, (childCount.get(category.parentSlug) ?? 0) + 1);
+  }
+
+  if (roots.length === 0) return null;
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-10">
       <div className="grid grid-cols-4 gap-3 sm:gap-4 lg:grid-cols-8">
-        {categories.map((c) => (
-          <Link key={c.slug} href={`/category/${c.slug}`} className="group flex flex-col items-center gap-2 text-center">
-            <span
-              className="flex aspect-square w-full max-w-20 items-center justify-center rounded-3xl text-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md sm:text-4xl"
-              style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
+        {roots.map((c) => {
+          const children = childCount.get(c.slug) ?? 0;
+          return (
+            <Link
+              key={c.slug}
+              href={`/category/${c.slug}`}
+              className="group flex flex-col items-center gap-2 text-center"
             >
-              {c.icon}
-            </span>
-            <span className="text-xs font-semibold text-slate-700 group-hover:text-ocean-700">
-              {c.name}
-            </span>
-          </Link>
-        ))}
+              <span
+                className="flex aspect-square w-full max-w-20 items-center justify-center rounded-3xl text-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md sm:text-4xl"
+                style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
+              >
+                {c.icon}
+              </span>
+              <span className="flex flex-col leading-tight">
+                <span className="text-xs font-semibold text-slate-700 group-hover:text-ocean-700">
+                  {c.name}
+                </span>
+                {children > 0 && (
+                  <span className="text-[10px] text-slate-400">{children} categories</span>
+                )}
+              </span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );

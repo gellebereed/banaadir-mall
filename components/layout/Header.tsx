@@ -45,7 +45,15 @@ export default function Header({
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const action = primaryAction(session, storeName);
-  const categoriesList = dynamicCategories && dynamicCategories.length > 0 ? dynamicCategories : seedCategories;
+  /**
+   * Departments only. The category list is the whole tree flattened, so
+   * without this filter a menswear import puts "Socks" and "Bracelets" in
+   * the main navigation beside "Electronics". Sub-categories are reached
+   * from their department's page.
+   */
+  const allCategories =
+    dynamicCategories && dynamicCategories.length > 0 ? dynamicCategories : seedCategories;
+  const categoriesList = allCategories.filter((c) => !c.parentSlug && !c.hidden);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();

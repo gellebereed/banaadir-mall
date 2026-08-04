@@ -1467,9 +1467,9 @@ export async function getUserOrdersAction(query: {
   const cleanEmail = (query.email || "").trim().toLowerCase();
 
   return allOrders.filter((o) => {
-    if (cleanEmail && o.email && o.email.toLowerCase() === cleanEmail) return true;
-    if (cleanPhone && o.phone && o.phone.replace(/\D/g, "").includes(cleanPhone)) return true;
-    if (cleanName && o.customer.toLowerCase().includes(cleanName)) return true;
+    if (cleanEmail && o.email && o.email.trim().toLowerCase() === cleanEmail) return true;
+    if (cleanPhone && cleanPhone.length > 5 && o.phone && o.phone.replace(/\D/g, "").includes(cleanPhone)) return true;
+    if (cleanName && o.customer.trim().toLowerCase() === cleanName) return true;
     return false;
   });
 }

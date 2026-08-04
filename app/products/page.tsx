@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import ShopClient from "@/components/shop/ShopClient";
-import { getProducts, getStores } from "@/lib/api";
+import { getCategories, getProducts, getStores } from "@/lib/api";
 
 export const metadata: Metadata = { title: "All Products" };
 
@@ -11,12 +11,17 @@ export default async function ProductsPage({
   searchParams: Promise<{ sort?: string }>;
 }) {
   const { sort } = await searchParams;
-  const [products, stores] = await Promise.all([getProducts(), getStores()]);
+  const [products, stores, categories] = await Promise.all([
+    getProducts(),
+    getStores(),
+    getCategories(true),
+  ]);
 
   return (
     <ShopClient
       products={products}
       stores={stores}
+      categories={categories}
       title="All Products"
       subtitle="Everything on Banaadir Mall, from every store"
       initialSort={sort ?? "featured"}

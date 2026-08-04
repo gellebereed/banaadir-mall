@@ -20,7 +20,15 @@ export default async function AccountPage() {
   const store = isSeller && session.store ? await getStore(session.store) : undefined;
   const stats = store ? await getVendorStats(store.slug) : undefined;
 
-  const serverOrders = await getOrders();
+  const allOrders = await getOrders();
+  const cleanEmail = session.email.trim().toLowerCase();
+  const cleanName = session.name.trim().toLowerCase();
+
+  const serverOrders = allOrders.filter((o) => {
+    if (o.email && o.email.trim().toLowerCase() === cleanEmail) return true;
+    if (o.customer && o.customer.trim().toLowerCase() === cleanName) return true;
+    return false;
+  });
 
   const quickLinks = isAdmin
     ? [

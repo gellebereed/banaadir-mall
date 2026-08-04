@@ -26,6 +26,12 @@ interface LocalOrderEntry {
   id: string;
   date: string;
   customer?: string;
+  /**
+   * Who placed it. This is what `matchesUser` prefers over the name: two
+   * customers called "Ahmed" would otherwise see each other's orders, and
+   * an order placed under a nickname would show up for nobody.
+   */
+  email?: string;
   phone?: string;
   city?: string;
   address?: string;
@@ -57,6 +63,19 @@ function orderLine(order: Order) {
   });
 }
 
+function matchesUser(
+  o: { customer?: string; email?: string },
+  userName: string,
+  userEmail: string,
+): boolean {
+  const cleanEmail = (userEmail || "").trim().toLowerCase();
+  const cleanName = (userName || "").trim().toLowerCase();
+
+  if (o.email && o.email.trim().toLowerCase() === cleanEmail) return true;
+  if (o.customer && o.customer.trim().toLowerCase() === cleanName) return true;
+  return false;
+}
+
 export default function AccountOrdersClient({
   userName,
   userEmail,
@@ -75,50 +94,35 @@ export default function AccountOrdersClient({
       setLoading(true);
       const mergedMap = new Map<string, LocalOrderEntry>();
 
-      // 1. Load local storage orders
+      // 1. Load local storage orders (only those belonging to this user)
       try {
         const local: LocalOrderEntry[] = JSON.parse(
           localStorage.getItem("banaadir_user_orders") || "[]"
         );
-        local.forEach((o) => {
-          if (o.id) mergedMap.set(o.id.toLowerCase(), o);
-        });
+        local
+          .filter((o) => matchesUser(o, userName, userEmail))
+          .forEach((o) => {
+            if (o.id) mergedMap.set(o.id.toLowerCase(), o);
+          });
       } catch {
         // Ignore storage read error
       }
 
-      // 2. Load server orders passed from server
-      serverOrders.forEach((o) => {
-        const baseId = o.id.split("-")[0] + "-" + (o.id.split("-")[1] || "");
-        const existing = mergedMap.get(o.id.toLowerCase()) || mergedMap.get(baseId.toLowerCase());
+      // 2. Load server orders passed from server (only those belonging to this user)
+      serverOrders
+        .filter((o) => matchesUser(o, userName, userEmail))
+        .forEach((o) => {
+          const baseId = o.id.split("-")[0] + "-" + (o.id.split("-")[1] || "");
+          const existing = mergedMap.get(o.id.toLowerCase()) || mergedMap.get(baseId.toLowerCase());
 
-        if (existing) {
-          existing.status = o.status;
-        } else {
-          mergedMap.set(o.id.toLowerCase(), {
-            id: o.id,
-            date: o.date,
-            customer: o.customer,
-            phone: o.phone,
-            city: o.city,
-            address: o.address,
-            total: o.total,
-            status: o.status,
-            items: (o.items || []).map(orderLine(o)),
-          });
-        }
-      });
-
-      // 3. Fetch any additional database orders for this user name or email
-      try {
-        const dbOrders = await getUserOrdersAction({ name: userName, email: userEmail });
-        dbOrders.forEach((o) => {
-          const key = o.id.toLowerCase();
-          if (!mergedMap.has(key)) {
-            mergedMap.set(key, {
+          if (existing) {
+            existing.status = o.status;
+          } else {
+            mergedMap.set(o.id.toLowerCase(), {
               id: o.id,
               date: o.date,
               customer: o.customer,
+              email: o.email,
               phone: o.phone,
               city: o.city,
               address: o.address,
@@ -128,6 +132,29 @@ export default function AccountOrdersClient({
             });
           }
         });
+
+      // 3. Fetch any additional database orders for this user name or email
+      try {
+        const dbOrders = await getUserOrdersAction({ name: userName, email: userEmail });
+        dbOrders
+          .filter((o) => matchesUser(o, userName, userEmail))
+          .forEach((o) => {
+            const key = o.id.toLowerCase();
+            if (!mergedMap.has(key)) {
+              mergedMap.set(key, {
+                id: o.id,
+                date: o.date,
+                customer: o.customer,
+                email: o.email,
+                phone: o.phone,
+                city: o.city,
+                address: o.address,
+                total: o.total,
+                status: o.status,
+                items: (o.items || []).map(orderLine(o)),
+              });
+            }
+          });
       } catch {
         // Ignore fetch errors
       }

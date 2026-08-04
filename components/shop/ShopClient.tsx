@@ -12,8 +12,8 @@
 
 import { useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { categories } from "@/lib/data/categories";
-import type { Product, Store } from "@/lib/types";
+import { categories as seedCategories } from "@/lib/data/categories";
+import type { Category, Product, Store } from "@/lib/types";
 
 type SortKey = "featured" | "sold" | "price-asc" | "price-desc" | "rating" | "discount" | "new";
 
@@ -37,6 +37,7 @@ const PRICE_BANDS: { label: string; min: number; max: number }[] = [
 export default function ShopClient({
   products,
   stores = [],
+  categories: liveCategories,
   title,
   subtitle,
   initialSort = "featured",
@@ -45,6 +46,13 @@ export default function ShopClient({
   products: Product[];
   /** Stores present in this result set, for the brand filter. */
   stores?: Store[];
+  /**
+   * The real category list. Falls back to the bundled seed only when a
+   * caller hasn't passed one — filtering against the seed meant every
+   * category created since launch was missing from the sidebar, so
+   * products filed under one could not be filtered to at all.
+   */
+  categories?: Category[];
   title: string;
   subtitle?: string;
   initialSort?: string;
@@ -119,7 +127,48 @@ export default function ShopClient({
     return list;
   }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
 
-  /** Subcategories present in these results, for the chip row. */
+  const categories = liveCategories?.length ? liveCategories : seedCategories;
+
+  /**
+   * What the chip row above the grid offers.
+   *
+   * Two different questions, depending on where you are:
+   *
+   *   · On a mixed list ("All Products", a search), the useful cut is by
+   *     CATEGORY — a curated, consistently-named set.
+   *   · Inside one category, every product shares it, so the useful cut is
+   *     the finer sub-grouping.
+   *
+   * The old row always used sub-categories, which on All Products produced
+   * "Accessories · Jacket · Polo Shirt · Shoes · Suits" — free text typed
+   * by different sellers, mixing singular and plural, and covering only the
+   * handful of products that happened to have one filled in.
+   */
+  const categoriesPresent = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      counts.set(product.category, (counts.get(product.category) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([slug, count]) => {
+        const category = categories.find((c) => c.slug === slug);
+        const parent = category?.parentSlug
+          ? categories.find((c) => c.slug === category.parentSlug)
+          : undefined;
+        return {
+          slug,
+          count,
+          name: category?.name ?? slug.replace(/-/g, " "),
+          icon: category?.icon,
+          // Which department it sits under, so a sidebar listing both
+          // "Men's Fashion" and "Jackets" doesn't read as two unrelated
+          // things at the same level.
+          parentName: parent?.name,
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [products, categories]);
+
   const subcategories = useMemo(
     () =>
       [...new Set(products.map((p) => p.subcategory).filter((s): s is string => Boolean(s)))].sort(
@@ -127,6 +176,10 @@ export default function ShopClient({
       ),
     [products],
   );
+
+  // More than one category in the results means the list is mixed.
+  const chipMode: "category" | "subcategory" =
+    categoriesPresent.length > 1 ? "category" : "subcategory";
 
   const activeFilterCount =
     activeCategories.length +
@@ -153,31 +206,51 @@ export default function ShopClient({
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
 
-      {/* Subcategory chips — sellers create these by typing one on a product */}
-      {subcategories.length > 0 && (
+      {/* Quick cut across the results — by category on a mixed list, by
+          sub-grouping once everything shares one category. */}
+      {chipMode === "category" && categoriesPresent.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-2">
-          <button
+          <Chip
+            active={activeCategories.length === 0}
+            onClick={() => setActiveCategories([])}
+            label="All"
+            count={products.length}
+          />
+          {categoriesPresent.map((c) => (
+            <Chip
+              key={c.slug}
+              active={activeCategories.length === 1 && activeCategories[0] === c.slug}
+              // Chips are a quick single cut; the sidebar is where several
+              // categories get combined. Selecting one here replaces rather
+              // than adds, which is what a row of pills reads as.
+              onClick={() =>
+                setActiveCategories((prev) =>
+                  prev.length === 1 && prev[0] === c.slug ? [] : [c.slug],
+                )
+              }
+              label={c.icon ? `${c.icon} ${c.name}` : c.name}
+              count={c.count}
+            />
+          ))}
+        </div>
+      )}
+
+      {chipMode === "subcategory" && subcategories.length > 1 && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          <Chip
+            active={activeSubcategory === null}
             onClick={() => setActiveSubcategory(null)}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-              activeSubcategory === null
-                ? "bg-ocean-700 text-white"
-                : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
-            }`}
-          >
-            All
-          </button>
+            label="All"
+            count={products.length}
+          />
           {subcategories.map((sub) => (
-            <button
+            <Chip
               key={sub}
+              active={activeSubcategory === sub}
               onClick={() => setActiveSubcategory(sub === activeSubcategory ? null : sub)}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-                activeSubcategory === sub
-                  ? "bg-ocean-700 text-white"
-                  : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
-              }`}
-            >
-              {sub}
-            </button>
+              label={sub}
+              count={products.filter((p) => p.subcategory === sub).length}
+            />
           ))}
         </div>
       )}
@@ -222,25 +295,41 @@ export default function ShopClient({
               </button>
             )}
 
-            {showCategoryFilter && (
+            {/* Only categories that actually have products here. Listing
+                every category in the marketplace fills the sidebar with
+                rows that return nothing when ticked. */}
+            {showCategoryFilter && categoriesPresent.length > 1 && (
               <FilterGroup label="Category">
-                {categories.map((c) => (
-                  <label key={c.slug} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={activeCategories.includes(c.slug)}
-                      onChange={(e) =>
-                        setActiveCategories((prev) =>
-                          e.target.checked
-                            ? [...prev, c.slug]
-                            : prev.filter((s) => s !== c.slug),
-                        )
-                      }
-                      className="h-4 w-4 accent-ocean-700"
-                    />
-                    {c.icon} {c.name}
-                  </label>
-                ))}
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {categoriesPresent.map((c) => (
+                    <label
+                      key={c.slug}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-slate-600"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={activeCategories.includes(c.slug)}
+                        onChange={(e) =>
+                          setActiveCategories((prev) =>
+                            e.target.checked
+                              ? [...prev, c.slug]
+                              : prev.filter((s) => s !== c.slug),
+                          )
+                        }
+                        className="h-4 w-4 accent-ocean-700"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {c.icon} {c.name}
+                        {c.parentName && (
+                          <span className="block text-[11px] text-slate-400">
+                            in {c.parentName}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-400">{c.count}</span>
+                    </label>
+                  ))}
+                </div>
               </FilterGroup>
             )}
 
@@ -337,6 +426,36 @@ export default function ShopClient({
         )}
       </div>
     </div>
+  );
+}
+
+/** A filter pill. The count is what makes it worth tapping — or not. */
+function Chip({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+        active
+          ? "bg-ocean-700 text-white"
+          : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
+      }`}
+    >
+      <span>{label}</span>
+      {count !== undefined && (
+        <span className={active ? "text-white/70" : "text-slate-400"}>{count}</span>
+      )}
+    </button>
   );
 }
 

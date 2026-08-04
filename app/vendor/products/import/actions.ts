@@ -23,6 +23,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getBaseProducts, getCategories } from "@/lib/api";
 import { can } from "@/lib/auth";
+import { categoryIcon } from "@/lib/category-icons";
 import { mutateDB } from "@/lib/db";
 import { buildProduct } from "@/lib/import/build";
 import { analyse, defaultSettings, inspect, type ImportSettings } from "@/lib/import/pipeline";
@@ -406,7 +407,10 @@ async function createCategory(slug: string, name: string, parentSlug: string): P
   const category = {
     slug,
     name,
-    icon: "📦",
+    // Derived from the name rather than left as a parcel — an import that
+    // creates thirteen categories should not create thirteen identical
+    // icons for someone to fix by hand afterwards.
+    icon: categoryIcon(name),
     tagline: "",
     art: { from: "#e0f2fe", to: "#bae6fd" },
     hidden: false,

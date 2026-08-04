@@ -49,6 +49,12 @@ export default function CheckoutClient({
 
   // Delivery form states
   const [name, setName] = useState("");
+  /**
+   * Optional, and the reason it exists: an order is tied to the person who
+   * placed it by email. Matching on name alone means every customer called
+   * "Ahmed" shares an order history.
+   */
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [countryCode, setCountryCode] = useState("SO");
   const [city, setCity] = useState("Mogadishu (Xamar)");
@@ -67,6 +73,7 @@ export default function CheckoutClient({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.name) setName(parsed.name);
+        if (parsed.email) setEmail(parsed.email);
         if (parsed.phone) setPhone(parsed.phone);
         if (parsed.countryCode) setCountryCode(parsed.countryCode);
         if (parsed.city) setCity(parsed.city);
@@ -141,6 +148,7 @@ export default function CheckoutClient({
         "banaadir_delivery_address",
         JSON.stringify({
           name,
+          email,
           phone,
           countryCode,
           city,
@@ -155,6 +163,10 @@ export default function CheckoutClient({
         id: orderId,
         date: new Date().toISOString().slice(0, 10),
         customer: name,
+        // Stored alongside the name because the account page matches on it
+        // first — without it, this browser-side copy can only ever be found
+        // by name, which is not unique.
+        email,
         phone: fullPhone,
         city: destinationCity,
         address: fullAddress,
@@ -190,6 +202,7 @@ export default function CheckoutClient({
         id: orderId,
         customerName: name,
         customerPhone: fullPhone,
+        customerEmail: email,
         address: fullAddress,
         city: destinationCity,
         items: lines.map((l) => {
@@ -337,6 +350,27 @@ export default function CheckoutClient({
                   placeholder="Ayaan Warsame"
                   className="input"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="email" className="label">
+                  Email <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="input"
+                />
+                {/* Not required — plenty of customers here shop without one.
+                    When given, it is what ties this order to an account, so
+                    it appears under "My Orders" instead of only being
+                    findable by its order number. */}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Lets you see this order in your account.
+                </p>
               </div>
 
               <div>
