@@ -129,6 +129,21 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
 
   const tone = TONES[shelf.tone];
 
+  /**
+   * Does ANY card on this row carry an evidence chip?
+   *
+   * The chips are conditional — only products with genuinely low stock or
+   * real weekly sales get one — so on a mixed row some captions were two
+   * lines and some were one. Because the caption sits BELOW the tile, that
+   * pushed the tiles themselves to different heights and the row looked
+   * ragged.
+   *
+   * Deciding it per ROW rather than per card is what keeps both properties:
+   * every tile on a row lines up, and a row where nothing has a chip
+   * doesn't carry an empty reserved strip on every card.
+   */
+  const anyProof = items.some((item) => item.proof?.scarcity || item.proof?.momentum);
+
   function dismiss(productId: string) {
     setDismissed((current) => [...current, productId]);
     mute(productId);
@@ -220,16 +235,21 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
         {/* ── Items ──────────────────────────────────────────────── */}
         <div className="mt-5">
           {shelf.layout === "grid" ? (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 items-stretch gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {items.map((item) => (
-                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} />
+                <RecoCard
+                  key={item.product.id}
+                  item={item}
+                  reserveProof={anyProof}
+                  onDismiss={dismiss}
+                />
               ))}
             </div>
           ) : (
             <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
               {items.map((item) => (
-                <div key={item.product.id} className="w-44 shrink-0 snap-start sm:w-52">
-                  <RecoCard item={item} onDismiss={dismiss} />
+                <div key={item.product.id} className="flex w-44 shrink-0 snap-start sm:w-52">
+                  <RecoCard item={item} reserveProof={anyProof} onDismiss={dismiss} />
                 </div>
               ))}
             </div>
@@ -263,9 +283,12 @@ function shortReason(text: string): string {
  */
 function RecoCard({
   item,
+  reserveProof,
   onDismiss,
 }: {
   item: Recommendation;
+  /** True when some card on this row has an evidence chip. See anyProof. */
+  reserveProof: boolean;
   onDismiss: (productId: string) => void;
 }) {
   const proof = item.proof;
@@ -273,18 +296,26 @@ function RecoCard({
   const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <div className="group/reco relative flex h-full flex-col">
-      <ProductCard product={item.product} />
+    /*
+     * `flex-1` on the tile is what makes a row of these line up: the
+     * caption below is a fixed-height footer, and the product tile takes
+     * whatever is left. Without it the tile sat at its natural height and
+     * every card ended somewhere different.
+     */
+    <div className="group/reco relative flex h-full w-full flex-col">
+      <div className="flex flex-1 flex-col">
+        <ProductCard product={item.product} />
+      </div>
 
       {/* ── Evidence — only ever what is genuinely true ───────────── */}
-      {(proof?.scarcity || proof?.momentum) && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {proof.scarcity && (
+      {reserveProof && (
+        <div className="mt-1.5 flex min-h-[1.125rem] flex-wrap items-center gap-1">
+          {proof?.scarcity && (
             <span className="inline-flex items-center gap-1 rounded-md bg-coral-100 px-2 py-0.5 text-[10px] font-semibold text-coral-700 ring-1 ring-inset ring-coral-500/20">
               🔴 {proof.scarcity}
             </span>
           )}
-          {proof.momentum && (
+          {proof?.momentum && (
             <span className="inline-flex items-center gap-1 rounded-md bg-ocean-50 px-2 py-0.5 text-[10px] font-semibold text-ocean-700 ring-1 ring-inset ring-ocean-200/60">
               📈 {proof.momentum}
             </span>
@@ -293,7 +324,7 @@ function RecoCard({
       )}
 
       {/* ── The reason it is here ─────────────────────────────────── */}
-      <div className="mt-1.5 flex items-center gap-1">
+      <div className="mt-1.5 flex min-h-[1.375rem] items-center gap-1">
         <span
           className={`inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-black/[0.04] ${badgeStyle}`}
           title={item.reason.text}

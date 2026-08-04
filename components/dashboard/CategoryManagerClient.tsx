@@ -7,6 +7,7 @@ import {
   toggleCategoryVisibility,
   updateCategory,
 } from "@/app/actions";
+import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import {
@@ -279,6 +280,36 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
                   placeholder="🛍️"
                   className="input text-xl"
                 />
+                <p className="mt-1 text-xs text-slate-400">
+                  Used in the navigation menus, and as the fallback if there
+                  is no cover photo.
+                </p>
+              </div>
+
+              {/*
+                The home page renders departments as photo tiles. Leaving
+                this empty is a perfectly good choice: the storefront then
+                borrows the best-selling product's photo from inside this
+                department, which is usually the right picture anyway.
+              */}
+              <div>
+                <label className="label">Cover photo</label>
+                <PhotoPicker
+                  name="imageFile"
+                  multiple={false}
+                  label="Upload a department photo"
+                  hint="Shown on the home page · a wide, uncluttered shot works best"
+                />
+                <input
+                  name="image"
+                  defaultValue={editingCat?.image ?? ""}
+                  placeholder="…or paste an image URL"
+                  className="input mt-2 !py-2 font-mono text-xs"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Leave blank to use the best-selling product&apos;s photo from
+                  this department automatically.
+                </p>
               </div>
 
               <div>

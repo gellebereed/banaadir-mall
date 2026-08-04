@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import AnnouncementBar from "./AnnouncementBar";
+import CategoryMenu from "./CategoryMenu";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
 import type { Category } from "@/lib/types";
@@ -54,6 +55,18 @@ export default function Header({
   const allCategories =
     dynamicCategories && dynamicCategories.length > 0 ? dynamicCategories : seedCategories;
   const categoriesList = allCategories.filter((c) => !c.parentSlug && !c.hidden);
+
+  /**
+   * Sub-categories grouped under their department, so the strip can open
+   * them in a dropdown instead of burying them one page deeper.
+   */
+  const childrenOf = new Map<string, Category[]>();
+  for (const category of allCategories) {
+    if (!category.parentSlug || category.hidden) continue;
+    const siblings = childrenOf.get(category.parentSlug);
+    if (siblings) siblings.push(category);
+    else childrenOf.set(category.parentSlug, [category]);
+  }
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -194,13 +207,11 @@ export default function Header({
               All Products
             </Link>
             {categoriesList.map((c) => (
-              <Link
+              <CategoryMenu
                 key={c.slug}
-                href={`/category/${c.slug}`}
-                className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm text-slate-600 hover:bg-ocean-50 hover:text-ocean-800"
-              >
-                {c.icon} {c.name}
-              </Link>
+                category={c}
+                subcategories={childrenOf.get(c.slug) ?? []}
+              />
             ))}
             <Link
               href="/stores"
@@ -223,17 +234,48 @@ export default function Header({
       {/* Mobile slide-down menu */}
       {menuOpen && (
         <div className="border-b border-sand-200 bg-white shadow-xl lg:hidden">
-          <div className="grid grid-cols-2 gap-1 p-3">
-            {categoriesList.map((c) => (
-              <Link
-                key={c.slug}
-                href={`/category/${c.slug}`}
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-sand-100"
-              >
-                <span className="text-lg">{c.icon}</span> {c.name}
-              </Link>
-            ))}
+          {/* On a phone the same tree becomes an accordion — a hover
+              dropdown is unusable here, but the sub-categories are just as
+              worth reaching. */}
+          <div className="max-h-[70vh] overflow-y-auto p-3">
+            {categoriesList.map((c) => {
+              const kids = childrenOf.get(c.slug) ?? [];
+              return (
+                <details key={c.slug} className="border-b border-sand-100 last:border-0">
+                  <summary
+                    className={`flex cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sand-100 ${
+                      kids.length === 0 ? "[&::-webkit-details-marker]:hidden" : ""
+                    }`}
+                  >
+                    <span className="text-lg">{c.icon}</span>
+                    <span className="flex-1">{c.name}</span>
+                    {kids.length > 0 && (
+                      <span className="text-[10px] text-slate-400">{kids.length}</span>
+                    )}
+                  </summary>
+
+                  <div className="pb-2 pl-10">
+                    <Link
+                      href={`/category/${c.slug}`}
+                      onClick={() => setMenuOpen(false)}
+                      className="block rounded-lg px-3 py-1.5 text-xs font-bold text-ocean-700 hover:bg-ocean-50"
+                    >
+                      All of {c.name} →
+                    </Link>
+                    {kids.map((child) => (
+                      <Link
+                        key={child.slug}
+                        href={`/category/${child.slug}`}
+                        onClick={() => setMenuOpen(false)}
+                        className="block rounded-lg px-3 py-1.5 text-xs text-slate-600 hover:bg-sand-100"
+                      >
+                        {child.icon} {child.name}
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
           </div>
           <div className="flex gap-2 border-t border-sand-100 p-3">
             <Link href="/stores" onClick={() => setMenuOpen(false)} className="btn-secondary flex-1 !py-2 text-sm">

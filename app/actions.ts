@@ -1835,6 +1835,11 @@ export async function createCategory(formData: FormData): Promise<void> {
   const icon = String(formData.get("icon") || "📦").trim() || "📦";
   const tagline = String(formData.get("tagline") || "").trim();
 
+  // Cover photo: an upload wins, then a pasted URL, then whatever was
+  // already saved. Editing a category's name must never drop its artwork.
+  const [uploadedCover] = await saveImages(filesFrom(formData, "imageFile"), "categories");
+  const typedCover = String(formData.get("image") || "").trim();
+
   if (!name) throw new Error("Category name is required.");
   if (!slug) {
     slug = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
@@ -1845,10 +1850,15 @@ export async function createCategory(formData: FormData): Promise<void> {
     slug,
   );
 
+  const { getCategory } = await import("@/lib/api");
+  const existing = await getCategory(slug);
+  const image = uploadedCover ?? (typedCover || existing?.image);
+
   const category = {
     slug,
     name,
     icon,
+    image,
     tagline,
     art: { from: "#e0f2fe", to: "#bae6fd" },
     hidden: false,
@@ -1858,7 +1868,7 @@ export async function createCategory(formData: FormData): Promise<void> {
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase({ ...category, parentSlug });
+    await upsertCategoryInSupabase({ ...category, parentSlug, image: image ?? null });
   } else {
     await mutateDB((db) => {
       db.categories = db.categories || [];
@@ -1886,17 +1896,26 @@ export async function updateCategory(formData: FormData): Promise<void> {
     originalSlug || slug,
   );
 
+  // Upload wins, then a pasted URL, then whatever was already there — so
+  // renaming a department never silently drops its cover photo.
+  const [uploadedCover] = await saveImages(filesFrom(formData, "imageFile"), "categories");
+  const typedCover = String(formData.get("image") || "").trim();
+  const { getCategory } = await import("@/lib/api");
+  const previous = await getCategory(originalSlug || slug);
+  const image = uploadedCover ?? (typedCover || previous?.image);
+
   const category = {
     slug,
     name,
     icon,
+    image,
     tagline,
     art: { from: "#e0f2fe", to: "#bae6fd" },
     parentSlug: parentSlug ?? undefined,
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase({ ...category, parentSlug });
+    await upsertCategoryInSupabase({ ...category, parentSlug, image: image ?? null });
   } else {
     await mutateDB((db) => {
       db.categories = db.categories || [];

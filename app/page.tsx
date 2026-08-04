@@ -11,6 +11,7 @@ import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import { money } from "@/lib/format";
 import {
+  categoryCovers,
   getBestsellers,
   getCategories,
   getFlashDeal,
@@ -41,6 +42,10 @@ export default async function HomePage() {
       getMarketingSettings(),
       getBaseProducts(),
     ]);
+
+  // Department artwork: the admin's chosen cover, or the best-selling
+  // product's photo from inside that department. See categoryCovers().
+  const covers = await categoryCovers(categories, allProducts);
 
   const officialBrands = stores.filter((s) => s.official);
   const localStores = stores.filter((s) => !s.official).slice(0, 4);
@@ -74,7 +79,9 @@ export default async function HomePage() {
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
     banners: () => (activeBanners.length > 0 ? <BannerCarousel banners={activeBanners} /> : null),
     promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} /> : null),
-    categories: () => <CategoryRail categories={categories} products={allProducts} />,
+    categories: () => (
+      <CategoryRail categories={categories} products={allProducts} covers={covers} />
+    ),
     brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} /> : null),
     flash: () =>
       flashProducts.length > 0 ? (
@@ -110,13 +117,20 @@ export default async function HomePage() {
     (best, s, i) => (priority.includes(s.key) ? i : best),
     -1,
   );
+  const lastIdx = visibleSections.length - 1;
+
   /** After the departments and brand stores — the first personal moment. */
-  const earlyAt = lastPriorityIdx >= 0 ? lastPriorityIdx : Math.min(1, visibleSections.length - 1);
-  /** Roughly two-thirds down, between the marketplace's own rails. */
-  const midAt = Math.min(
-    visibleSections.length - 1,
-    earlyAt + Math.max(1, Math.round((visibleSections.length - earlyAt) / 2)),
-  );
+  const earlyAt = lastPriorityIdx >= 0 ? lastPriorityIdx : Math.min(1, lastIdx);
+
+  /**
+   * Two of the marketplace's own sections later.
+   *
+   * Set to -1 when there is no room, which folds the middle shelves into
+   * the closing block instead of stacking them straight onto the early
+   * ones. Landing both windows on the same section is the case that
+   * produced four consecutive recommendation rows.
+   */
+  const midAt = earlyAt + 2 <= lastIdx ? earlyAt + 2 : -1;
 
   /**
    * What the admin's own rails are already showing. Passed to the engine so
@@ -153,6 +167,9 @@ export default async function HomePage() {
 
       {/* Discovery closes the page — the row you read when nothing above
           it caught you, which is exactly when a shop should widen out. */}
+      {midAt === -1 && (
+        <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="mid" />
+      )}
       <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="late" />
 
       <SellerBanner />
@@ -335,7 +352,16 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
  * icon. Departments belong here; the categories underneath them belong on
  * the department's own page.
  */
-function CategoryRail({ categories, products }: { categories: Category[]; products: Product[] }) {
+function CategoryRail({
+  categories,
+  products,
+  covers,
+}: {
+  categories: Category[];
+  products: Product[];
+  /** Department slug → cover photo. See categoryCovers(). */
+  covers: Record<string, string>;
+}) {
   const roots = categories.filter((c) => !c.parentSlug && !c.hidden);
 
   // Count what sits under each root, so a department can say how much is in
@@ -391,48 +417,71 @@ function CategoryRail({ categories, products }: { categories: Category[]; produc
     if (root) productCount.set(root, (productCount.get(root) ?? 0) + 1);
   }
 
+  /*
+   * Photo tiles, not emoji.
+   *
+   * A row of emoji on coloured squares is the tell of a template. Real
+   * product photography is what makes a department row look like stock
+   * somebody actually has — and where the admin hasn't chosen a cover,
+   * categoryCovers() borrows the best-selling product's photo from inside
+   * that department, so this looks right before anybody uploads anything.
+   *
+   * Six across rather than eight: at eight the tiles were too small for a
+   * photograph to read as anything.
+   */
   return (
     <section className="mx-auto max-w-7xl px-4 pt-10">
-      <div className="grid grid-cols-4 gap-3 sm:gap-4 lg:grid-cols-8">
+      <SectionHeader
+        title="Shop by department"
+        subtitle="Everything in the mall, grouped the way you'd walk it"
+        href="/products"
+        linkLabel="All products"
+      />
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-6">
         {visibleRoots.map((c) => {
           const count = productCount.get(c.slug) ?? 0;
           const children = childCount.get(c.slug) ?? 0;
+          const cover = covers[c.slug];
+
           return (
             <Link
               key={c.slug}
               href={`/category/${c.slug}`}
-              className="group flex flex-col items-center gap-2 text-center"
+              className="group relative flex aspect-[4/5] flex-col justify-end overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/5 transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/15"
             >
-              {c.image ? (
-                <span className="relative flex aspect-square w-full max-w-20 items-center justify-center overflow-hidden rounded-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md">
-                  <Image
-                    src={c.image}
-                    alt={c.name}
-                    fill
-                    sizes="80px"
-                    className="object-cover"
-                  />
-                </span>
+              {cover ? (
+                <Image
+                  src={cover}
+                  alt=""
+                  fill
+                  sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 200px"
+                  className="object-cover transition duration-500 group-hover:scale-110"
+                />
               ) : (
-                <span
-                  className="flex aspect-square w-full max-w-20 items-center justify-center rounded-3xl text-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md sm:text-4xl"
+                <div
+                  className="absolute inset-0 flex items-center justify-center text-4xl"
                   style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
                 >
                   {c.icon}
-                </span>
+                </div>
               )}
-              <span className="flex flex-col leading-tight">
-                <span className="text-xs font-semibold text-slate-700 group-hover:text-ocean-700">
+
+              {/* A scrim, not a wash: the label has to stay legible over a
+                  photo we did not art-direct. */}
+              <div className="absolute inset-0 bg-gradient-to-t from-ocean-950/85 via-ocean-950/25 to-transparent" />
+
+              <div className="relative p-2.5 sm:p-3">
+                <p className="font-display text-[13px] font-extrabold leading-tight text-white drop-shadow sm:text-sm">
                   {c.name}
-                </span>
-                {count > 0 ? (
-                  <span className="text-[10px] text-slate-400">
-                    {count} product{count === 1 ? "" : "s"}
-                  </span>
-                ) : children > 0 ? (
-                  <span className="text-[10px] text-slate-400">{children} categories</span>
-                ) : null}
-              </span>
+                </p>
+                <p className="mt-0.5 text-[10px] font-medium text-white/70">
+                  {count > 0
+                    ? `${count} item${count === 1 ? "" : "s"}`
+                    : children > 0
+                      ? `${children} categories`
+                      : "Browse"}
+                </p>
+              </div>
             </Link>
           );
         })}

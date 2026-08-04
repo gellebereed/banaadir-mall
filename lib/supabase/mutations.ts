@@ -778,6 +778,8 @@ export async function upsertCategoryInSupabase(category: {
   icon: string;
   tagline: string;
   hidden?: boolean;
+  /** Cover photo. Pass null to clear it and fall back to the emoji glyph. */
+  image?: string | null;
   /** Odoo product.category.parent_id. Pass null to move it back to a root. */
   parentSlug?: string | null;
 }): Promise<boolean> {
@@ -816,17 +818,25 @@ export async function upsertCategoryInSupabase(category: {
     if (category.parentSlug !== undefined) {
       row.parent_slug = category.parentSlug || null;
     }
+    // Same convention for the cover photo: undefined leaves it alone, so
+    // editing a category's name can never silently drop its artwork.
+    if (category.image !== undefined) {
+      row.image = category.image || null;
+    }
 
     let { error } = await supabase.from("categories").upsert(row, { onConflict: "slug" });
 
-    // parent_slug arrived with migration-odoo-catalog.sql — retry without it
-    // so category edits still work on a database that hasn't been migrated.
+    // parent_slug arrived with migration-odoo-catalog.sql and image with
+    // migration-category-images.sql — retry without whichever is missing so
+    // category edits still work on a database that hasn't been migrated.
     if (error && isMissingColumnError(error)) {
       console.warn(
-        "[Supabase] categories is missing parent_slug — run " +
-          "supabase/migration-odoo-catalog.sql. Saving without the parent link.",
+        "[Supabase] categories is missing parent_slug or image — run " +
+          "supabase/migration-odoo-catalog.sql and " +
+          "supabase/migration-category-images.sql. Saving the rest.",
       );
       delete row.parent_slug;
+      delete row.image;
       ({ error } = await supabase.from("categories").upsert(row, { onConflict: "slug" }));
     }
 

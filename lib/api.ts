@@ -692,6 +692,62 @@ export async function getReviews(product: Product): Promise<Review[]> {
   }));
 }
 
+// ── Category artwork ───────────────────────────────────────────────────
+
+/**
+ * A photo for every department, keyed by slug.
+ *
+ * The admin can set one per category, but almost none will be set on day
+ * one — and a department row of emoji on a coloured square is the single
+ * thing that makes a storefront look like a template rather than a shop.
+ * So where no cover has been chosen, the best photo already in that
+ * department stands in.
+ *
+ * "Best" is deliberately not "first": it prefers the product with the most
+ * sales, because that is the one whose photo a seller has already had a
+ * reason to get right. Products beneath a department count too, so a parent
+ * with no direct listings still gets artwork from its children.
+ */
+export async function categoryCovers(
+  categories: Category[],
+  products: Product[],
+): Promise<Record<string, string>> {
+  // Map every category to its root so a child's products dress the parent.
+  const parentOf = new Map(categories.map((c) => [c.slug, c.parentSlug]));
+  const rootOf = (slug: string): string => {
+    let current = slug;
+    for (let hops = 0; hops < 10; hops++) {
+      const parent = parentOf.get(current);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  };
+
+  const best = new Map<string, { image: string; sold: number }>();
+
+  for (const product of products) {
+    if (product.hidden) continue;
+    const image = product.images?.[0] ?? product.variants?.find((v) => v.images?.[0])?.images?.[0];
+    if (!image) continue;
+
+    // Credit both the exact category and its root.
+    for (const slug of new Set([product.category, rootOf(product.category)])) {
+      const current = best.get(slug);
+      if (!current || product.sold > current.sold) {
+        best.set(slug, { image, sold: product.sold });
+      }
+    }
+  }
+
+  const covers: Record<string, string> = {};
+  for (const category of categories) {
+    const chosen = category.image || best.get(category.slug)?.image;
+    if (chosen) covers[category.slug] = chosen;
+  }
+  return covers;
+}
+
 // ── Discovery: recommender settings & product stories ──────────────────
 
 /** Admin control over the recommender. Falls back to the shipped defaults. */

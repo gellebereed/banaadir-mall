@@ -162,6 +162,86 @@ export function composeShelves(
   }
 
   ctx.shelfId = undefined;
+  return surface === "home" ? distribute(shelves, overrides) : shelves;
+}
+
+/** Slots in page order. */
+const SLOT_ORDER: ShelfSlot[] = ["top", "early", "mid", "late"];
+
+/** More than this in one slot and the page reads as a block of filler. */
+const MAX_PER_SLOT = 2;
+
+/**
+ * Spread the surviving shelves down the page.
+ *
+ * Each shelf carries a default slot, but which shelves actually survive
+ * depends entirely on the shopper — a first-time visitor might fill only
+ * "mid", a regular might fill "early" three times over. Rendering those
+ * defaults literally produces exactly the failure this was meant to avoid:
+ * a run of four recommendation rows stacked together, with the marketplace's
+ * own sections orphaned above and below them.
+ *
+ * So the defaults are treated as a PREFERENCE, not an instruction. Shelves
+ * keep their slot while it has room, and overflow moves to the nearest slot
+ * that doesn't — always downward first, since a shelf arriving earlier than
+ * intended is more disruptive than one arriving later.
+ *
+ * Two things are never moved:
+ *
+ *   AN ADMIN'S CHOICE. If somebody positioned a shelf in /admin/discovery,
+ *   that is a decision, not a default, and an algorithm quietly overriding
+ *   it is how operators stop trusting the panel.
+ *
+ *   "PICK UP WHERE YOU LEFT OFF". Its whole value is being the first thing
+ *   a returning shopper sees. A version of it three screens down is not a
+ *   worse version of the feature, it is a different and useless one.
+ */
+function distribute(
+  shelves: Shelf[],
+  overrides: Map<string, { slot?: ShelfSlot }>,
+): Shelf[] {
+  const counts = new Map<ShelfSlot, number>(SLOT_ORDER.map((slot) => [slot, 0]));
+  const lastTone = new Map<ShelfSlot, Shelf["tone"]>();
+  const pinnedSlots = new Set(["continue"]);
+
+  const place = (shelf: Shelf, slot: ShelfSlot) => {
+    shelf.slot = slot;
+    counts.set(slot, (counts.get(slot) ?? 0) + 1);
+    lastTone.set(slot, shelf.tone);
+  };
+
+  for (const shelf of shelves) {
+    if (pinnedSlots.has(shelf.id) || overrides.get(shelf.id)?.slot !== undefined) {
+      place(shelf, shelf.slot);
+      continue;
+    }
+
+    const preferred = SLOT_ORDER.indexOf(shelf.slot);
+    // Search downward from the preferred slot, then upward as a last resort:
+    // arriving later than intended is less disruptive than arriving earlier.
+    const search = [
+      ...SLOT_ORDER.slice(preferred),
+      ...SLOT_ORDER.slice(0, preferred).reverse(),
+    ];
+    const hasRoom = search.filter((slot) => (counts.get(slot) ?? 0) < MAX_PER_SLOT);
+
+    /*
+     * Prefer a slot that won't stack two rows of the same TONE together.
+     *
+     * Tone is the band colour, and two personal rows back to back read as
+     * one very tall personal row — the visual separation that tells a
+     * shopper "this is a different kind of thing" disappears exactly when
+     * two rows need it most. Only a preference: a shelf is never dropped or
+     * pushed somewhere silly to satisfy it.
+     */
+    const landing =
+      hasRoom.find((slot) => lastTone.get(slot) !== shelf.tone) ??
+      hasRoom[0] ??
+      shelf.slot;
+
+    place(shelf, landing);
+  }
+
   return shelves;
 }
 
