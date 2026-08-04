@@ -1,15 +1,46 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import { useCart } from "@/lib/cart-context";
-import { products } from "@/lib/data/products";
+import { getWishlistProductsAction } from "@/app/actions";
+import type { Product } from "@/lib/types";
 
 export default function WishlistPage() {
   const { wishlist } = useCart();
-  const saved = products.filter((p) => wishlist.includes(p.id));
+  const [savedProducts, setSavedProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (saved.length === 0) {
+  useEffect(() => {
+    async function loadWishlist() {
+      if (wishlist.length === 0) {
+        setSavedProducts([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const fetched = await getWishlistProductsAction(wishlist);
+        setSavedProducts(fetched);
+      } catch {
+        setSavedProducts([]);
+      }
+      setLoading(false);
+    }
+
+    void loadWishlist();
+  }, [wishlist]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-20 text-center text-slate-400">
+        <p className="animate-pulse font-semibold">🤍 Loading your saved products…</p>
+      </div>
+    );
+  }
+
+  if (savedProducts.length === 0) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
         <span className="text-7xl">🤍</span>
@@ -31,11 +62,11 @@ export default function WishlistPage() {
       <h1 className="mb-6 font-display text-3xl font-extrabold text-ocean-950">
         My Wishlist{" "}
         <span className="text-lg font-semibold text-slate-400">
-          ({saved.length} item{saved.length === 1 ? "" : "s"})
+          ({savedProducts.length} item{savedProducts.length === 1 ? "" : "s"})
         </span>
       </h1>
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {saved.map((p) => (
+        {savedProducts.map((p) => (
           <ProductCard key={p.id} product={p} />
         ))}
       </div>

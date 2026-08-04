@@ -1475,6 +1475,19 @@ export async function getUserOrdersAction(query: {
 }
 
 /**
+ * Fetch products matching wishlist IDs (from database or local DB store).
+ */
+export async function getWishlistProductsAction(ids: string[]): Promise<Product[]> {
+  if (!ids || ids.length === 0) return [];
+  const { getBaseProducts } = await import("@/lib/api");
+  const allProducts = await getBaseProducts();
+  const idSet = new Set(ids.map((i) => i.toLowerCase()));
+  return allProducts.filter(
+    (p) => idSet.has(p.id.toLowerCase()) || idSet.has(p.slug.toLowerCase()),
+  );
+}
+
+/**
  * Unseen parcels for a store, newest first — what the bell drops down.
  *
  * Read straight from the orders table rather than kept in the browser, so
