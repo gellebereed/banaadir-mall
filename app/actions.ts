@@ -378,6 +378,75 @@ export async function toggleProductHidden(id: string): Promise<void> {
   refresh();
 }
 
+export async function toggleProductFeatured(id: string): Promise<void> {
+  const session = await requireAccess("products");
+  const product = await getBaseProduct(id);
+  if (!product) return;
+  assertOwnsStore(session, product.store);
+
+  const newFeatured = !product.featured;
+  const supabaseOk = await updateProductFields(id, { featured: newFeatured });
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.productOverrides[id] = {
+        ...db.productOverrides[id],
+        featured: newFeatured,
+      };
+    });
+  }
+  refresh();
+}
+
+export async function batchUpdateProducts(
+  ids: string[],
+  action: "hide" | "show" | "feature" | "unfeature" | "delete" | "stock" | "price",
+  value?: number,
+): Promise<{ ok: boolean; count: number; message: string }> {
+  const session = await requireAccess("products");
+  if (!ids || ids.length === 0) return { ok: false, count: 0, message: "No products selected" };
+
+  let count = 0;
+  for (const id of ids) {
+    const product = await getBaseProduct(id);
+    if (!product) continue;
+    assertOwnsStore(session, product.store);
+
+    if (action === "delete") {
+      const supabaseOk = await deleteProductFromSupabase(id);
+      if (!supabaseOk) {
+        await mutateDB((db) => {
+          db.newProducts = db.newProducts.filter((p) => p.id !== id);
+          if (!db.deletedProducts.includes(id)) db.deletedProducts.push(id);
+          delete db.productOverrides[id];
+        });
+      }
+      count++;
+    } else {
+      let fieldsToUpdate: Partial<Product> = {};
+      if (action === "hide") fieldsToUpdate = { hidden: true };
+      if (action === "show") fieldsToUpdate = { hidden: false };
+      if (action === "feature") fieldsToUpdate = { featured: true };
+      if (action === "unfeature") fieldsToUpdate = { featured: false };
+      if (action === "stock" && typeof value === "number") fieldsToUpdate = { stock: Math.max(0, value) };
+      if (action === "price" && typeof value === "number") fieldsToUpdate = { price: Math.max(0, value) };
+
+      const supabaseOk = await updateProductFields(id, fieldsToUpdate);
+      if (!supabaseOk) {
+        await mutateDB((db) => {
+          db.productOverrides[id] = {
+            ...db.productOverrides[id],
+            ...fieldsToUpdate,
+          };
+        });
+      }
+      count++;
+    }
+  }
+
+  refresh();
+  return { ok: true, count, message: `Successfully updated ${count} products.` };
+}
+
 export async function deleteProduct(id: string): Promise<void> {
   const session = await requireAccess("products");
   const product = await getBaseProduct(id);

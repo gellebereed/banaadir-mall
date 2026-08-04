@@ -223,6 +223,7 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       description: p.description || "",
       features: mapFeatures(p),
       hidden: p.hidden ?? false,
+      featured: p.featured ?? false,
       images: p.images || [],
       variants: p.variants?.length ? p.variants : undefined,
       defaultVariantId: p.default_variant_id || undefined,

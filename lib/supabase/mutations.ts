@@ -248,6 +248,7 @@ export async function updateProductFields(
     if (fields.badge !== undefined) row.badge = fields.badge ?? null;
     if (fields.description !== undefined) row.description = fields.description;
     if (fields.hidden !== undefined) row.hidden = fields.hidden;
+    if (fields.featured !== undefined) row.featured = fields.featured;
     if (fields.images !== undefined) row.images = fields.images;
     if (fields.variants !== undefined) row.variants = fields.variants ?? [];
     // Keep the legacy boolean in sync so old readers still behave.

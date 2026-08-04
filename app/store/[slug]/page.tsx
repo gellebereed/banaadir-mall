@@ -27,6 +27,8 @@ export default async function StorePage({ params }: Props) {
 
   const products = await getProductsByStore(slug);
 
+  const featuredProducts = products.filter((p) => p.featured);
+
   return (
     <div>
       {/* Banner — uploaded image, or the store's gradient */}
@@ -91,7 +93,29 @@ export default async function StorePage({ params }: Props) {
           </div>
         </div>
 
-        {/* Products */}
+        {/* Featured Store Favorites Section */}
+        {featuredProducts.length > 0 && (
+          <div className="mt-8 rounded-3xl bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-sand-50 p-6 border border-amber-200/80 shadow-xs">
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-mango-500 text-white font-extrabold text-sm shadow-xs">
+                ⭐
+              </span>
+              <div>
+                <h2 className="font-display text-xl font-extrabold text-ocean-950">
+                  Store Favorites &amp; Top Picks
+                </h2>
+                <p className="text-xs text-slate-500">Hand-selected items pinned by {store.name}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
+              {featuredProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* All Products */}
         <h2 className="mb-5 mt-10 font-display text-2xl font-bold text-ocean-950">
           All Products from {store.name}
         </h2>

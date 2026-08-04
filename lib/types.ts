@@ -181,6 +181,8 @@ export interface Product {
   features: string[];
   /** Hidden products stay in dashboards but disappear from the storefront. */
   hidden?: boolean;
+  /** Featured / favorite products pinned to the top of the seller's brand store page. */
+  featured?: boolean;
   /**
    * Uploaded photo URLs (see lib/uploads.ts). The first one is the main
    * image. When empty, the generated gradient artwork is shown instead.
