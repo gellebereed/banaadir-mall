@@ -37,6 +37,8 @@ export interface Category {
   name: string;
   /** Emoji used as the category glyph across the UI. */
   icon: string;
+  /** Optional image URL used instead of the emoji icon (e.g. on homepage). */
+  image?: string;
   tagline: string;
   art: Art;
   /** If true, hidden from customer navbar and homepage category lists. */

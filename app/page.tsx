@@ -74,7 +74,7 @@ export default async function HomePage() {
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
     banners: () => (activeBanners.length > 0 ? <BannerCarousel banners={activeBanners} /> : null),
     promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} /> : null),
-    categories: () => <CategoryRail categories={categories} />,
+    categories: () => <CategoryRail categories={categories} products={allProducts} />,
     brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} /> : null),
     flash: () =>
       flashProducts.length > 0 ? (
@@ -94,11 +94,16 @@ export default async function HomePage() {
    * The admin's arrangement is left exactly as they set it — this page has
    * always been theirs to order, and a recommender that quietly shoves a
    * campaign banner down the page is one the marketing team switches off.
-   * The stack is inserted AFTER the first two sections instead: past the
-   * banners and the department row, still high enough to be the first
-   * thing most people scroll into.
+   * The stack is inserted AFTER the categories and brands sections: past the
+   * departments and brand stores, still high enough to be the first
+   * personalised thing most people scroll into.
    */
-  const injectAfter = Math.min(1, visibleSections.length - 1);
+  const prioritySections = ["banners", "promoTiles", "categories", "brands"];
+  const lastPriorityIdx = visibleSections.reduce(
+    (best, s, i) => (prioritySections.includes(s.key) ? i : best),
+    -1,
+  );
+  const injectAfter = lastPriorityIdx >= 0 ? lastPriorityIdx : Math.min(1, visibleSections.length - 1);
 
   /**
    * What the admin's own rails are already showing. Passed to the engine so
@@ -305,7 +310,8 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
 /* ── Category rail ────────────────────────────────────────────────── */
 
 /**
- * The department row: TOP-LEVEL categories only.
+ * The department row: TOP-LEVEL categories only, filtered to those that
+ * actually contain products.
  *
  * `getCategories()` returns the whole tree flattened, so rendering it as-is
  * put every child beside every root — a supplier import that created
@@ -314,7 +320,7 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
  * icon. Departments belong here; the categories underneath them belong on
  * the department's own page.
  */
-function CategoryRail({ categories }: { categories: Category[] }) {
+function CategoryRail({ categories, products }: { categories: Category[]; products: Product[] }) {
   const roots = categories.filter((c) => !c.parentSlug && !c.hidden);
 
   // Count what sits under each root, so a department can say how much is in
@@ -325,12 +331,56 @@ function CategoryRail({ categories }: { categories: Category[] }) {
     childCount.set(category.parentSlug, (childCount.get(category.parentSlug) ?? 0) + 1);
   }
 
-  if (roots.length === 0) return null;
+  // Build a set of root slugs that actually have products (direct or via children)
+  const childToRoot = new Map<string, string>();
+  for (const category of categories) {
+    if (category.parentSlug) {
+      // Walk up to root
+      let parent = category.parentSlug;
+      let visited = 0;
+      while (visited < 10) {
+        const parentCat = categories.find((c) => c.slug === parent);
+        if (!parentCat?.parentSlug) break;
+        parent = parentCat.parentSlug;
+        visited++;
+      }
+      childToRoot.set(category.slug, parent);
+    }
+  }
+
+  const populatedRoots = new Set<string>();
+  for (const product of products) {
+    const catSlug = product.category;
+    // Direct match to a root
+    if (roots.some((r) => r.slug === catSlug)) {
+      populatedRoots.add(catSlug);
+      continue;
+    }
+    // Product is in a child — map to root
+    const root = childToRoot.get(catSlug);
+    if (root) populatedRoots.add(root);
+  }
+
+  // Only show categories that have products
+  const visibleRoots = roots.filter((r) => populatedRoots.has(r.slug));
+
+  if (visibleRoots.length === 0) return null;
+
+  // Count products per root category for the subtitle
+  const productCount = new Map<string, number>();
+  for (const product of products) {
+    const catSlug = product.category;
+    const root = roots.some((r) => r.slug === catSlug)
+      ? catSlug
+      : childToRoot.get(catSlug);
+    if (root) productCount.set(root, (productCount.get(root) ?? 0) + 1);
+  }
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-10">
       <div className="grid grid-cols-4 gap-3 sm:gap-4 lg:grid-cols-8">
-        {roots.map((c) => {
+        {visibleRoots.map((c) => {
+          const count = productCount.get(c.slug) ?? 0;
           const children = childCount.get(c.slug) ?? 0;
           return (
             <Link
@@ -338,19 +388,35 @@ function CategoryRail({ categories }: { categories: Category[] }) {
               href={`/category/${c.slug}`}
               className="group flex flex-col items-center gap-2 text-center"
             >
-              <span
-                className="flex aspect-square w-full max-w-20 items-center justify-center rounded-3xl text-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md sm:text-4xl"
-                style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
-              >
-                {c.icon}
-              </span>
+              {c.image ? (
+                <span className="relative flex aspect-square w-full max-w-20 items-center justify-center overflow-hidden rounded-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md">
+                  <Image
+                    src={c.image}
+                    alt={c.name}
+                    fill
+                    sizes="80px"
+                    className="object-cover"
+                  />
+                </span>
+              ) : (
+                <span
+                  className="flex aspect-square w-full max-w-20 items-center justify-center rounded-3xl text-3xl shadow-sm transition group-hover:scale-105 group-hover:shadow-md sm:text-4xl"
+                  style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
+                >
+                  {c.icon}
+                </span>
+              )}
               <span className="flex flex-col leading-tight">
                 <span className="text-xs font-semibold text-slate-700 group-hover:text-ocean-700">
                   {c.name}
                 </span>
-                {children > 0 && (
+                {count > 0 ? (
+                  <span className="text-[10px] text-slate-400">
+                    {count} product{count === 1 ? "" : "s"}
+                  </span>
+                ) : children > 0 ? (
                   <span className="text-[10px] text-slate-400">{children} categories</span>
-                )}
+                ) : null}
               </span>
             </Link>
           );

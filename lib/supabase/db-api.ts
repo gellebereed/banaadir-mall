@@ -122,6 +122,7 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
         // the name. Without this, every category an import or an admin
         // created rendered as the same brown parcel.
         icon: categoryIcon(name, ICON_MAP[c.icon] || c.icon),
+        image: c.image || undefined,
         tagline: taglineClean,
         art: c.art || DEFAULT_ART,
         hidden: isHidden,
