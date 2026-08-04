@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
-import { getBrandOrderStatusesAction, getUserOrdersAction } from "@/app/actions";
+import OrderVendorSections from "@/components/account/OrderVendorSections";
+import { getUserOrdersAction } from "@/app/actions";
 import { money, shortDate } from "@/lib/format";
-import { SUPPORT_WHATSAPP } from "@/lib/whatsapp";
 import type { Order, OrderStatus } from "@/lib/types";
 
 interface OrderItemExt {
@@ -15,6 +15,8 @@ interface OrderItemExt {
   price: number;
   qty: number;
   store?: string;
+  /** The shop's display name, captured on the order. */
+  storeName?: string;
   image?: string;
   selectedColor?: string;
   selectedSize?: string;
@@ -32,6 +34,29 @@ interface LocalOrderEntry {
   items: OrderItemExt[];
 }
 
+/**
+ * Map a stored order line to what this screen renders.
+ *
+ * Orders now carry their own name, price and photo (see submitOrderAction),
+ * so this only falls back for records written before that — where the best
+ * available answer really is the product id and an averaged unit price.
+ * Guessing was previously the ONLY path, which is why order history showed
+ * lines like "Product classic-suit-msaj6r64".
+ */
+function orderLine(order: Order) {
+  return (item: Order["items"][number]): OrderItemExt => ({
+    productId: item.productId,
+    name: item.name ?? `Product ${item.productId}`,
+    price: item.price ?? order.total / Math.max(1, item.qty),
+    qty: item.qty,
+    store: item.store ?? order.store,
+    storeName: item.storeName,
+    image: item.image,
+    selectedColor: item.selectedColor,
+    selectedSize: item.selectedSize,
+  });
+}
+
 export default function AccountOrdersClient({
   userName,
   userEmail,
@@ -44,9 +69,6 @@ export default function AccountOrdersClient({
   const [orders, setOrders] = useState<LocalOrderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState("");
-  const [brandStatuses, setBrandStatuses] = useState<
-    Record<string, Record<string, { status: OrderStatus; store: string }>>
-  >({});
 
   useEffect(() => {
     async function loadMergedOrders() {
@@ -82,13 +104,7 @@ export default function AccountOrdersClient({
             address: o.address,
             total: o.total,
             status: o.status,
-            items: (o.items || []).map((i) => ({
-              productId: i.productId,
-              name: `Product ${i.productId}`,
-              price: o.total / Math.max(1, i.qty),
-              qty: i.qty,
-              store: o.store,
-            })),
+            items: (o.items || []).map(orderLine(o)),
           });
         }
       });
@@ -108,13 +124,7 @@ export default function AccountOrdersClient({
               address: o.address,
               total: o.total,
               status: o.status,
-              items: (o.items || []).map((i) => ({
-                productId: i.productId,
-                name: `Product ${i.productId}`,
-                price: o.total / Math.max(1, i.qty),
-                qty: i.qty,
-                store: o.store,
-              })),
+              items: (o.items || []).map(orderLine(o)),
             });
           }
         });
@@ -122,24 +132,13 @@ export default function AccountOrdersClient({
         // Ignore fetch errors
       }
 
-      const orderList = Array.from(mergedMap.values());
-      setOrders(orderList);
+      setOrders(Array.from(mergedMap.values()));
       setLoading(false);
 
-      // Fetch per-brand live statuses for multi-brand orders
-      orderList.forEach(async (ord) => {
-        try {
-          const brandStatusMap = await getBrandOrderStatusesAction(ord.id);
-          if (Object.keys(brandStatusMap).length > 0) {
-            setBrandStatuses((prev) => ({
-              ...prev,
-              [ord.id]: brandStatusMap,
-            }));
-          }
-        } catch {
-          // Ignore
-        }
-      });
+      // Per-shop statuses used to be fetched once, here, and then never
+      // again — so a parcel that shipped while the page was open kept
+      // showing "Order Placed". Each card now subscribes to its own order
+      // via OrderVendorSections, which keeps polling while you look at it.
     }
 
     void loadMergedOrders();
@@ -254,13 +253,21 @@ export default function AccountOrdersClient({
           {filtered.map((order) => {
             const isDelivered = order.status === "delivered";
 
-            // Group items by vendor store / brand
+            // Group items by vendor store / brand.
+            // The key stays the slug so parcel statuses match up; the NAME
+            // shown comes from the order line, which now carries it. Falling
+            // back to "Banaadir Mall" for everything is what made a
+            // four-item order from three shops look like one own-brand order.
             const groupedStores: Record<string, OrderItemExt[]> = {};
             order.items.forEach((item) => {
-              const storeKey = item.store || "Banaadir Mall";
+              const storeKey = item.store || "unknown-store";
               groupedStores[storeKey] = groupedStores[storeKey] || [];
               groupedStores[storeKey].push(item);
             });
+
+            const storeLabel = (slug: string, items: OrderItemExt[]) =>
+              items.find((i) => i.storeName)?.storeName ??
+              (slug === "unknown-store" ? "Banaadir Mall" : slug.replace(/-/g, " "));
 
             const storeEntries = Object.entries(groupedStores);
             const isMultiVendor = storeEntries.length > 1;
@@ -320,96 +327,13 @@ export default function AccountOrdersClient({
                   </div>
                 </div>
 
-                {/* Per-Vendor Brand Status Breakdown */}
-                <div className="divide-y divide-sand-100 p-4 space-y-4">
-                  {storeEntries.map(([storeSlug, storeItems]) => {
-                    const storeDisplayName = storeSlug
-                      .replace(/-/g, " ")
-                      .toUpperCase();
-                    
-                    // Brand status lookup from Supabase store sub-order
-                    const liveBrandInfo = brandStatuses[order.id]?.[storeSlug];
-                    const currentBrandStatus = liveBrandInfo?.status || order.status;
-
-                    const vendorTotal = storeItems.reduce(
-                      (acc, i) => acc + i.price * i.qty,
-                      0
-                    );
-
-                    const waMsg = encodeURIComponent(
-                      `Hello ${storeDisplayName}! 🛍️\n\nI am checking on my order *#${order.id}*.\nBrand Items:\n` +
-                        storeItems.map((i) => `• ${i.name} (x${i.qty})`).join("\n") +
-                        `\nTotal: $${vendorTotal.toFixed(2)}\n\nPlease provide delivery status. Thank you!`
-                    );
-
-                    return (
-                      <div key={storeSlug} className="pt-3 first:pt-0">
-                        {/* Brand Banner Header */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ocean-900 text-xs text-white font-bold">
-                              🏪
-                            </span>
-                            <div>
-                              <span className="font-display text-xs font-extrabold tracking-wide text-ocean-950">
-                                {storeDisplayName}
-                              </span>
-                              <span className="ml-2 text-[10px] text-slate-400">
-                                ({storeItems.length} item{storeItems.length === 1 ? "" : "s"})
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <StatusBadge status={currentBrandStatus} />
-                            <a
-                              href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${waMsg}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 transition"
-                            >
-                              <span>💬 Contact Vendor</span>
-                            </a>
-                          </div>
-                        </div>
-
-                        {/* Brand Items */}
-                        <div className="space-y-2 pl-2 sm:pl-9">
-                          {storeItems.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-3">
-                              {item.image ? (
-                                <Image
-                                  src={item.image}
-                                  alt={item.name}
-                                  width={40}
-                                  height={40}
-                                  className="h-10 w-10 rounded-lg object-cover border border-sand-200"
-                                />
-                              ) : (
-                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sand-100 text-lg">
-                                  🛍️
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-bold text-slate-800">
-                                  {item.name}
-                                </p>
-                                <p className="text-[11px] text-slate-400">
-                                  Qty: {item.qty}
-                                  {item.selectedColor ? ` · ${item.selectedColor}` : ""}
-                                  {item.selectedSize ? ` · ${item.selectedSize}` : ""}
-                                </p>
-                              </div>
-                              <p className="font-display text-xs font-bold text-ocean-950">
-                                {money(item.price * item.qty)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* Per-shop breakdown, kept current by polling. */}
+                <OrderVendorSections
+                  orderId={order.id}
+                  groups={storeEntries}
+                  fallbackStatus={order.status}
+                  storeLabel={storeLabel}
+                />
               </div>
             );
           })}

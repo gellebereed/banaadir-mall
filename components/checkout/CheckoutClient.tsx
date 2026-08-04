@@ -8,7 +8,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import OrderConfirmation, { type PlacedOrder } from "@/components/checkout/OrderConfirmation";
+import OrderConfirmation, {
+  type PlacedOrder,
+  type PlacedParcel,
+} from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
@@ -176,27 +179,42 @@ export default function CheckoutClient({
       // Ignore storage errors
     }
 
+    // Parcels as the SERVER resolved them — authoritative, because it looks
+    // every product up in the catalogue instead of trusting a cart snapshot
+    // that may carry no store at all.
+    let serverParcels: PlacedParcel[] | undefined;
+
     try {
       const { submitOrderAction } = await import("@/app/actions");
-      await submitOrderAction({
+      const result = await submitOrderAction({
         id: orderId,
         customerName: name,
         customerPhone: fullPhone,
         address: fullAddress,
         city: destinationCity,
-        items: lines.map((l) => ({
-          productId: l.product.id,
-          name: l.product.name,
-          price: l.product.price,
-          qty: l.qty,
-          store: l.product.store,
-          image: l.product.images?.[0],
-        })),
+        items: lines.map((l) => {
+          const variant = findVariant(l.product, l.color, l.size) ?? defaultVariant(l.product);
+          return {
+            productId: l.product.id,
+            name: l.product.name,
+            price: l.product.price,
+            qty: l.qty,
+            store: l.product.store,
+            image: l.product.images?.[0],
+            // Carried through to the order record so the picker, the
+            // tracking page and the vendor's message all agree on which
+            // colour and size was actually bought.
+            selectedColor: l.color,
+            selectedSize: l.size,
+            reference: variant?.sku || l.product.internalReference,
+          };
+        }),
         subtotal,
         deliveryFee: delivery,
         total,
         paymentMethod: payment,
       });
+      if (result?.parcels?.length) serverParcels = result.parcels;
     } catch (err) {
       console.warn("Order submission sync warning:", err);
     }
@@ -219,7 +237,10 @@ export default function CheckoutClient({
       subtotal,
       delivery,
       total,
-      parcels: [...grouped.entries()].map(([storeSlug, storeLines]) => {
+      // Fall back to the local split only when the server call failed —
+      // offline, or a network blip. It is the same shape, just derived from
+      // data the browser already had.
+      parcels: serverParcels ?? [...grouped.entries()].map(([storeSlug, storeLines]) => {
         const store = stores.find((s) => s.slug === storeSlug);
         return {
           storeSlug,

@@ -69,7 +69,7 @@ export default async function VendorLayout({
           </div>
           <DashboardSidebar
             items={[
-              { href: "/vendor", icon: "📊", label: "Overview", exact: true },
+              { href: "/vendor", icon: "📊", label: "Dashboard", exact: true },
               { href: "/vendor/products", icon: "📦", label: "Products" },
               { href: "/vendor/photos", icon: "📸", label: "Bulk Photos" },
               { href: "/vendor/orders", icon: "🧾", label: "Orders", badge: newOrders.length },

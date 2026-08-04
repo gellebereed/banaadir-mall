@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import ParcelCard from "@/components/track/ParcelCard";
 import type { OrderParcel } from "@/app/actions";
+import { LiveIndicator } from "@/components/track/OrderProgress";
 import { sharedCourierGroups } from "@/lib/delivery";
+import { useLiveOrder } from "@/lib/use-live-order";
 import { orders as demoOrders } from "@/lib/data/orders";
 import { money, shortDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
@@ -21,7 +23,7 @@ function TrackContent() {
   const [order, setOrder] = useState<Order | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [parcels, setParcels] = useState<OrderParcel[]>([]);
+  const [fetchedParcels, setFetchedParcels] = useState<OrderParcel[]>([]);
   const [brandStatuses, setBrandStatuses] = useState<
     Record<
       string,
@@ -87,11 +89,11 @@ function TrackContent() {
       try {
         const { getOrderParcelsAction, getBrandOrderStatusesAction } =
           await import("@/app/actions");
-        const [fetchedParcels, statuses] = await Promise.all([
+        const [fetched, statuses] = await Promise.all([
           getOrderParcelsAction(foundOrder.id),
           getBrandOrderStatusesAction(foundOrder.id),
         ]);
-        setParcels(fetchedParcels);
+        setFetchedParcels(fetched);
         setBrandStatuses(statuses);
       } catch {
         // Ignore
@@ -114,6 +116,17 @@ function TrackContent() {
     e.preventDefault();
     void performLookup(input);
   }
+
+  /**
+   * Keep the parcels current while the page is open.
+   *
+   * A customer who has just been told "your order is on the way" leaves
+   * this tab open. Without polling, the seller marking it delivered ten
+   * minutes later changes nothing on their screen, and the page quietly
+   * becomes wrong while looking perfectly fine.
+   */
+  const liveOrder = useLiveOrder(order?.id, fetchedParcels);
+  const parcels = liveOrder.parcels;
 
   /**
    * The parcels to show, one per store.
@@ -302,6 +315,14 @@ function TrackContent() {
                         />
                       );
                     })}
+              </div>
+
+              <div className="mt-4">
+                <LiveIndicator
+                  live={liveOrder.live}
+                  lastCheckedAt={liveOrder.lastCheckedAt}
+                  onRefresh={liveOrder.refresh}
+                />
               </div>
             </div>
           )}

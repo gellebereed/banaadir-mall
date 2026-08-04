@@ -92,7 +92,10 @@ export default function AdminStoresClient({
           <p className="mt-2 font-display text-2xl font-extrabold text-emerald-950">
             {money(totalRevenue)}
           </p>
-          <p className="text-xs text-emerald-700 font-medium">30d Total Volume</p>
+          {/* All-time, like every figure on this page — see getVendorStats.
+              For a windowed view with period-on-period change, the dashboard
+              at /admin has the range filter. */}
+          <p className="text-xs text-emerald-700 font-medium">Total Volume (all time)</p>
         </div>
       </div>
 
@@ -264,8 +267,8 @@ export default function AdminStoresClient({
                   <th className="px-4 py-3">Official Status</th>
                   <th className="px-4 py-3">City</th>
                   <th className="px-4 py-3 text-center">Products</th>
-                  <th className="px-4 py-3 text-center">Orders (30d)</th>
-                  <th className="px-4 py-3 text-right">Revenue (30d)</th>
+                  <th className="px-4 py-3 text-center">Orders</th>
+                  <th className="px-4 py-3 text-right">Revenue</th>
                   <th className="px-4 py-3 text-center">Rating</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>

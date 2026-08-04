@@ -23,6 +23,7 @@ import {
   fetchPromotionsFromSupabase,
   fetchStoresFromSupabase,
 } from "./supabase/db-api";
+import { resolvePeriod, summariseSales } from "./analytics";
 import { matchesCode, sellableUnits, type SellableUnit } from "./odoo/mapping";
 import { normalizeBarcode, normalizeReference } from "./barcode";
 import {
@@ -455,6 +456,45 @@ export async function getFlashRequests(storeSlug?: string): Promise<FlashRequest
 
 // ── Orders ─────────────────────────────────────────────────────────────
 
+/**
+ * Give old order lines back their product name and photo.
+ *
+ * Checkout records the name, price and image on every line (see
+ * submitOrderAction), but orders placed before that carry `{ productId,
+ * qty }` alone — and every screen that renders them then shows
+ * "1 × dinner-set-for-12-people-msahht5c".
+ *
+ * Only the DISPLAY fields are filled in. The price is deliberately left
+ * missing: a product's price today is not what the customer paid, and
+ * quietly substituting it would turn an estimate into something that looks
+ * like a record. The analytics layer makes that same distinction and says
+ * so on screen (see `usesEstimatedPrices`).
+ *
+ * The catalogue is only loaded when something actually needs it, so orders
+ * placed since the fix cost nothing here.
+ */
+async function withProductNames(orders: Order[]): Promise<Order[]> {
+  const needsNames = orders.some((order) => order.items?.some((item) => !item.name));
+  if (!needsNames) return orders;
+
+  const catalogue = new Map((await getBaseProducts()).map((p) => [p.id, p]));
+
+  return orders.map((order) => ({
+    ...order,
+    items: (order.items ?? []).map((item) => {
+      if (item.name) return item;
+      const product = catalogue.get(item.productId);
+      if (!product) return item;
+      return {
+        ...item,
+        name: product.name,
+        image: item.image ?? product.images?.[0],
+        store: item.store ?? product.store,
+      };
+    }),
+  }));
+}
+
 export async function getOrders(): Promise<Order[]> {
   const supabaseOrders = await fetchOrdersFromSupabase();
   // Not `length > 0`: once Supabase answers, it is the truth — including
@@ -462,7 +502,7 @@ export async function getOrders(): Promise<Order[]> {
   // with no sales yet saw a dashboard full of generated demo orders, and a
   // cleared table silently refilled itself.
   if (supabaseOrders) {
-    return supabaseOrders;
+    return withProductNames(supabaseOrders);
   }
   const db = await getDB();
   return seedOrders.map((o) => ({
@@ -502,37 +542,47 @@ export interface MarketplaceStats {
   topStores: { store: Store; revenue: number; orderCount: number }[];
 }
 
+/**
+ * Marketplace totals, ALL TIME.
+ *
+ * Kept for the pages that want a lifetime figure rather than a window
+ * (the store leaderboard, a seller's own account page). The dashboards use
+ * summariseSales() directly so they can scope to a period and show a real
+ * period-over-period change — see lib/analytics.ts.
+ */
 export async function getMarketplaceStats(): Promise<MarketplaceStats> {
   const [allOrders, allStores, allProducts] = await Promise.all([
     getOrders(),
     getAllStores(),
     getAllProducts(),
   ]);
-  const valid = allOrders.filter((o) => o.status !== "cancelled");
-  const revenue = valid.reduce((sum, o) => sum + o.total, 0);
 
-  const byStore = new Map<string, { revenue: number; orderCount: number }>();
-  for (const o of valid) {
-    const entry = byStore.get(o.store) ?? { revenue: 0, orderCount: 0 };
-    entry.revenue += o.total;
-    entry.orderCount += 1;
-    byStore.set(o.store, entry);
-  }
-  const topStores = [...byStore.entries()]
-    .map(([slug, v]) => ({ store: allStores.find((s) => s.slug === slug)!, ...v }))
-    .filter((t) => t.store)
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+  const period = resolvePeriod("all");
+  const summary = summariseSales({
+    orders: allOrders,
+    products: allProducts,
+    stores: allStores,
+    period,
+  });
 
   return {
-    revenue,
-    orderCount: allOrders.length,
+    revenue: summary.revenue,
+    // Cancelled orders are excluded from revenue, so counting them here
+    // made the average order value on this page impossible to reproduce.
+    orderCount: summary.orders,
     productCount: allProducts.length,
     activeStores: allStores.filter((s) => s.status === "active").length,
     pendingStores: allStores.filter((s) => s.status === "pending").length,
-    customers: new Set(allOrders.map((o) => o.customer)).size,
-    revenueSeries: buildSeries(valid),
-    topStores,
+    customers: summary.customers,
+    revenueSeries: summary.series.map((point) => ({ date: point.date, value: point.value })),
+    topStores: summary.topStores
+      .map((ranked) => ({
+        store: allStores.find((s) => s.slug === ranked.id)!,
+        revenue: ranked.revenue,
+        orderCount: ranked.orders,
+      }))
+      .filter((entry) => entry.store)
+      .slice(0, 5),
   };
 }
 
@@ -550,62 +600,40 @@ export interface VendorStats {
   revenueSeries: { date: string; value: number }[];
 }
 
+/** One store's totals, ALL TIME. See the note on getMarketplaceStats. */
 export async function getVendorStats(storeSlug: string): Promise<VendorStats> {
   const [storeOrders, storeProducts, store] = await Promise.all([
     getOrdersByStore(storeSlug),
     getAllProductsByStore(storeSlug),
     getStore(storeSlug),
   ]);
-  const valid = storeOrders.filter((o) => o.status !== "cancelled");
-  const revenue = valid.reduce((sum, o) => sum + o.total, 0);
 
-  const statuses: Order["status"][] = ["pending", "processing", "shipped", "delivered", "cancelled"];
-
-  const perProduct = new Map<string, { revenue: number; units: number }>();
-  for (const o of valid) {
-    for (const item of o.items) {
-      const entry = perProduct.get(item.productId) ?? { revenue: 0, units: 0 };
-      entry.revenue += o.total;
-      entry.units += item.qty;
-      perProduct.set(item.productId, entry);
-    }
-  }
-  const topProducts = [...perProduct.entries()]
-    .map(([id, v]) => ({ product: storeProducts.find((p) => p.id === id)!, ...v }))
-    .filter((t) => t.product)
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+  const period = resolvePeriod("all");
+  const summary = summariseSales({ orders: storeOrders, products: storeProducts, period });
+  const byId = new Map(storeProducts.map((product) => [product.id, product]));
 
   return {
-    revenue,
-    orderCount: valid.length,
+    revenue: summary.revenue,
+    orderCount: summary.orders,
     productCount: storeProducts.length,
-    unitsSold: valid.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.qty, 0), 0),
+    unitsSold: summary.units,
     rating: store?.rating ?? 0,
-    aov: valid.length ? revenue / valid.length : 0,
-    pendingOrders: storeOrders.filter((o) => o.status === "pending" || o.status === "processing").length,
-    statusBreakdown: statuses.map((status) => ({
-      status,
-      count: storeOrders.filter((o) => o.status === status).length,
-    })),
-    topProducts,
-    revenueSeries: buildSeries(valid),
+    aov: summary.aov,
+    pendingOrders: storeOrders.filter((o) => o.status === "pending" || o.status === "processing")
+      .length,
+    statusBreakdown: summary.statusBreakdown.map(({ status, count }) => ({ status, count })),
+    // Per-LINE revenue. This used to add the whole order total to every
+    // product on it, which multiplied the numbers and mis-ranked the list.
+    topProducts: summary.topProducts
+      .map((ranked) => ({
+        product: byId.get(ranked.id)!,
+        revenue: ranked.revenue,
+        units: ranked.units,
+      }))
+      .filter((entry) => entry.product)
+      .slice(0, 5),
+    revenueSeries: summary.series.map((point) => ({ date: point.date, value: point.value })),
   };
-}
-
-/** Daily revenue for the 14 days up to the demo "today" (2026-07-31). */
-function buildSeries(source: Order[]): { date: string; value: number }[] {
-  const series: { date: string; value: number }[] = [];
-  for (let d = 13; d >= 0; d--) {
-    const date = new Date(Date.UTC(2026, 6, 31) - d * 86400000)
-      .toISOString()
-      .slice(0, 10);
-    const value = source
-      .filter((o) => o.date === date)
-      .reduce((sum, o) => sum + o.total, 0);
-    series.push({ date, value });
-  }
-  return series;
 }
 
 // ── Reviews ────────────────────────────────────────────────────────────

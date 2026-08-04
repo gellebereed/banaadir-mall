@@ -137,6 +137,15 @@ export interface VendorOrderMessage {
   placedAt?: Date;
   /** Where the vendor manages the order, e.g. "banaadirmall.com/vendor/orders". */
   dashboardUrl?: string;
+  /**
+   * Link to the picking slip IMAGE.
+   *
+   * WhatsApp's click-to-chat URL carries text and nothing else — it cannot
+   * attach media, whatever the message contains. So the image is linked,
+   * and the customer can additionally share the PNG itself from the
+   * confirmation screen (see OrderSlipShare).
+   */
+  slipUrl?: string;
 }
 
 /** WhatsApp renders *this* bold. Only works when it hugs a non-space character. */
@@ -185,7 +194,7 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
   const {
     orderId, storeName, customerName, customerPhone,
     address, city, paymentMethod, lines,
-    placedAt = new Date(), dashboardUrl,
+    placedAt = new Date(), dashboardUrl, slipUrl,
   } = input;
 
   const shown = lines.slice(0, MAX_LINES_IN_MESSAGE);
@@ -194,13 +203,22 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
   const subtotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
   const units = lines.reduce((sum, l) => sum + l.qty, 0);
 
+  /**
+   * One line per item, quantity FIRST.
+   *
+   * A picker reads this walking the shelves holding a phone. "2 ×" at the
+   * start of the line is the thing they must not miss; buried at the end
+   * after a long product name, it gets skipped and one unit goes in the box.
+   */
   const itemBlocks = shown.map((line, i) => {
-    const parts = [`${i + 1}. ${line.name}`];
-    if (line.options) parts.push(`   Options: ${line.options}`);
-    // The internal reference is what makes this pickable from a shelf
-    // without opening the dashboard — include it whenever it exists.
-    if (line.reference) parts.push(`   Ref: ${line.reference}`);
-    parts.push(`   ${line.qty} × ${money(line.price)} = ${b(money(line.price * line.qty))}`);
+    const parts = [`${b(`${i + 1}.`)} ${b(`${line.qty} ×`)} ${line.name}`];
+
+    const detail = [line.options, line.reference ? `Ref ${line.reference}` : ""]
+      .filter(Boolean)
+      .join("  ·  ");
+    if (detail) parts.push(`    ${detail}`);
+
+    parts.push(`    ${money(line.price)} each → ${b(money(line.price * line.qty))}`);
     return parts.join("\n");
   });
 
@@ -208,33 +226,41 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
     itemBlocks.push(`…and ${hidden} more item${hidden === 1 ? "" : "s"} — full list in your dashboard.`);
   }
 
+  // A store with no name resolved is a bug upstream, but printing an empty
+  // "Store:" line advertises it to the vendor. Drop the line instead.
+  const header = [
+    `🛍️ ${b("NEW ORDER")} · ${b(storeName || "BANAADIR MALL")}`,
+    ``,
+    `${b("Order")}  ${orderId}`,
+    `${b("Placed")} ${stamp(placedAt)}`,
+    `${b("Pack")}   ${lines.length} item${lines.length === 1 ? "" : "s"} · ${units} unit${units === 1 ? "" : "s"}`,
+  ];
+
   return [
-    `🛍️ ${b("NEW ORDER — BANAADIR MALL")}`,
+    ...header,
     ``,
-    `${b("Order:")} ${orderId}`,
-    `${b("Store:")} ${storeName}`,
-    `${b("Placed:")} ${stamp(placedAt)}`,
-    ``,
-    b("CUSTOMER"),
-    customerName,
-    customerPhone,
-    ``,
-    b("DELIVERY ADDRESS"),
-    ...addressLines(address, city),
-    ``,
-    b(`ITEMS TO PACK (${lines.length})`),
+    `━━━━━━━━━━━━━━━━━━━━`,
+    b("ITEMS TO PACK"),
     ``,
     itemBlocks.join("\n\n"),
     ``,
-    b(`YOUR SUBTOTAL: ${money(subtotal)}`),
+    `━━━━━━━━━━━━━━━━━━━━`,
+    b(`YOUR SUBTOTAL  ${money(subtotal)}`),
     // Spelled out because it is the single most likely thing to be
     // misread, and misreading it means a vendor invoices for the wrong sum.
-    `_${units} unit${units === 1 ? "" : "s"} — your items only. Delivery is charged once on the full order and settled by Banaadir Mall._`,
+    `_Your items only. Delivery is charged once on the full order and settled by Banaadir Mall._`,
     ``,
-    `${b("Customer pays by:")} ${paymentMethod}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    b("DELIVER TO"),
+    customerName,
+    `📞 ${customerPhone}`,
+    ...addressLines(address, city),
     ``,
-    `Please reply ${b("CONFIRM")} to accept this order, or tell us which item is out of stock.`,
-    ...(dashboardUrl ? [`Manage this order: ${dashboardUrl}`] : []),
+    `${b("Paying by")} ${paymentMethod}`,
+    ``,
+    `Reply ${b("CONFIRM")} to accept, or tell us which item is out of stock.`,
+    ...(slipUrl ? [``, `🧾 Picking slip: ${slipUrl}`] : []),
+    ...(dashboardUrl ? [`📋 Manage: ${dashboardUrl}`] : []),
   ].join("\n");
 }
 

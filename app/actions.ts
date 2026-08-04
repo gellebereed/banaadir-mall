@@ -1238,6 +1238,26 @@ export async function savePromoTile(formData: FormData): Promise<void> {
   refresh();
 }
 
+/** One store's share of an order, resolved server-side at checkout. */
+export interface ResolvedParcel {
+  storeSlug: string;
+  storeName: string;
+  storeIcon: string;
+  storeLogo?: string;
+  whatsapp?: string;
+  /** The vendor's own order id, e.g. "BM-12345-KARA". */
+  orderId: string;
+  subtotal: number;
+  lines: {
+    name: string;
+    qty: number;
+    price: number;
+    options?: string;
+    reference?: string;
+    image?: string;
+  }[];
+}
+
 export async function submitOrderAction(payload: {
   id: string;
   customerName: string;
@@ -1245,12 +1265,34 @@ export async function submitOrderAction(payload: {
   customerEmail?: string;
   address: string;
   city: string;
-  items: { productId: string; name: string; price: number; qty: number; store: string; image?: string }[];
+  items: {
+    productId: string;
+    name: string;
+    price: number;
+    qty: number;
+    store: string;
+    image?: string;
+    selectedColor?: string;
+    selectedSize?: string;
+    /** Variant SKU, so the picker knows which shelf to go to. */
+    reference?: string;
+  }[];
   subtotal: number;
   deliveryFee: number;
   total: number;
   paymentMethod: string;
-}): Promise<{ ok: boolean; message: string; orderId: string }> {
+}): Promise<{
+  ok: boolean;
+  message: string;
+  orderId: string;
+  /**
+   * The parcels as the SERVER resolved them. The confirmation screen uses
+   * these rather than its own copy, because the browser's cart may carry a
+   * snapshot with no store on it — which is what produced a WhatsApp
+   * message addressed to "*Store:*" with nothing after it.
+   */
+  parcels: ResolvedParcel[];
+}> {
   const { id, customerName, customerPhone, customerEmail, address, city } = payload;
 
   /**
@@ -1269,17 +1311,30 @@ export async function submitOrderAction(payload: {
    * carries a store, because a stale cart in someone's browser would still
    * be wrong. The product record is the authority on which shop sells it.
    */
-  const { getBaseProducts } = await import("@/lib/api");
-  const catalog = await getBaseProducts();
+  const { getAllStores, getBaseProducts } = await import("@/lib/api");
+  const [catalog, allStores] = await Promise.all([getBaseProducts(), getAllStores()]);
+  const storesBySlug = new Map(allStores.map((store) => [store.slug, store]));
+
   const items = payload.items.map((item) => {
-    const store = catalog.find((p) => p.id === item.productId)?.store || item.store || "";
+    const product = catalog.find((p) => p.id === item.productId);
+    const store = product?.store || item.store || "";
     if (!store) {
       console.error(
         `[submitOrder] "${item.name}" (${item.productId}) resolved to no store — ` +
           `this parcel will not appear in any seller's dashboard.`,
       );
     }
-    return { ...item, store };
+    return {
+      ...item,
+      store,
+      // Same reasoning as `store`: the catalogue is the authority, and a
+      // stale cart snapshot must not decide what gets recorded.
+      name: product?.name || item.name,
+      price: typeof item.price === "number" ? item.price : (product?.price ?? 0),
+      image: item.image || product?.images?.[0],
+      reference: item.reference || product?.internalReference,
+      storeName: storesBySlug.get(store)?.name || store.replace(/-/g, " "),
+    };
   });
 
   const itemsByStore = groupByStore(items);
@@ -1291,10 +1346,15 @@ export async function submitOrderAction(payload: {
 
   const { createOrderInSupabase } = await import("@/lib/supabase/mutations");
 
+  const parcels: ResolvedParcel[] = [];
+
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
     const storeSubtotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+    const store = storesBySlug.get(storeSlug);
+    const parcelId = orderIds.get(storeSlug) ?? id;
+
     const orderRecord: Order = {
-      id: orderIds.get(storeSlug) ?? id,
+      id: parcelId,
       date: new Date().toISOString().slice(0, 10),
       customer: customerName,
       email: customerEmail || "",
@@ -1303,7 +1363,30 @@ export async function submitOrderAction(payload: {
       city,
       store: storeSlug,
       total: storeSubtotal,
-      items: storeItems.map((i) => ({ productId: i.productId, qty: i.qty })),
+      /**
+       * The WHOLE line, not just an id and a quantity.
+       *
+       * This used to store `{ productId, qty }` alone, and everything
+       * downstream had to invent the rest: the account page rendered
+       * "Product classic-suit-msaj6r64" and divided the order total by the
+       * quantity to guess a unit price, and sales analytics could only
+       * attribute revenue by looking the product up in TODAY'S catalogue —
+       * so re-pricing an item silently rewrote history.
+       *
+       * An order is a record of what was agreed at a moment in time. It has
+       * to carry its own prices.
+       */
+      items: storeItems.map((i) => ({
+        productId: i.productId,
+        qty: i.qty,
+        name: i.name,
+        price: i.price,
+        image: i.image,
+        store: storeSlug,
+        storeName: i.storeName,
+        selectedColor: i.selectedColor,
+        selectedSize: i.selectedSize,
+      })),
       status: "pending",
     };
 
@@ -1314,10 +1397,28 @@ export async function submitOrderAction(payload: {
     await mutateDB((db) => {
       db.orderStatus[orderRecord.id] = "pending";
     });
+
+    parcels.push({
+      storeSlug,
+      storeName: store?.name ?? storeSlug.replace(/-/g, " ") ?? "Store",
+      storeIcon: store?.icon ?? "🏪",
+      storeLogo: store?.logo,
+      whatsapp: store?.whatsapp,
+      orderId: parcelId,
+      subtotal: storeSubtotal,
+      lines: storeItems.map((i) => ({
+        name: i.name,
+        qty: i.qty,
+        price: i.price,
+        options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
+        reference: i.reference,
+        image: i.image,
+      })),
+    });
   }
 
   refresh();
-  return { ok: true, message: "Order placed successfully!", orderId: id };
+  return { ok: true, message: "Order placed successfully!", orderId: id, parcels };
 }
 
 export async function getOrderAction(id: string): Promise<Order | undefined> {

@@ -95,7 +95,7 @@ export default async function AccountPage() {
             <div className="flex gap-6">
               <div>
                 <p className="font-display text-xl font-extrabold">{money(stats.revenue)}</p>
-                <p className="text-[11px] text-ocean-200">Revenue (30d)</p>
+                <p className="text-[11px] text-ocean-200">Revenue (all time)</p>
               </div>
               <div>
                 <p className="font-display text-xl font-extrabold">{stats.orderCount}</p>

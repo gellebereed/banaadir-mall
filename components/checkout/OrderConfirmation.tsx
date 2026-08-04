@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import OrderSlipShare from "@/components/checkout/OrderSlipShare";
 import { money } from "@/lib/format";
 import {
   buildCustomerReceipt,
@@ -74,6 +75,11 @@ export default function OrderConfirmation({
 
   const placedAt = new Date(order.placedAt);
   const split = order.parcels.length > 1;
+
+  // The slip link has to be absolute — it travels into WhatsApp, where a
+  // relative path means nothing. Empty during SSR, which is fine: the
+  // message is only ever built for a click that happens in the browser.
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
 
   const receipt = buildCustomerReceipt({
     orderId: order.baseId,
@@ -207,6 +213,7 @@ export default function OrderConfirmation({
             const message = buildVendorOrderMessage({
               orderId: parcel.orderId,
               storeName: parcel.storeName,
+              slipUrl: `${origin}/api/order-slip/${parcel.orderId}`,
               customerName: order.customerName,
               customerPhone: order.customerPhone,
               address: order.address,
@@ -289,6 +296,14 @@ export default function OrderConfirmation({
                 >
                   {sent ? "✓ Sent — tap to send again" : `💬 Notify ${parcel.storeName}`}
                 </a>
+
+                {/* The same parcel as a picture, for shops that would rather
+                    look at a slip than read a message. */}
+                <OrderSlipShare
+                  orderId={parcel.orderId}
+                  storeName={parcel.storeName}
+                  className="mt-2"
+                />
 
                 <p className="mt-2 text-center text-[11px] text-slate-400">
                   {hasOwnNumber ? (
