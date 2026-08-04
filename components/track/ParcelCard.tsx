@@ -89,6 +89,20 @@ export default function ParcelCard({
       )}
 
       {/* ── Where it has got to ───────────────────────────────────── */}
+      {order.status === "delivered" && (
+        <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-950 animate-fade-up">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 font-bold text-white text-xs">
+            ✓
+          </span>
+          <div>
+            <p className="font-extrabold text-emerald-900">Parcel Successfully Delivered 🎉</p>
+            <p className="text-[11px] text-emerald-700">
+              This parcel has been safely handed over to the recipient.
+            </p>
+          </div>
+        </div>
+      )}
+
       {cancelled ? (
         <p className="mt-4 rounded-xl bg-coral-50 px-3 py-2 text-xs text-coral-800">
           This parcel was cancelled. The rest of your order is unaffected.

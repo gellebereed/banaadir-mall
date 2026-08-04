@@ -145,7 +145,13 @@ export default function AccountOrdersClient({
     void loadMergedOrders();
   }, [userName, userEmail, serverOrders]);
 
+  const [statusTab, setStatusTab] = useState<string>("all");
+
   const filtered = orders.filter((o) => {
+    if (statusTab === "delivered" && o.status !== "delivered") return false;
+    if (statusTab === "active" && (o.status === "delivered" || o.status === "cancelled")) return false;
+    if (statusTab === "cancelled" && o.status !== "cancelled") return false;
+
     if (!filterQuery.trim()) return true;
     const q = filterQuery.toLowerCase();
     return (
@@ -163,23 +169,70 @@ export default function AccountOrdersClient({
     );
   }
 
+  const deliveredCount = orders.filter((o) => o.status === "delivered").length;
+  const activeCount = orders.filter((o) => o.status !== "delivered" && o.status !== "cancelled").length;
+
   return (
-    <div className="mt-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-bold text-ocean-950">
-          Recent Orders ({orders.length})
-        </h2>
+    <div className="mt-8 space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-display text-xl font-extrabold text-ocean-950">
+            My Orders ({orders.length})
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Track deliveries, contact sellers, and view purchase history.
+          </p>
+        </div>
 
         {orders.length > 0 && (
           <input
             type="search"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Search by order # or store…"
-            className="input max-w-xs !py-1.5 text-xs"
+            placeholder="Search order #, item or store…"
+            className="input sm:max-w-xs !py-1.5 text-xs"
           />
         )}
       </div>
+
+      {/* Customer Status Tabs */}
+      {orders.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-2xl bg-sand-100/70 p-1.5 border border-sand-200">
+          <button
+            type="button"
+            onClick={() => setStatusTab("all")}
+            className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all ${
+              statusTab === "all"
+                ? "bg-white text-ocean-950 shadow-xs ring-1 ring-black/5"
+                : "text-slate-600 hover:bg-white/50"
+            }`}
+          >
+            All Orders ({orders.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusTab("active")}
+            className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all ${
+              statusTab === "active"
+                ? "bg-white text-sky-900 shadow-xs ring-1 ring-black/5"
+                : "text-slate-600 hover:bg-white/50"
+            }`}
+          >
+            🚚 In Progress ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusTab("delivered")}
+            className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all ${
+              statusTab === "delivered"
+                ? "bg-emerald-500 text-white shadow-xs"
+                : "text-emerald-700 hover:bg-emerald-50"
+            }`}
+          >
+            ✓ Delivered ({deliveredCount})
+          </button>
+        </div>
+      )}
 
       {orders.length === 0 ? (
         <div className="card p-10 text-center animate-fade-up">
@@ -194,11 +247,13 @@ export default function AccountOrdersClient({
         </div>
       ) : filtered.length === 0 ? (
         <div className="card p-8 text-center text-slate-400">
-          No orders matching &ldquo;{filterQuery}&rdquo;.
+          No orders found matching your search or filter.
         </div>
       ) : (
         <div className="space-y-4">
           {filtered.map((order) => {
+            const isDelivered = order.status === "delivered";
+
             // Group items by vendor store / brand
             const groupedStores: Record<string, OrderItemExt[]> = {};
             order.items.forEach((item) => {
@@ -213,18 +268,33 @@ export default function AccountOrdersClient({
             return (
               <div
                 key={order.id}
-                className="card overflow-hidden border border-sand-200 shadow-sm transition hover:shadow-md"
+                className={`card overflow-hidden border transition-all duration-200 ${
+                  isDelivered
+                    ? "border-emerald-300/80 bg-gradient-to-b from-emerald-50/30 to-white shadow-xs"
+                    : "border-sand-200 shadow-xs hover:shadow-md"
+                }`}
               >
                 {/* Main Order Header */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-sand-50 p-4 border-b border-sand-200">
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-3 p-4 border-b ${
+                    isDelivered
+                      ? "bg-emerald-50/80 border-emerald-200/80"
+                      : "bg-sand-50/80 border-sand-200"
+                  }`}
+                >
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-display font-extrabold text-ocean-950 text-base">
                         Order #{order.id}
                       </span>
+                      {isDelivered && (
+                        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-2xs">
+                          ✓ Completed
+                        </span>
+                      )}
                       {isMultiVendor && (
                         <span className="rounded-full bg-ocean-100 px-2 py-0.5 text-[10px] font-bold text-ocean-800">
-                          {storeEntries.length} Vendor Brands
+                          {storeEntries.length} Stores
                         </span>
                       )}
                     </div>

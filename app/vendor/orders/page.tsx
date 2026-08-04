@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import MarkOrdersSeen from "@/components/dashboard/MarkOrdersSeen";
-import ParcelDispatch from "@/components/dashboard/ParcelDispatch";
-import StatusBadge from "@/components/dashboard/StatusBadge";
+import VendorOrdersTable from "@/components/dashboard/VendorOrdersTable";
 import { getAnyProduct, getOrdersByStore, getStore } from "@/lib/api";
 import { can } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
-import { formatWhatsAppNumber } from "@/lib/whatsapp";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Orders" };
@@ -64,57 +62,13 @@ export default async function VendorOrdersPage() {
         </p>
       )}
 
-      <div className="card mt-5 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="px-5 py-3">Order</th>
-              <th className="px-5 py-3">Product</th>
-              <th className="px-5 py-3">Customer</th>
-              <th className="px-5 py-3">City</th>
-              <th className="px-5 py-3">Date</th>
-              <th className="px-5 py-3">Total</th>
-              <th className="px-5 py-3 min-w-80">Status &amp; delivery</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((o) => (
-              <tr key={o.id} className="border-b border-sand-100 last:border-0 align-top">
-                <td className="px-5 py-3.5 font-bold text-ocean-800">
-                  {o.id}
-                  {newIds.has(o.id) && (
-                    <span className="ml-1.5 rounded-full bg-coral-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white">
-                      New
-                    </span>
-                  )}
-                </td>
-                <td className="max-w-52 truncate px-5 py-3.5 text-slate-600">
-                  {o.productName} ×{o.qty}
-                </td>
-                <td className="px-5 py-3.5 text-slate-600">{o.customer}</td>
-                <td className="px-5 py-3.5 text-slate-500">{o.city}</td>
-                <td className="px-5 py-3.5 text-slate-500">{shortDate(o.date)}</td>
-                <td className="px-5 py-3.5 font-semibold">{money(o.total)}</td>
-                <td className="px-5 py-3.5">
-                  {mayManage ? (
-                    <ParcelDispatch order={o} savedCouriers={savedCouriers} />
-                  ) : (
-                    <div>
-                      <StatusBadge status={o.status} />
-                      {o.delivery?.courier && (
-                        <p className="mt-1 text-xs text-slate-500">
-                          🚚 {o.delivery.courier.name} ·{" "}
-                          {formatWhatsAppNumber(o.delivery.courier.phone)}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Order table with search, status tabs and collapsible parcel manager */}
+      <VendorOrdersTable
+        rows={rows}
+        newIds={[...newIds]}
+        mayManage={mayManage}
+        savedCouriers={savedCouriers}
+      />
 
       {/* Opening this page IS reading them, so the badge clears — but only
           after render, so the "New" tags above stay visible this time
