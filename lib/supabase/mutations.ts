@@ -37,8 +37,19 @@ export function useSupabaseMutations(): boolean {
 //   rating, reviews_count, sold, in_stock, badge, description, specs,
 //   images, variants, hidden, created_at
 
-export async function upsertProduct(product: Product): Promise<boolean> {
-  if (!useSupabaseMutations()) return false;
+/**
+ * Save a product, returning WHY it failed rather than just that it did.
+ *
+ * The boolean-only `upsertProduct` below is what the hand-editing forms
+ * use: they fall back to the JSON store on false, so the reason is only
+ * ever logged. A bulk import cannot work that way — 104 products failing
+ * for one reason must be able to state that reason once, instead of
+ * printing a guess a hundred times.
+ */
+export async function upsertProductWithError(
+  product: Product,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!useSupabaseMutations()) return { ok: false };
   try {
     const supabase = await createClient();
     const row: Record<string, unknown> = {
@@ -98,16 +109,49 @@ export async function upsertProduct(product: Product): Promise<boolean> {
     if (error) {
       assertNotConstraintViolation(error);
       console.error("[Supabase Mutations] upsertProduct error:", error.message);
-      return false;
+      return { ok: false, error: describeWriteError(error) };
     }
-    return true;
+    return { ok: true };
   } catch (err) {
     // A duplicate code is the seller's to fix — let the message reach them
     // instead of being flattened into "could not save".
     if (err instanceof CatalogCodeError) throw err;
     console.error("[Supabase Mutations] upsertProduct exception:", err);
-    return false;
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export async function upsertProduct(product: Product): Promise<boolean> {
+  return (await upsertProductWithError(product)).ok;
+}
+
+/**
+ * Turn a Postgres error into something the person who caused it can act on.
+ *
+ * The FK case is the one that matters: "violates foreign key constraint
+ * products_category_fkey" names the constraint, not the problem. A seller
+ * needs to read "the category doesn't exist yet".
+ */
+function describeWriteError(error: { code?: string; message?: string; details?: string }): string {
+  const details = error.details ?? "";
+
+  if (error.code === "23503") {
+    const missing = details.match(/Key \((\w+)\)=\(([^)]*)\) is not present in table "(\w+)"/);
+    if (missing) {
+      const [, column, value, table] = missing;
+      return `The ${column} "${value}" does not exist in ${table} yet.`;
+    }
+    return `A value on this product refers to something that does not exist. ${details}`.trim();
+  }
+
+  if (error.code === "23502") {
+    const column = details.match(/column "(\w+)"/)?.[1] ?? error.message?.match(/column "(\w+)"/)?.[1];
+    return column
+      ? `The database requires a value for "${column}" and none was supplied.`
+      : (error.message ?? "The database rejected the write.");
+  }
+
+  return [error.message, details].filter(Boolean).join(" ").trim() || "The database rejected the write.";
 }
 
 /**
@@ -737,7 +781,24 @@ export async function upsertCategoryInSupabase(category: {
   try {
     const supabase = await createClient();
 
+    // `categories.id` is a TEXT primary key with NO default (schema.sql), so
+    // an insert that omits it is rejected outright with a not-null violation.
+    // Because this is an upsert keyed on slug, that only ever bit when a
+    // category was NEW — every EDIT worked, which is why creating a category
+    // appeared to succeed and then silently didn't exist.
+    //
+    // The existing id is reused when the row is already there: ids follow a
+    // "cat-<slug>" convention but are not derivable from the slug in every
+    // case (one seeded row is "cat-7"), and rewriting a primary key on an
+    // ordinary edit is not something a save should ever do.
+    const { data: existing } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("slug", category.slug)
+      .maybeSingle();
+
     const row: Record<string, unknown> = {
+      id: existing?.id ?? `cat-${category.slug}`,
       slug: category.slug,
       name: category.name,
       icon: category.icon,

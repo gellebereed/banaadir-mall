@@ -30,7 +30,12 @@ import { isSupportedFile } from "@/lib/import/workbook";
 import { validateProductCodes } from "@/lib/odoo/mapping";
 import { getSession } from "@/lib/session";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
-import { upsertCategoryInSupabase, upsertProduct, useSupabaseMutations } from "@/lib/supabase/mutations";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import {
+  upsertCategoryInSupabase,
+  upsertProductWithError,
+  useSupabaseMutations,
+} from "@/lib/supabase/mutations";
 import type { Product } from "@/lib/types";
 import type { ImportIssue } from "@/lib/import/aggregate";
 import type { InspectResult } from "@/lib/import/pipeline";
@@ -281,12 +286,34 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
     const importedAt = new Date().toISOString();
     const categoriesCreated: string[] = [];
 
-    // Categories first, and only on the opening batch: a product written
-    // into a category that does not exist yet is invisible on the site.
+    // Categories first, and only on the opening batch: `products.category`
+    // is a foreign key onto `categories.slug`, so a product filed into a
+    // category that does not exist yet is not merely invisible — the write
+    // is rejected outright.
     if (offset === 0) {
       for (const category of analysis.plan.categoriesToCreate) {
         await createCategory(category.slug, category.name, category.parentSlug);
         categoriesCreated.push(category.name);
+      }
+
+      // Verify rather than assume. Every product in this run depends on
+      // these rows existing, so one check here replaces one identical
+      // failure per product — which is what a silent category failure
+      // produced before: 104 rejections all saying the same thing.
+      const missing = await missingCategorySlugs(
+        analysis.plan.products
+          .filter((planned) => planned.action !== "blocked")
+          .map((planned) => planned.draft.category?.slug),
+      );
+
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          error:
+            `Could not create ${missing.length === 1 ? "the category" : "these categories"}: ` +
+            `${missing.join(", ")}. Every product in this file needs ${missing.length === 1 ? "it" : "them"}, ` +
+            `so nothing was imported. Check the server log for the reason, then try again.`,
+        };
       }
     }
 
@@ -354,17 +381,18 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
 // ── Writes ─────────────────────────────────────────────────────────────
 
 async function writeProduct(product: Product): Promise<void> {
-  const ok = await upsertProduct(product);
-  if (ok) return;
+  const result = await upsertProductWithError(product);
+  if (result.ok) return;
 
   if (useSupabaseMutations()) {
     // Supabase is the source of truth when configured, and the read layer
     // ignores the JSON overlay whenever it returns rows. Writing there
     // would make the import LOOK successful and then silently revert.
-    throw new Error(
-      "Supabase rejected the write. If the log mentions a missing column, " +
-        "run supabase/migration-supplier-import.sql.",
-    );
+    //
+    // The database's own reason is reported verbatim. Guessing at a cause
+    // here — as this used to, by suggesting a migration — sends someone to
+    // fix a table that was never the problem.
+    throw new Error(result.error ?? "The database rejected the write.");
   }
 
   await mutateDB((db) => {
@@ -386,7 +414,11 @@ async function createCategory(slug: string, name: string, parentSlug: string): P
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase(category);
+    // The return value is checked because it was not, once: a failed
+    // category insert was reported to the seller as "Categories created"
+    // and the import then walked into 104 foreign-key rejections.
+    const ok = await upsertCategoryInSupabase(category);
+    if (!ok) console.error(`[Import] could not create category "${slug}"`);
     return;
   }
 
@@ -396,6 +428,36 @@ async function createCategory(slug: string, name: string, parentSlug: string): P
     if (index >= 0) db.categories[index] = category;
     else db.categories.push(category);
   });
+}
+
+/**
+ * Which of these category slugs are still absent after we tried to create
+ * them. Read fresh — `getCategories` is tag-cached, and the rows we just
+ * wrote are exactly what that cache does not know about yet.
+ */
+async function missingCategorySlugs(
+  wanted: (string | undefined)[],
+): Promise<string[]> {
+  const needed = [...new Set(wanted.filter((slug): slug is string => !!slug))];
+  if (needed.length === 0) return [];
+
+  const present = new Set(await readCategorySlugs());
+  return needed.filter((slug) => !present.has(slug));
+}
+
+async function readCategorySlugs(): Promise<string[]> {
+  if (!useSupabaseMutations()) {
+    const { getCategories } = await import("@/lib/api");
+    return (await getCategories(true)).map((category) => category.slug);
+  }
+
+  const supabase = await createSupabaseClient();
+  const { data, error } = await supabase.from("categories").select("slug");
+  if (error) {
+    console.error("[Import] could not re-read categories:", error.message);
+    return [];
+  }
+  return (data ?? []).map((row: { slug: string }) => row.slug);
 }
 
 function refresh() {
