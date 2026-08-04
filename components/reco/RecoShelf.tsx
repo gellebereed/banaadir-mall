@@ -36,6 +36,42 @@ const TONE_STYLES: Record<Shelf["tone"], { chip: string; glyph: string }> = {
   discovery: { chip: "bg-coral-100 text-coral-700 ring-coral-100", glyph: "bg-coral-500 text-white" },
 };
 
+/** Icon glyphs for each reason kind — concise visual anchors. */
+const REASON_ICONS: Record<string, string> = {
+  "viewed": "👁",
+  "saved": "♥",
+  "in-cart": "🛒",
+  "bought-together": "🔗",
+  "similar": "✦",
+  "completes": "✚",
+  "store": "🏪",
+  "brand": "🏷",
+  "rising": "📈",
+  "price-fit": "💰",
+  "new": "✨",
+  "popular": "🔥",
+  "discover": "🧭",
+  "price-drop": "💸",
+};
+
+/** Badge colour per reason kind — subtle, distinct hues. */
+const REASON_BADGE_STYLES: Record<string, string> = {
+  "viewed": "bg-slate-100 text-slate-600",
+  "saved": "bg-coral-50 text-coral-700",
+  "in-cart": "bg-ocean-50 text-ocean-700",
+  "bought-together": "bg-violet-50 text-violet-700",
+  "similar": "bg-ocean-50 text-ocean-700",
+  "completes": "bg-emerald-50 text-emerald-700",
+  "store": "bg-amber-50 text-amber-700",
+  "brand": "bg-amber-50 text-amber-700",
+  "rising": "bg-orange-50 text-orange-700",
+  "price-fit": "bg-emerald-50 text-emerald-700",
+  "new": "bg-mango-50 text-mango-800",
+  "popular": "bg-rose-50 text-rose-700",
+  "discover": "bg-indigo-50 text-indigo-700",
+  "price-drop": "bg-emerald-50 text-emerald-700",
+};
+
 export default function RecoShelf({ shelf }: { shelf: Shelf }) {
   const { mute } = useReco();
   const [dismissed, setDismissed] = useState<string[]>([]);
@@ -102,14 +138,14 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
       {shelf.layout === "grid" ? (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
           {items.map((item) => (
-            <RecoCard key={item.product.id} item={item} tone={tone.chip} onDismiss={dismiss} />
+            <RecoCard key={item.product.id} item={item} onDismiss={dismiss} />
           ))}
         </div>
       ) : (
         <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
           {items.map((item) => (
             <div key={item.product.id} className="w-44 shrink-0 snap-start sm:w-52">
-              <RecoCard item={item} tone={tone.chip} onDismiss={dismiss} />
+              <RecoCard item={item} onDismiss={dismiss} />
             </div>
           ))}
         </div>
@@ -119,59 +155,81 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
 }
 
 /**
+ * Shorten long reason text to fit a compact badge. The full text is still
+ * available on hover via `title`. Aim for ~30 chars max on the badge.
+ */
+function shortReason(text: string): string {
+  // Already short enough
+  if (text.length <= 35) return text;
+
+  // Truncate at a reasonable word boundary
+  const words = text.split(" ");
+  let result = "";
+  for (const word of words) {
+    if ((result + " " + word).trim().length > 32) break;
+    result = (result + " " + word).trim();
+  }
+  return result || text.slice(0, 32) + "…";
+}
+
+/**
  * One suggestion. The product tile itself is the site's standard card — a
  * recommendation should look like the rest of the shop, not like an advert
- * bolted onto it. Everything specific to recommendations lives in the
- * caption beneath.
+ * bolted onto it. The reason is shown as a compact tooltip badge that
+ * appears on hover, keeping the grid clean and professional.
  */
 function RecoCard({
   item,
-  tone,
   onDismiss,
 }: {
   item: Recommendation;
-  tone: string;
   onDismiss: (productId: string) => void;
 }) {
   const proof = item.proof;
+  const icon = REASON_ICONS[item.reason.kind] ?? "✦";
+  const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <div className="group/reco flex h-full flex-col">
+    <div className="group/reco relative flex h-full flex-col">
       <ProductCard product={item.product} />
 
-      {/* Evidence. At most two chips — a card wearing five badges reads as
-          a sales pitch, and the shopper stops seeing any of them. */}
+      {/* ── Proof chips — scarcity and momentum only when real ──────── */}
       {(proof?.scarcity || proof?.momentum) && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {proof.scarcity && (
-            <span className="rounded-full bg-coral-100 px-2 py-0.5 text-[10px] font-bold text-coral-700">
-              {proof.scarcity}
+            <span className="inline-flex items-center gap-1 rounded-md bg-coral-50 px-2 py-0.5 text-[10px] font-semibold text-coral-700 ring-1 ring-inset ring-coral-200/60">
+              🔴 {proof.scarcity}
             </span>
           )}
           {proof.momentum && (
-            <span className="rounded-full bg-ocean-50 px-2 py-0.5 text-[10px] font-bold text-ocean-800">
-              {proof.momentum}
+            <span className="inline-flex items-center gap-1 rounded-md bg-ocean-50 px-2 py-0.5 text-[10px] font-semibold text-ocean-700 ring-1 ring-inset ring-ocean-200/60">
+              📈 {proof.momentum}
             </span>
           )}
         </div>
       )}
 
-      <div className="mt-1.5 flex items-start gap-1.5">
-        <p
-          className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-[11px] font-medium leading-snug ring-1 ${tone}`}
+      {/* ── Reason badge — compact, clean, hoverable for full text ── */}
+      <div className="mt-1.5 flex items-center gap-1">
+        <span
+          className={`inline-flex max-w-full items-center gap-1 truncate rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-black/[0.04] ${badgeStyle}`}
+          title={item.reason.text}
         >
+          <span className="shrink-0 text-[10px]" aria-hidden>{icon}</span>
           {item.exploratory && (
-            <span className="font-extrabold uppercase tracking-wide opacity-60">
-              New to you{" · "}
+            <span className="shrink-0 font-extrabold uppercase tracking-wider opacity-70">
+              New to you ·
             </span>
           )}
-          {item.reason.text}
-        </p>
+          <span className="truncate">{shortReason(item.reason.text)}</span>
+        </span>
+
+        {/* Dismiss — only visible on hover for a tidy grid */}
         <button
           onClick={() => onDismiss(item.product.id)}
           aria-label={`Not interested in ${item.product.name}`}
-          title="Not interested — stop showing me this"
-          className="mt-0.5 shrink-0 rounded-full p-1 text-xs text-slate-300 opacity-0 transition hover:bg-sand-100 hover:text-coral-500 focus:opacity-100 group-hover/reco:opacity-100"
+          title="Not interested"
+          className="ml-auto shrink-0 rounded-full p-0.5 text-[10px] text-slate-300 opacity-0 transition hover:bg-sand-100 hover:text-coral-500 focus:opacity-100 group-hover/reco:opacity-100"
         >
           ✕
         </button>
