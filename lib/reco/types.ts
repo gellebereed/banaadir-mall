@@ -17,7 +17,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import type { Product } from "../types";
+import type { Product, PromptSettings, ShelfSlot } from "../types";
 
 /** Where a set of recommendations is being rendered. */
 export type Surface = "home" | "product" | "cart" | "wishlist" | "confirmation";
@@ -60,6 +60,55 @@ export interface TasteProfile {
   events: TasteEvent[];
   /** Product ids the shopper explicitly rejected. Permanent until undone. */
   muted: string[];
+  /** Answers the shopper gave us directly. See ShopperPreferences. */
+  prefs?: ShopperPreferences;
+}
+
+/**
+ * What the shopper TOLD us, as opposed to what we inferred.
+ *
+ * Stated preferences are worth a great deal on a first visit, when there is
+ * no behaviour to learn from — the difference between a useful home page
+ * and a generic one is often a single answer to "what are you shopping
+ * for?". They are deliberately weighted to fade as real behaviour arrives:
+ * what somebody does beats what they said they would do.
+ *
+ * Note there is no gender field. Asking for one is a worse version of the
+ * question actually worth asking — a man buying a gift wants womenswear,
+ * and a shopper's departments change with the occasion. Departments are
+ * more accurate, more useful, and less intrusive.
+ */
+export interface ShopperPreferences {
+  /** Category slugs they said they shop. */
+  departments?: string[];
+  /** Comfortable spend band key — see PRICE_BANDS in prompts.ts. */
+  budget?: string;
+  /** When the shopper answered, so the weight can decay. */
+  answeredAt?: number;
+  /**
+   * Prompt id → epoch ms it was last shown. Drives the cooldown, and is the
+   * reason a dismissed prompt does not come straight back on the next page.
+   */
+  promptsSeen?: Record<string, number>;
+  /** Prompt ids the shopper answered — never asked again. */
+  promptsDone?: string[];
+  /** Product ids already rated, so the review prompt doesn't repeat. */
+  rated?: string[];
+}
+
+/** A prompt the server has decided is worth showing this shopper. */
+export interface PromptOffer {
+  id: string;
+  kind: "departments" | "budget" | "review";
+  title: string;
+  body?: string;
+  /** For `review`: the product being asked about. */
+  product?: Product;
+  orderId?: string;
+  /** Choices, for the two preference prompts. */
+  options?: { value: string; label: string; icon?: string }[];
+  /** Seconds to wait before showing it. Comes from the admin's settings. */
+  delaySeconds: number;
 }
 
 // ── Reasons ────────────────────────────────────────────────────────────
@@ -137,11 +186,28 @@ export interface Shelf {
   id: string;
   title: string;
   subtitle?: string;
+  /**
+   * The two-word kicker above the title, e.g. "Price watch".
+   *
+   * Set per shelf rather than derived from the tone: a price-drop row and a
+   * "goes with this" row can share a visual treatment while describing
+   * completely different things, and labelling both "Goes together" is the
+   * kind of small wrongness that makes a whole page feel machine-made.
+   */
+  eyebrow: string;
   tone: ShelfTone;
   glyph: string;
   items: Recommendation[];
   href?: string;
   layout: "rail" | "grid";
+  /**
+   * Where on the home page this shelf belongs. The page renders each slot
+   * at a different point so the personalised rows are interleaved with the
+   * marketplace's own sections rather than stacked into one block.
+   */
+  slot: ShelfSlot;
+  /** Rendered on a tinted full-bleed band instead of the page background. */
+  feature?: boolean;
   /**
    * The transparency line, shown behind the "Why these?" control. Explains
    * how the shelf itself was assembled, not just each card.
@@ -207,6 +273,10 @@ export interface RecoRequest {
 export interface RecoResponse {
   shelves: Shelf[];
   bundle?: Bundle;
+  /** A question worth asking this shopper right now, if there is one. */
+  prompt?: PromptOffer;
+  /** The admin's prompt configuration, so the client can pace itself. */
+  promptSettings?: PromptSettings;
   /** Free-delivery progress, when the admin has a threshold configured. */
   goal?: DeliveryGoal;
   /** Shopper's first name when signed in — used to address shelves. */

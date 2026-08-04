@@ -29,9 +29,19 @@ import {
   getMarketingSettings,
   getOrders,
   getProducts,
+  getRecoSettings,
   getStores,
 } from "../api";
-import type { Category, MarketingSettings, Order, Product, Store } from "../types";
+import type {
+  Category,
+  MarketingSettings,
+  Order,
+  Product,
+  RecoPin,
+  RecoSettings,
+  Store,
+} from "../types";
+import { choosePrompt } from "./prompts";
 import { buildAffinityGraph, type AffinityGraph } from "./affinity";
 import { createBlender } from "./engine";
 import { buildMomentum, shopperCity, type MomentumIndex } from "./momentum";
@@ -112,13 +122,18 @@ export async function recommend(
 ): Promise<RecoResponse> {
   const now = Date.now();
 
-  const [products, orders, storeList, categoryList, marketing] = await Promise.all([
+  const [products, orders, storeList, categoryList, marketing, settings] = await Promise.all([
     getProducts(),
     getOrders(),
     getStores(),
     getCategories(true),
     getMarketingSettings(),
+    getRecoSettings(),
   ]);
+
+  // The master switch. Off means the storefront behaves as it did before
+  // the recommender existed — no shelves, no prompts, nothing to explain.
+  if (!settings.enabled) return { shelves: [], confidence: 0 };
 
   const byId = new Map(products.map((product) => [product.id, product]));
 
@@ -135,6 +150,13 @@ export async function recommend(
     taste.wished = new Set(request.wishlist.filter((id) => byId.has(id)));
   }
 
+  // Admin blocks join the shopper's own mutes. Both end up in the same set
+  // because they mean the same thing to every downstream filter: never
+  // show this. The admin's list is the blunter instrument — it applies to
+  // everyone — which is why it lives beside the personal one rather than
+  // as a separate check somebody could forget to make.
+  for (const id of settings.blocked) taste.muted.add(id);
+
   const cartIds = (request.cart ?? [])
     .map((line) => line.productId)
     .filter((id) => byId.has(id));
@@ -150,6 +172,7 @@ export async function recommend(
     momentum,
     seed: request.seedId ? byId.get(request.seedId) : undefined,
     cartIds,
+    pins: livePins(settings, byId, now),
     now,
   };
 
@@ -157,16 +180,58 @@ export async function recommend(
   const shelves = composeShelves(ctx, blender, request.surface, {
     firstName: identity.firstName,
     alreadyOnPage: request.excludeIds,
+    settings,
   });
 
   return {
     shelves,
     bundle: ctx.seed ? buildBundle(ctx.seed, ctx) : undefined,
     goal: goalFor(request, marketing, ctx),
+    prompt: choosePrompt({
+      surface: request.surface,
+      settings: settings.prompts,
+      profile,
+      taste,
+      categories: categoryList,
+      orders,
+      byId,
+      identity,
+      now,
+    }),
+    promptSettings: settings.prompts,
     firstName: identity.firstName,
     city,
     confidence: taste.confidence,
   };
+}
+
+/**
+ * Pins that are actually running: inside their date window, switched on,
+ * and pointing at a product that still exists and is still buyable.
+ *
+ * The stock check is here rather than left to the ranker so the reason is
+ * recorded once, in the place a merchandiser would look: a push at a
+ * sold-out product is not a push, it is a dead slot on the shelf.
+ */
+function livePins(
+  settings: RecoSettings,
+  byId: Map<string, Product>,
+  now: number,
+): { productId: string; shelf: string; note?: string }[] {
+  return settings.pins
+    .filter((pin) => isPinLive(pin, now))
+    .filter((pin) => {
+      const product = byId.get(pin.productId);
+      return Boolean(product && !product.hidden);
+    })
+    .map((pin) => ({ productId: pin.productId, shelf: pin.shelf, note: pin.note }));
+}
+
+export function isPinLive(pin: RecoPin, now = Date.now()): boolean {
+  if (!pin.active) return false;
+  if (pin.startsAt && Date.parse(pin.startsAt) > now) return false;
+  if (pin.endsAt && Date.parse(pin.endsAt) < now) return false;
+  return true;
 }
 
 /**

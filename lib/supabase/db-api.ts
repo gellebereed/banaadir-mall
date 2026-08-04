@@ -1,7 +1,18 @@
 import { unstable_cache } from "next/cache";
 import { categoryIcon } from "../category-icons";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
-import type { Category, Employee, MarketingSettings, Order, Product, Promotion, Store } from "../types";
+import type {
+  Category,
+  Employee,
+  MarketingSettings,
+  Order,
+  Product,
+  ProductReview,
+  ProductStory,
+  Promotion,
+  RecoSettings,
+  Store,
+} from "../types";
 import { isSupabaseConfigured } from "./storage";
 
 export { isSupabaseConfigured };
@@ -392,3 +403,105 @@ export const fetchEmployeesFromSupabase = cached(
 
 export const fetchMarketingFromSupabase = cached(
   fetchMarketingFromSupabaseRaw, "marketing", CACHE_TAGS.marketing);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DISCOVERY — reco settings, product stories, customer reviews
+// ═══════════════════════════════════════════════════════════════════════
+// Every one of these returns null when the table is missing, so an install
+// that hasn't run supabase/migration-discovery.sql keeps working off
+// data/db.json instead of erroring.
+
+async function fetchRecoSettingsFromSupabaseRaw(): Promise<RecoSettings | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const { data, error } = await supabase
+      .from("reco_settings")
+      .select("*")
+      .eq("id", 1)
+      .single();
+    if (error || !data) return null;
+    return {
+      enabled: data.enabled ?? true,
+      pinStrength: data.pin_strength ?? 55,
+      shelves: data.shelves ?? [],
+      pins: data.pins ?? [],
+      blocked: data.blocked ?? [],
+      prompts: {
+        enabled: data.prompts?.enabled ?? true,
+        askDepartments: data.prompts?.askDepartments ?? true,
+        askBudget: data.prompts?.askBudget ?? true,
+        askReview: data.prompts?.askReview ?? true,
+        delaySeconds: data.prompts?.delaySeconds ?? 45,
+        cooldownDays: data.prompts?.cooldownDays ?? 14,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchStoriesFromSupabaseRaw(): Promise<ProductStory[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const { data, error } = await supabase
+      .from("product_stories")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (error || !data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle || undefined,
+      kind: (row.kind || "how-to") as ProductStory["kind"],
+      productIds: row.product_ids ?? [],
+      categorySlugs: row.category_slugs ?? [],
+      store: row.store || undefined,
+      videoUrl: row.video_url || undefined,
+      poster: row.poster || undefined,
+      heroImage: row.hero_image || undefined,
+      chapters: row.chapters ?? [],
+      gallery: row.gallery ?? [],
+      duration: row.duration || undefined,
+      published: row.published ?? false,
+      updatedAt: row.updated_at || new Date().toISOString(),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const { data, error } = await supabase
+      .from("product_reviews")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (error || !data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      productId: row.product_id,
+      author: row.author,
+      rating: row.rating,
+      text: row.text || undefined,
+      date: (row.created_at || new Date().toISOString()).slice(0, 10),
+      verified: row.verified ?? false,
+      orderId: row.order_id || undefined,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export const fetchRecoSettingsFromSupabase = cached(
+  fetchRecoSettingsFromSupabaseRaw, "reco", CACHE_TAGS.reco);
+
+export const fetchStoriesFromSupabase = cached(
+  fetchStoriesFromSupabaseRaw, "stories", CACHE_TAGS.stories);
+
+export const fetchReviewsFromSupabase = cached(
+  fetchReviewsFromSupabaseRaw, "reviews", CACHE_TAGS.reviews);

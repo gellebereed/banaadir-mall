@@ -96,7 +96,81 @@ body {
   @apply mb-1.5 block text-sm font-medium text-slate-700;
 }
 
+/* ── Discovery bands ──────────────────────────────────────────────────
+ *
+ * Recommendation shelves sit on tinted full-bleed bands rather than the
+ * page background. On a long storefront that is not decoration — it is how
+ * a shopper can tell, while scrolling past at speed, that one row is their
+ * own history and the next is what the whole marketplace is buying.
+ *
+ * Each band is a soft vertical wash plus a faint radial bloom, so it reads
+ * as a change of light rather than a coloured box. `.band-edge` gives the
+ * hairline that separates one from the page above it.
+ */
+.band {
+  position: relative;
+  isolation: isolate;
+}
+
+.band::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Yours — cool ocean, the colour used for anything personal. */
+.band-personal::before {
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(41, 149, 161, 0.14), transparent 62%),
+    linear-gradient(180deg, rgba(239, 250, 250, 0.95), rgba(250, 248, 244, 0));
+}
+
+/* Everyone else — warm mango, for momentum and social proof. */
+.band-social::before {
+  background:
+    radial-gradient(120% 80% at 88% 0%, rgba(251, 138, 14, 0.14), transparent 62%),
+    linear-gradient(180deg, rgba(255, 248, 236, 0.95), rgba(250, 248, 244, 0));
+}
+
+/* Practical — sand, the quiet one. */
+.band-utility::before {
+  background: linear-gradient(180deg, rgba(244, 240, 232, 0.9), rgba(250, 248, 244, 0));
+}
+
+/* Something new — coral, used sparingly so it keeps its meaning. */
+.band-discovery::before {
+  background:
+    radial-gradient(110% 80% at 50% 0%, rgba(255, 90, 95, 0.1), transparent 60%),
+    linear-gradient(180deg, rgba(255, 228, 228, 0.55), rgba(250, 248, 244, 0));
+}
+
+.band-edge {
+  box-shadow: inset 0 1px 0 rgba(12, 43, 52, 0.06);
+}
+
+/* Subtle woven texture for the darkest surfaces (story hero, prompts). */
+.texture-weave {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%);
+  background-size: 14px 14px;
+}
+
 /* ── Motion ───────────────────────────────────────────────────────── */
+
+@keyframes prompt-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-prompt-in {
+  animation: prompt-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-prompt-in { animation: none; }
+}
 
 @keyframes float {
   0%, 100% { transform: translateY(0); }

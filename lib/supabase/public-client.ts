@@ -49,6 +49,9 @@ export const CACHE_TAGS = {
   employees: "bm:employees",
   marketing: "bm:marketing",
   flash: "bm:flash",
+  reco: "bm:reco",
+  stories: "bm:stories",
+  reviews: "bm:reviews",
 } as const;
 
 /** Every tag, for the blanket invalidation a dashboard save performs. */

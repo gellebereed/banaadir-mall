@@ -45,6 +45,13 @@ const INTENT_WEIGHT: Record<EventKind, number> = {
   mute: -14,
 };
 
+/**
+ * What a stated preference is worth, in the same units as INTENT_WEIGHT.
+ * Roughly two purchases: strong enough to shape a first visit, weak enough
+ * that a fortnight of contrary browsing overrules it.
+ */
+const STATED_PREFERENCE_WEIGHT = 24;
+
 /** Interest halves every fortnight… */
 const TASTE_HALF_LIFE_DAYS = 14;
 /** …except a purchase, which stays meaningful for a season. */
@@ -103,6 +110,10 @@ export interface Taste {
   medianPrice: number;
   /** Recent searches, newest first. */
   queries: string[];
+  /** Category slugs the shopper said they shop, from the prompts. */
+  statedDepartments: Set<string>;
+  /** Their stated price band, if they gave one. */
+  statedBudget?: string;
 
   /**
    * 0–1. How much the engine really knows. Below ~0.15 the personalised
@@ -158,8 +169,32 @@ export function deriveTaste(
     touched: new Set(),
     medianPrice: 0,
     queries: [],
+    statedDepartments: new Set(profile.prefs?.departments ?? []),
+    statedBudget: profile.prefs?.budget,
     confidence: 0,
   };
+
+  /**
+   * Seed the vector with what the shopper TOLD us.
+   *
+   * Weighted like a couple of purchases, then allowed to be overtaken:
+   * enough to make the very first personalised page genuinely useful, not
+   * enough to keep insisting on "Home & Living" after somebody has spent a
+   * fortnight looking at shoes. The weight also decays with the same
+   * half-life as behaviour, so a stated preference from two months ago is
+   * quietly retired rather than honoured forever.
+   */
+  const statedAt = profile.prefs?.answeredAt;
+  if (taste.statedDepartments.size > 0) {
+    const freshness = statedAt ? decayFactor(now - statedAt, TASTE_HALF_LIFE_DAYS * 3) : 1;
+    for (const slug of taste.statedDepartments) {
+      bump(taste.categories, slug, STATED_PREFERENCE_WEIGHT * freshness);
+    }
+  }
+  if (taste.statedBudget) {
+    const freshness = statedAt ? decayFactor(now - statedAt, TASTE_HALF_LIFE_DAYS * 3) : 1;
+    bump(taste.priceBands, taste.statedBudget, STATED_PREFERENCE_WEIGHT * freshness);
+  }
 
   const prices: number[] = [];
   const viewedAt = new Map<string, number>();
@@ -232,6 +267,12 @@ export function deriveTaste(
     .sort((a, b) => b[1] - a[1])
     .map(([id]) => id);
   taste.medianPrice = median(prices);
+
+  // Answering the prompt is itself a commitment, and it is the one moment
+  // where the shopper is owed a visible payoff: they told us what they
+  // shop for, so the very next screen has to look like it listened.
+  if (taste.statedDepartments.size > 0) committedSignals += 2;
+  if (taste.statedBudget) committedSignals += 0.5;
 
   // Four units is "we know enough to say 'for you' and mean it": about a
   // dozen product pages, or three saves, or a single order.

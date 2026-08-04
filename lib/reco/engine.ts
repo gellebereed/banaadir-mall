@@ -110,6 +110,13 @@ export interface BlendSpec {
    * "Chosen for you".
    */
   reasonFrom?: string;
+  /**
+   * A strategy exempt from the `reasonFrom` filter, and whose reason wins
+   * outright. Used for admin pushes: a merchandiser who pins a product
+   * expects to see it, and a push that silently disappears from every
+   * shelf with a headline strategy would read as a broken control.
+   */
+  keepFrom?: string;
 }
 
 interface Merged {
@@ -120,6 +127,8 @@ interface Merged {
   reasonStrength: number;
   /** Set by the shelf's headline strategy — see BlendSpec.reasonFrom. */
   preferredReason?: Reason;
+  /** Nominated by the `keepFrom` strategy — exempt from the headline filter. */
+  pinned?: boolean;
   agreement: number;
   fromDiscovery: boolean;
 }
@@ -165,13 +174,20 @@ export function createBlender(ctx: RecoContext) {
         if (normalised <= 0) continue;
         const contribution = normalised * weight;
 
-        const preferred = key === spec.reasonFrom ? candidate.reason : undefined;
+        const isKeeper = Boolean(spec.keepFrom) && key === spec.keepFrom;
+        const preferred =
+          isKeeper || key === spec.reasonFrom ? candidate.reason : undefined;
 
         const existing = merged.get(candidate.id);
         if (existing) {
           existing.score += contribution;
           if (normalised >= AGREEMENT_FLOOR) existing.agreement += 1;
-          if (preferred) existing.preferredReason = preferred;
+          if (isKeeper) existing.pinned = true;
+          // A keeper's reason outranks the headline strategy's; otherwise
+          // first writer wins, which is the headline strategy.
+          if (preferred && (isKeeper || !existing.preferredReason)) {
+            existing.preferredReason = preferred;
+          }
           if (contribution > existing.reasonStrength) {
             existing.reason = candidate.reason;
             existing.reasonStrength = contribution;
@@ -184,6 +200,7 @@ export function createBlender(ctx: RecoContext) {
             reason: candidate.reason,
             reasonStrength: contribution,
             preferredReason: preferred,
+            pinned: isKeeper,
             agreement: normalised >= AGREEMENT_FLOOR ? 1 : 0,
             fromDiscovery: key === discover.key,
           });
@@ -199,8 +216,8 @@ export function createBlender(ctx: RecoContext) {
 
     const eligible = [...merged.values()]
       // A shelf only holds what its defining strategy nominated — see
-      // BlendSpec.reasonFrom.
-      .filter((entry) => !spec.reasonFrom || entry.preferredReason)
+      // BlendSpec.reasonFrom. Admin pushes are the documented exception.
+      .filter((entry) => !spec.reasonFrom || entry.preferredReason || entry.pinned)
       .filter((entry) => isShowable(entry.id, spec))
       .sort((a, b) => b.score - a.score)
       // MMR is O(candidates × picked); there is no point walking a tail

@@ -40,10 +40,14 @@ import {
   emptyProfile,
   forRequest,
   makeEvent,
+  markPromptDone,
+  markPromptSeen,
+  markRated,
   mute as muteProduct,
   profileSignature,
   readProfile,
   record,
+  setPreferences,
   writeProfile,
 } from "@/lib/reco/profile";
 import type {
@@ -51,6 +55,7 @@ import type {
   EventKind,
   RecoRequest,
   RecoResponse,
+  ShopperPreferences,
   Surface,
   TasteProfile,
 } from "@/lib/reco/types";
@@ -64,6 +69,14 @@ interface RecoContextValue {
   mute: (productId: string) => void;
   reset: () => void;
   isMuted: (productId: string) => boolean;
+  /** A prompt reached the screen — starts its cooldown. */
+  seePrompt: (promptId: string) => void;
+  /** A prompt was answered — never asked again. */
+  answerPrompt: (promptId: string) => void;
+  /** Store what the shopper told us directly. */
+  setPrefs: (patch: Partial<ShopperPreferences>) => void;
+  /** Remember a product has been reviewed. */
+  rateProduct: (productId: string) => void;
 }
 
 const RecoCtx = createContext<RecoContextValue | null>(null);
@@ -97,6 +110,22 @@ export function RecoProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => setProfile(emptyProfile()), []);
 
+  const seePrompt = useCallback((promptId: string) => {
+    setProfile((current) => markPromptSeen(current, promptId));
+  }, []);
+
+  const answerPrompt = useCallback((promptId: string) => {
+    setProfile((current) => markPromptDone(current, promptId));
+  }, []);
+
+  const setPrefs = useCallback((patch: Partial<ShopperPreferences>) => {
+    setProfile((current) => setPreferences(current, patch));
+  }, []);
+
+  const rateProduct = useCallback((productId: string) => {
+    setProfile((current) => markRated(current, productId));
+  }, []);
+
   const value = useMemo<RecoContextValue>(
     () => ({
       profile,
@@ -106,8 +135,23 @@ export function RecoProvider({ children }: { children: ReactNode }) {
       mute,
       reset,
       isMuted: (id) => profile.muted.includes(id),
+      seePrompt,
+      answerPrompt,
+      setPrefs,
+      rateProduct,
     }),
-    [profile, ready, track, trackPurchase, mute, reset],
+    [
+      profile,
+      ready,
+      track,
+      trackPurchase,
+      mute,
+      reset,
+      seePrompt,
+      answerPrompt,
+      setPrefs,
+      rateProduct,
+    ],
   );
 
   return (

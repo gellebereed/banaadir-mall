@@ -23,10 +23,11 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import type { EventKind, TasteEvent, TasteProfile } from "./types";
+import type { EventKind, ShopperPreferences, TasteEvent, TasteProfile } from "./types";
 
 export const PROFILE_KEY = "bm-taste";
-export const PROFILE_VERSION = 1;
+/** v2 added `prefs` — the answers the shopper gave the onboarding prompts. */
+export const PROFILE_VERSION = 2;
 
 /**
  * How many events a browser keeps. Roughly a month of ordinary shopping,
@@ -49,7 +50,7 @@ const MUTE_CAP = 80;
 const DEDUPE_MS = 45_000;
 
 export function emptyProfile(): TasteProfile {
-  return { v: PROFILE_VERSION, updatedAt: 0, events: [], muted: [] };
+  return { v: PROFILE_VERSION, updatedAt: 0, events: [], muted: [], prefs: {} };
 }
 
 /** Is there enough here to personalise anything? */
@@ -122,6 +123,79 @@ export function clearProfile(): TasteProfile {
   return emptyProfile();
 }
 
+// ── Stated preferences ─────────────────────────────────────────────────
+
+/** Merge in what the shopper just told us. */
+export function setPreferences(
+  profile: TasteProfile,
+  patch: Partial<ShopperPreferences>,
+  now = Date.now(),
+): TasteProfile {
+  return {
+    ...profile,
+    prefs: { ...profile.prefs, ...patch, answeredAt: now },
+    updatedAt: now,
+  };
+}
+
+/**
+ * Record that a prompt was PUT IN FRONT of the shopper — answered or not.
+ *
+ * Stamped on display rather than on dismissal, because the two most common
+ * ways a prompt goes away are a click on ✕ and a navigation, and only one
+ * of those fires a handler. Stamping on show means a prompt someone
+ * scrolled past still respects its cooldown instead of reappearing on the
+ * next page, which is the behaviour that makes people hate prompts.
+ */
+export function markPromptSeen(
+  profile: TasteProfile,
+  promptId: string,
+  now = Date.now(),
+): TasteProfile {
+  return {
+    ...profile,
+    prefs: {
+      ...profile.prefs,
+      promptsSeen: { ...profile.prefs?.promptsSeen, [promptId]: now },
+    },
+    updatedAt: now,
+  };
+}
+
+/** Answered — never ask again. */
+export function markPromptDone(
+  profile: TasteProfile,
+  promptId: string,
+  now = Date.now(),
+): TasteProfile {
+  const done = new Set(profile.prefs?.promptsDone ?? []);
+  done.add(promptId);
+  return {
+    ...profile,
+    prefs: {
+      ...profile.prefs,
+      promptsDone: [...done].slice(-40),
+      promptsSeen: { ...profile.prefs?.promptsSeen, [promptId]: now },
+    },
+    updatedAt: now,
+  };
+}
+
+/** Remember a product has been rated, so it is never asked about twice. */
+export function markRated(
+  profile: TasteProfile,
+  productId: string,
+  now = Date.now(),
+): TasteProfile {
+  const rated = new Set(profile.prefs?.rated ?? []);
+  rated.add(productId);
+  return {
+    ...profile,
+    prefs: { ...profile.prefs, rated: [...rated].slice(-60) },
+    updatedAt: now,
+  };
+}
+
 // ── Storage ────────────────────────────────────────────────────────────
 
 export function readProfile(): TasteProfile {
@@ -140,6 +214,7 @@ export function readProfile(): TasteProfile {
       updatedAt: parsed.updatedAt ?? 0,
       events: parsed.events.slice(-PROFILE_EVENT_CAP),
       muted: Array.isArray(parsed.muted) ? parsed.muted.slice(0, MUTE_CAP) : [],
+      prefs: parsed.prefs ?? {},
     };
   } catch {
     return emptyProfile();
@@ -164,6 +239,7 @@ export function forRequest(profile: TasteProfile): TasteProfile {
     updatedAt: profile.updatedAt,
     events: profile.events.slice(-REQUEST_EVENT_CAP),
     muted: profile.muted,
+    prefs: profile.prefs,
   };
 }
 
@@ -183,6 +259,11 @@ export function profileSignature(profile: TasteProfile): string {
     profile.events.length,
     Math.floor(profile.updatedAt / 60_000),
     profile.muted.length,
+    // Stated preferences change the ranking, so answering a prompt must
+    // invalidate the cached shelves — that immediate visible payoff is the
+    // whole reason a shopper answers the next one.
+    (profile.prefs?.departments ?? []).join("+"),
+    profile.prefs?.budget ?? "",
     recent.join("|"),
   ].join("~");
 }

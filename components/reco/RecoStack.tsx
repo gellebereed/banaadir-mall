@@ -14,6 +14,7 @@
  * one would have been.
  */
 
+import type { ShelfSlot } from "@/lib/types";
 import { useRecommendations } from "./RecoProvider";
 import RecoShelf from "./RecoShelf";
 
@@ -23,6 +24,7 @@ export default function RecoStack({
   useCartLines,
   items,
   excludeIds,
+  slot,
   only,
   exclude,
   max,
@@ -36,6 +38,16 @@ export default function RecoStack({
   items?: Parameters<typeof useRecommendations>[0]["items"];
   /** Products the page already shows, so the shelves don't repeat them. */
   excludeIds?: string[];
+  /**
+   * Render only the shelves the engine assigned to this position.
+   *
+   * Several RecoStacks with the same surface share ONE server call (the
+   * fetch layer de-duplicates by key), so scattering them down the page
+   * costs nothing — the filtering is local. That is what lets the
+   * personalised rows be interleaved with the marketplace's own sections
+   * instead of arriving as one undifferentiated block.
+   */
+  slot?: ShelfSlot;
   /** Render only these shelf ids, in the engine's order. */
   only?: string[];
   /** Render everything except these — the counterpart to `only`. */
@@ -53,6 +65,7 @@ export default function RecoStack({
   });
 
   let shelves = data.shelves;
+  if (slot) shelves = shelves.filter((shelf) => shelf.slot === slot);
   if (only) shelves = shelves.filter((shelf) => only.includes(shelf.id));
   if (exclude) shelves = shelves.filter((shelf) => !exclude.includes(shelf.id));
   if (max !== undefined) shelves = shelves.slice(0, max);

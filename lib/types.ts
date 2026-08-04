@@ -556,3 +556,132 @@ export interface Review {
   date: string;
   text: string;
 }
+
+// ── Discovery: admin control over recommendations & product stories ────
+
+/**
+ * Where a home-page recommendation shelf sits relative to the admin's own
+ * sections. Splitting the stack across the page is what stops it reading as
+ * one long block of "more stuff" bolted onto the bottom.
+ */
+export type ShelfSlot = "top" | "early" | "mid" | "late";
+
+/** Admin overrides for one shelf. */
+export interface RecoShelfSetting {
+  /** Shelf id, e.g. "for-you" — see lib/reco/shelves.ts. */
+  key: string;
+  visible: boolean;
+  /** Replaces the engine's title when set. */
+  title?: string;
+  /** Moves the shelf up or down the page. */
+  slot?: ShelfSlot;
+}
+
+/**
+ * A product the admin is deliberately pushing.
+ *
+ * Pins do NOT bypass the engine — they enter it as one more strongly
+ * weighted opinion, so a pinned product still has to pass the stock,
+ * mute and diversity checks. That matters: a pinned item that is out of
+ * stock, or that a shopper has already rejected, damages the shelf it sits
+ * on more than the push is worth.
+ */
+export interface RecoPin {
+  id: string;
+  productId: string;
+  /** Shelf id to force it into, or "auto" to let the engine place it. */
+  shelf: string;
+  /** Replaces the reason line on the card. Say something true. */
+  note?: string;
+  /** ISO datetime bounds — lets a push expire on its own. */
+  startsAt?: string;
+  endsAt?: string;
+  active: boolean;
+}
+
+/** Everything the admin controls about the recommender. */
+export interface RecoSettings {
+  /** Master switch. Off means no personalised shelves anywhere. */
+  enabled: boolean;
+  shelves: RecoShelfSetting[];
+  pins: RecoPin[];
+  /** Product ids kept out of every recommendation. */
+  blocked: string[];
+  /**
+   * How much weight a pin carries against the engine's own ranking, 1–100.
+   * At 100 pins lead every eligible shelf; at 20 they are a nudge.
+   */
+  pinStrength: number;
+  prompts: PromptSettings;
+}
+
+/** The timed onboarding / feedback prompts shown to shoppers. */
+export interface PromptSettings {
+  enabled: boolean;
+  /** Ask which departments they shop — the single most useful answer. */
+  askDepartments: boolean;
+  /** Ask a comfortable price range. */
+  askBudget: boolean;
+  /** Ask a returning customer to rate something they actually received. */
+  askReview: boolean;
+  /** Seconds on site before the first prompt may appear. */
+  delaySeconds: number;
+  /** Days before a dismissed prompt may be asked again. */
+  cooldownDays: number;
+}
+
+/** One chapter of a product story. */
+export interface StoryChapter {
+  heading: string;
+  body: string;
+  image?: string;
+}
+
+/**
+ * A product story — the "episode" attached to a product: how to use it,
+ * what it is actually for, how people live with it.
+ *
+ * This is the part of a listing a photo and a spec table cannot carry. A
+ * shopper who has watched two minutes on how a stand mixer is cleaned is a
+ * different shopper from one who has read "535W".
+ */
+export interface ProductStory {
+  id: string;
+  title: string;
+  subtitle?: string;
+  kind: StoryKind;
+  /** Products this story is attached to. */
+  productIds: string[];
+  /** Whole categories it covers, so one story can serve a range. */
+  categorySlugs?: string[];
+  /** Store slug when a seller owns the story. */
+  store?: string;
+  /** YouTube / Vimeo / direct mp4. */
+  videoUrl?: string;
+  /** Still shown before the video plays. */
+  poster?: string;
+  heroImage?: string;
+  chapters: StoryChapter[];
+  /** Photos of the product in use — the most persuasive images there are. */
+  gallery?: string[];
+  /** How long it takes to read or watch, e.g. "3 min". */
+  duration?: string;
+  published: boolean;
+  updatedAt: string;
+}
+
+export type StoryKind = "how-to" | "benefits" | "care" | "stories" | "compare";
+
+/** A review a real customer left, as opposed to the generated samples. */
+export interface ProductReview {
+  id: string;
+  productId: string;
+  author: string;
+  rating: number;
+  text?: string;
+  /** ISO date. */
+  date: string;
+  /** True when we can tie it to an order the reviewer actually received. */
+  verified?: boolean;
+  orderId?: string;
+}

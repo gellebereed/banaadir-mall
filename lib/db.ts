@@ -28,7 +28,10 @@ import type {
   Order,
   OrderStatus,
   Product,
+  ProductReview,
+  ProductStory,
   Promotion,
+  RecoSettings,
   Store,
 } from "./types";
 
@@ -61,7 +64,39 @@ export interface DB {
   flashRequests: FlashRequest[];
   categories?: Category[];
   stores?: Store[];
+  /** Admin control over the recommender (see /admin/discovery). */
+  reco?: RecoSettings;
+  /** "How to use this" episodes attached to products. */
+  stories?: ProductStory[];
+  /** Reviews left by real customers, newest last. */
+  reviews?: ProductReview[];
 }
+
+/**
+ * Shipped defaults for the recommender.
+ *
+ * Everything is ON out of the box. A discovery system the admin has to go
+ * and switch on is a discovery system that never gets switched on — and the
+ * engine is designed to stay quiet by itself when it has nothing worth
+ * saying, so "on" is not the same as "noisy".
+ */
+export const DEFAULT_RECO: RecoSettings = {
+  enabled: true,
+  shelves: [],
+  pins: [],
+  blocked: [],
+  pinStrength: 55,
+  prompts: {
+    enabled: true,
+    askDepartments: true,
+    askBudget: true,
+    askReview: true,
+    // Long enough that the shopper has started doing something before they
+    // are interrupted. A prompt that fires on arrival is an obstacle.
+    delaySeconds: 45,
+    cooldownDays: 14,
+  },
+};
 
 /** Defaults — must match the storefront's original hard-coded content. */
 const DEFAULT_DB: DB = {
@@ -106,6 +141,9 @@ const DEFAULT_DB: DB = {
     productIds: [],
   },
   flashRequests: [],
+  reco: DEFAULT_RECO,
+  stories: [],
+  reviews: [],
 };
 
 /**
@@ -159,6 +197,16 @@ export async function getDB(): Promise<DB> {
         sections: mergeSections(raw.marketing?.sections),
       },
       flash: { ...structuredClone(DEFAULT_DB.flash), ...raw.flash },
+      // Same treatment as marketing: a db.json written before the
+      // recommender existed must still load, with every new switch at its
+      // default rather than undefined.
+      reco: {
+        ...structuredClone(DEFAULT_RECO),
+        ...raw.reco,
+        prompts: { ...structuredClone(DEFAULT_RECO.prompts), ...raw.reco?.prompts },
+      },
+      stories: raw.stories ?? [],
+      reviews: raw.reviews ?? [],
     };
     cache = { data, mtimeMs: stat.mtimeMs };
     return data;

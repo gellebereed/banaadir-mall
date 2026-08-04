@@ -23,7 +23,10 @@ import type {
   Order,
   OrderStatus,
   Product,
+  ProductReview,
+  ProductStory,
   Promotion,
+  RecoSettings,
   Store,
 } from "../types";
 
@@ -886,6 +889,114 @@ export async function toggleCategoryVisibilityInSupabase(slug: string): Promise<
     return true;
   } catch (err) {
     console.error("[Supabase Mutations] toggleCategoryVisibility exception:", err);
+    return false;
+  }
+}
+
+// ── Discovery: reco settings, stories, reviews ─────────────────────────
+
+export async function updateRecoSettingsInSupabase(
+  settings: RecoSettings,
+): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("reco_settings").upsert(
+      {
+        id: 1,
+        enabled: settings.enabled,
+        pin_strength: settings.pinStrength,
+        shelves: settings.shelves,
+        pins: settings.pins,
+        blocked: settings.blocked,
+        prompts: settings.prompts,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      // A missing table is the expected case before the discovery migration
+      // has been run — the JSON overlay keeps the change, so this is a
+      // warning rather than a failure.
+      console.warn("[Supabase Mutations] updateRecoSettings:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] updateRecoSettings exception:", err);
+    return false;
+  }
+}
+
+export async function upsertStoryInSupabase(story: ProductStory): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("product_stories").upsert(
+      {
+        id: story.id,
+        title: story.title,
+        subtitle: story.subtitle ?? null,
+        kind: story.kind,
+        product_ids: story.productIds,
+        category_slugs: story.categorySlugs ?? [],
+        store: story.store ?? null,
+        video_url: story.videoUrl ?? null,
+        poster: story.poster ?? null,
+        hero_image: story.heroImage ?? null,
+        chapters: story.chapters,
+        gallery: story.gallery ?? [],
+        duration: story.duration ?? null,
+        published: story.published,
+        updated_at: story.updatedAt,
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      console.warn("[Supabase Mutations] upsertStory:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertStory exception:", err);
+    return false;
+  }
+}
+
+export async function deleteStoryFromSupabase(id: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("product_stories").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function upsertReviewInSupabase(review: ProductReview): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("product_reviews").upsert(
+      {
+        id: review.id,
+        product_id: review.productId,
+        author: review.author,
+        rating: review.rating,
+        text: review.text ?? null,
+        order_id: review.orderId ?? null,
+        verified: review.verified ?? false,
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      console.warn("[Supabase Mutations] upsertReview:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertReview exception:", err);
     return false;
   }
 }

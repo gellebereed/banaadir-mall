@@ -52,7 +52,11 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="pb-8">
+      {/* The cart itself is a page column; the shelves underneath run
+          edge to edge so their tinted bands read as a change of surface
+          rather than a coloured box. */}
+      <div className="mx-auto max-w-7xl px-4 pt-8">
       <h1 className="mb-6 font-display text-3xl font-extrabold text-ocean-950">
         Shopping Cart{" "}
         <span className="text-lg font-semibold text-slate-400">
@@ -207,9 +211,9 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
         </aside>
       </div>
 
-      <div className="-mx-4">
-        <RecoStack surface="cart" useCartLines />
       </div>
+
+      <RecoStack surface="cart" useCartLines />
     </div>
   );
 }

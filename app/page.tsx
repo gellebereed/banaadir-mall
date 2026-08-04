@@ -89,21 +89,34 @@ export default async function HomePage() {
   const visibleSections = marketing.sections.filter((s) => s.visible);
 
   /**
-   * Where the personalised stack lands.
+   * Where the personalised rows land.
    *
    * The admin's arrangement is left exactly as they set it — this page has
    * always been theirs to order, and a recommender that quietly shoves a
    * campaign banner down the page is one the marketing team switches off.
-   * The stack is inserted AFTER the categories and brands sections: past the
-   * departments and brand stores, still high enough to be the first
-   * personalised thing most people scroll into.
+   *
+   * Instead the shelves are INTERLEAVED. The engine tags each one with a
+   * slot ("top", "early", "mid", "late") and the page opens a window for
+   * each slot at a different depth, so the storefront alternates between
+   * what the marketplace is showing everyone and what it is showing you.
+   * A single block of eight recommendation rows bolted to the bottom of the
+   * page reads as an appendix; this reads as one shop.
+   *
+   * Every one of these <RecoStack>s shares a single server call — the fetch
+   * layer de-duplicates by request key, and slot filtering is local.
    */
-  const prioritySections = ["banners", "promoTiles", "categories", "brands"];
+  const priority = ["banners", "promoTiles", "categories", "brands", "flash"];
   const lastPriorityIdx = visibleSections.reduce(
-    (best, s, i) => (prioritySections.includes(s.key) ? i : best),
+    (best, s, i) => (priority.includes(s.key) ? i : best),
     -1,
   );
-  const injectAfter = lastPriorityIdx >= 0 ? lastPriorityIdx : Math.min(1, visibleSections.length - 1);
+  /** After the departments and brand stores — the first personal moment. */
+  const earlyAt = lastPriorityIdx >= 0 ? lastPriorityIdx : Math.min(1, visibleSections.length - 1);
+  /** Roughly two-thirds down, between the marketplace's own rails. */
+  const midAt = Math.min(
+    visibleSections.length - 1,
+    earlyAt + Math.max(1, Math.round((visibleSections.length - earlyAt) / 2)),
+  );
 
   /**
    * What the admin's own rails are already showing. Passed to the engine so
@@ -124,21 +137,23 @@ export default async function HomePage() {
         they were looking at when they were interrupted — not a new
         suggestion. Renders nothing at all for a first-time visitor.
       */}
-      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} only={["continue"]} />
+      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="top" />
 
       {visibleSections.map((section, index) => (
         <div key={section.key}>
           {sectionRenderers[section.key]?.()}
-          {index === injectAfter && (
-            <RecoStack
-              surface="home"
-              useCartLines
-              excludeIds={alreadyOnPage}
-              exclude={["continue"]}
-            />
+          {index === earlyAt && (
+            <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="early" />
+          )}
+          {index === midAt && (
+            <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="mid" />
           )}
         </div>
       ))}
+
+      {/* Discovery closes the page — the row you read when nothing above
+          it caught you, which is exactly when a shop should widen out. */}
+      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="late" />
 
       <SellerBanner />
     </div>

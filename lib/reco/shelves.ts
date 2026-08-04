@@ -25,6 +25,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import type { RecoSettings, ShelfSlot } from "../types";
 import type { Blender } from "./engine";
 import type { RecoContext } from "./strategies";
 import { categoryName, storeName } from "./strategies";
@@ -35,10 +36,16 @@ interface ShelfSpec {
   id: string;
   title: string;
   subtitle?: string;
+  /** Kicker above the title. See Shelf.eyebrow. */
+  eyebrow: string;
   why: string;
   glyph: string;
   tone: Shelf["tone"];
   layout: Shelf["layout"];
+  /** Where it lands on the home page. Ignored on other surfaces. */
+  slot: ShelfSlot;
+  /** Give it a tinted full-bleed band — reserved for the few that earn it. */
+  feature?: boolean;
   limit: number;
   /** Below this many results the shelf is dropped rather than shown thin. */
   minimum: number;
@@ -62,6 +69,15 @@ interface ShelfSpec {
    * further down the page.
    */
   allowPageDuplicates?: boolean;
+  /**
+   * Keep admin pushes out of this shelf entirely.
+   *
+   * Set on the shelves whose whole value is that they are NOT merchandised
+   * — "Pick up where you left off" is the shopper's own history, and
+   * slipping a promoted product into it is the one thing that would make
+   * the row untrustworthy. Same for the deliberate-serendipity rail.
+   */
+  noPins?: boolean;
   /** Gate — return false and the shelf is never even blended. */
   when?: (ctx: RecoContext) => boolean;
 }
@@ -73,7 +89,11 @@ export function composeShelves(
   ctx: RecoContext,
   blender: Blender,
   surface: Surface,
-  options: { firstName?: string; alreadyOnPage?: string[] } = {},
+  options: {
+    firstName?: string;
+    alreadyOnPage?: string[];
+    settings?: RecoSettings;
+  } = {},
 ): Shelf[] {
   const specs = specsFor(surface, ctx, options.firstName);
   // What this stack has already spent, and what the page shows outside it.
@@ -81,16 +101,42 @@ export function composeShelves(
   const onPage = new Set<string>(options.alreadyOnPage ?? []);
   const shelves: Shelf[] = [];
 
+  const overrides = new Map(
+    (options.settings?.shelves ?? []).map((setting) => [setting.key, setting]),
+  );
+  /**
+   * How much an admin push argues for itself, converted from the 1–100
+   * dial into the same scale the strategy weights use. At the shipped 55
+   * a pin is comparable to the shelf's own headline signal; at 100 it
+   * leads; at 10 it is a tiebreaker.
+   */
+  const pinWeight = ((options.settings?.pinStrength ?? 55) / 100) * 1.8;
+
   for (const spec of specs) {
+    const override = overrides.get(spec.id);
+    if (override?.visible === false) continue;
     if (spec.when && !spec.when(ctx)) continue;
 
+    // Pins can target a shelf by id, so the strategy has to know which
+    // shelf it is being asked about.
+    ctx.shelfId = spec.id;
+
+    const weights = { ...spec.weights };
+    if (ctx.pins.length > 0 && pinWeight > 0 && !spec.noPins) {
+      weights.pins = pinWeight;
+    }
+
     const items = blender.blend({
-      weights: spec.weights,
+      weights,
       limit: spec.limit,
       minimum: spec.minimum,
       exclude: used,
       demote: spec.allowPageDuplicates ? undefined : onPage,
+      // A pinned product must survive a shelf that filters by its headline
+      // strategy, or an admin push would silently vanish from most of the
+      // page and the control would look broken.
       reasonFrom: spec.reasonFrom,
+      keepFrom: weights.pins ? "pins" : undefined,
       explore: spec.explore,
       maxPerStore: spec.maxPerStore,
       maxPerCategory: spec.maxPerCategory,
@@ -101,17 +147,21 @@ export function composeShelves(
 
     shelves.push({
       id: spec.id,
-      title: spec.title,
+      title: override?.title?.trim() || spec.title,
       subtitle: spec.subtitle,
+      eyebrow: spec.eyebrow,
       tone: spec.tone,
       glyph: spec.glyph,
       layout: spec.layout,
+      slot: override?.slot ?? spec.slot,
+      feature: spec.feature,
       href: spec.href,
       why: spec.why,
       items,
     });
   }
 
+  ctx.shelfId = undefined;
   return shelves;
 }
 
@@ -142,6 +192,7 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
   return [
     {
       id: "continue",
+      eyebrow: "Where you left off",
       title: "Pick up where you left off",
       subtitle: "Still in your basket-to-be",
       why: "These are products you opened recently and haven't bought. Nothing else went into choosing them.",
@@ -154,10 +205,13 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       maxPerCategory: 6,
       reasonFrom: "continue",
       allowPageDuplicates: true,
+      slot: "top",
+      noPins: true,
       weights: { continue: 1 },
     },
     {
       id: "price-drops",
+      eyebrow: "Price watch",
       title: "Cheaper than when you looked",
       subtitle: "Live promotions on things you'd already found",
       why: "Products you saved or viewed whose price has genuinely fallen — the discount is a seller promotion running right now, not a struck-through price.",
@@ -168,10 +222,12 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 1,
       maxPerStore: 3,
       reasonFrom: "price-drop",
+      slot: "early",
       weights: { "price-drop": 1 },
     },
     {
       id: "for-you",
+      eyebrow: "Yours",
       title: forYouTitle,
       subtitle: "Built from what you've browsed, saved and bought",
       why: "Ranked on the departments, shops, brands and price range you actually engage with — weighted so a purchase counts far more than a glance, and so last month counts less than last week. One slot is always kept for something outside your usual taste.",
@@ -182,10 +238,13 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 4,
       explore: true,
       when: personal,
+      slot: "early",
+      feature: true,
       weights: { taste: 1, saved: 0.55, rising: 0.2, "price-drop": 0.3, popular: 0.1 },
     },
     {
       id: "basket",
+      eyebrow: "Your basket",
       title: "Finish what you started",
       subtitle: "Goes with what's already in your basket",
       why: "Products that real shoppers bought in the same order as the items in your basket. Only cross-department pairings count, so you get the thing that goes with it — not another one of it.",
@@ -196,10 +255,12 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 2,
       when: (c) => c.cartIds.length > 0,
       reasonFrom: "basket",
+      slot: "early",
       weights: { basket: 1, completes: 0.35 },
     },
     {
       id: "rising",
+      eyebrow: "Right now",
       title: "Moving fast this week",
       subtitle: ctx.momentum.city
         ? `What ${ctx.momentum.city} is buying more of`
@@ -211,10 +272,13 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       limit: 8,
       minimum: 3,
       reasonFrom: "rising",
+      slot: "mid",
+      feature: true,
       weights: { rising: 1, popular: 0.15 },
     },
     {
       id: "saved-like",
+      eyebrow: "From your wishlist",
       title: "More like the things you saved",
       why: "Each of these is matched against a specific product on your wishlist — the card tells you which one.",
       glyph: "♡",
@@ -224,10 +288,12 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 3,
       when: (c) => c.taste.wished.size > 0,
       reasonFrom: "saved",
+      slot: "mid",
       weights: { saved: 1, taste: 0.3 },
     },
     {
       id: "new-from-stores",
+      eyebrow: "New in",
       title: favouriteStore
         ? `Just landed at ${storeName(ctx, favouriteStore)}`
         : "Just landed",
@@ -239,10 +305,12 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 3,
       when: personal,
       reasonFrom: "new-from-stores",
+      slot: "mid",
       weights: { "new-from-stores": 1 },
     },
     {
       id: "loved",
+      eyebrow: "Most loved",
       title: "Loved across the mall",
       subtitle: "Highly rated by shoppers who bought them",
       why: "Ranked on a rating adjusted for how many reviews it rests on, so one five-star review can't outrank a 4.6 from three hundred.",
@@ -253,10 +321,13 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 4,
       when: (c) => !personal(c),
       reasonFrom: "popular",
+      slot: "mid",
+      feature: true,
       weights: { popular: 1, rising: 0.3 },
     },
     {
       id: "discover",
+      eyebrow: "Something new",
       title: "Worth a look",
       subtitle: "Outside your usual departments, on purpose",
       why: "Well-rated products from departments you haven't been browsing. Deliberately not personalised — a shop that only ever shows you more of the same stops being worth browsing.",
@@ -267,6 +338,8 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       minimum: 3,
       maxPerCategory: 2,
       reasonFrom: "discover",
+      slot: "late",
+      noPins: true,
       weights: { discover: 1 },
     },
   ];
@@ -279,6 +352,7 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
   return [
     {
       id: "completes",
+      eyebrow: "Goes together",
       title: partnerTitle,
       subtitle: "What shoppers pair it with",
       why: "Taken from orders that contained this product: the items that appeared alongside it far more often than chance would explain, in a different department — so these go with it rather than replace it.",
@@ -289,10 +363,12 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       minimum: 2,
       maxPerCategory: 2,
       reasonFrom: "completes",
+      slot: "mid",
       weights: { completes: 1, basket: 0.3 },
     },
     {
       id: "also-like",
+      eyebrow: "Alternatives",
       title: "You may also like",
       subtitle: seed ? `Alternatives to ${seed.name}` : undefined,
       why: "Alternatives to what you're looking at, matched on department, brand, materials and the distinctive words in the product names — then re-ordered so no two suggestions are near-duplicates of each other.",
@@ -304,10 +380,13 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       explore: true,
       href: seed ? `/category/${seed.category}` : undefined,
       reasonFrom: "similar",
+      slot: "mid",
+      feature: true,
       weights: { similar: 1, "bought-together": 0.7, taste: 0.45, popular: 0.12 },
     },
     {
       id: "seed-store",
+      eyebrow: "This shop",
       title: seed ? `More from ${storeName(ctx, seed.store)}` : "More from this shop",
       why: "Everything else this seller lists, closest to the product you're viewing first.",
       glyph: "🏪",
@@ -322,10 +401,12 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       maxPerCategory: 6,
       href: seed ? `/store/${seed.store}` : undefined,
       reasonFrom: "seed-store",
+      slot: "late",
       weights: { "seed-store": 1 },
     },
     {
       id: "for-you-pdp",
+      eyebrow: "Yours",
       title: "Because of what you've been browsing",
       why: "Your own history, not this product: departments, shops and price range you engage with, weighted toward the last two weeks.",
       glyph: "✦",
@@ -334,6 +415,7 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       limit: 6,
       minimum: 3,
       when: personal,
+      slot: "late",
       weights: { taste: 1, continue: 0.4, saved: 0.4 },
     },
   ];
@@ -343,6 +425,7 @@ function cartSpecs(ctx: RecoContext): ShelfSpec[] {
   return [
     {
       id: "basket-completes",
+      eyebrow: "Your basket",
       title: "Goes with what's in your basket",
       subtitle: "From orders that contained the same items",
       why: "Cross-department products that real orders paired with what you're buying. Nothing from the same department, so you won't be offered a second one of something you already have.",
@@ -353,10 +436,13 @@ function cartSpecs(ctx: RecoContext): ShelfSpec[] {
       minimum: 2,
       maxPerCategory: 2,
       reasonFrom: "basket",
+      slot: "mid",
+      feature: true,
       weights: { basket: 1, completes: 0.5 },
     },
     {
       id: "cart-saved",
+      eyebrow: "From your wishlist",
       title: "Still on your wishlist",
       subtitle: "Add them now and they ship together",
       why: "Products you saved earlier. Combining them into this order means one delivery instead of two.",
@@ -367,6 +453,7 @@ function cartSpecs(ctx: RecoContext): ShelfSpec[] {
       minimum: 1,
       when: (c) => c.taste.wished.size > 0,
       reasonFrom: "saved",
+      slot: "late",
       weights: { continue: 0.4, saved: 1 },
     },
   ];
@@ -376,6 +463,7 @@ function wishlistSpecs(ctx: RecoContext): ShelfSpec[] {
   return [
     {
       id: "wishlist-drops",
+      eyebrow: "Price watch",
       title: "Price dropped on your saved items",
       why: "A seller promotion is live on these right now. The percentage is the real difference from the price you first saw.",
       glyph: "↓",
@@ -384,10 +472,12 @@ function wishlistSpecs(ctx: RecoContext): ShelfSpec[] {
       limit: 6,
       minimum: 1,
       reasonFrom: "price-drop",
+      slot: "top",
       weights: { "price-drop": 1 },
     },
     {
       id: "wishlist-like",
+      eyebrow: "From your wishlist",
       title: "More like what you saved",
       why: "Each is matched to one specific product on your list — the card names it.",
       glyph: "♡",
@@ -397,10 +487,13 @@ function wishlistSpecs(ctx: RecoContext): ShelfSpec[] {
       minimum: 3,
       explore: true,
       reasonFrom: "saved",
+      slot: "mid",
+      feature: true,
       weights: { saved: 1, taste: 0.45 },
     },
     {
       id: "wishlist-completes",
+      eyebrow: "Goes together",
       title: "Would go with them",
       why: "Products that shoppers bought in the same order as the things on your list. The card names which saved item each one pairs with.",
       glyph: "＋",
@@ -413,6 +506,7 @@ function wishlistSpecs(ctx: RecoContext): ShelfSpec[] {
       // saved list, and a card here explaining itself in terms of what is
       // in the cart reads as the system talking about the wrong thing.
       reasonFrom: "saved-basket",
+      slot: "late",
       weights: { "saved-basket": 1, basket: 0.3 },
     },
   ];
@@ -422,6 +516,7 @@ function confirmationSpecs(ctx: RecoContext): ShelfSpec[] {
   return [
     {
       id: "order-completes",
+      eyebrow: "Your order",
       title: "Goes with what you just ordered",
       subtitle: "Add before it ships and it travels in the same parcel",
       why: "Products that shoppers bought alongside the items in your order.",
@@ -432,10 +527,13 @@ function confirmationSpecs(ctx: RecoContext): ShelfSpec[] {
       minimum: 2,
       maxPerCategory: 2,
       reasonFrom: "basket",
+      slot: "mid",
+      feature: true,
       weights: { basket: 1, completes: 0.5 },
     },
     {
       id: "order-next",
+      eyebrow: "Next time",
       title: "For next time",
       why: "Your browsing history, kept for when you come back. Nothing here is based on the order you just placed alone.",
       glyph: "✦",
@@ -444,6 +542,7 @@ function confirmationSpecs(ctx: RecoContext): ShelfSpec[] {
       limit: 6,
       minimum: 3,
       when: personal,
+      slot: "late",
       weights: { taste: 1, saved: 0.4, rising: 0.2 },
     },
   ];

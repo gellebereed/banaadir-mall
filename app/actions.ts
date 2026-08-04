@@ -44,6 +44,9 @@ import type {
   OrderStatus,
   ParcelDelivery,
   Product,
+  ProductStory,
+  RecoSettings,
+  ShelfSlot,
   Store,
   Variant,
 } from "@/lib/types";
@@ -1930,4 +1933,273 @@ export async function deleteCategory(slug: string): Promise<void> {
     });
   }
   refresh();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DISCOVERY — admin control of the recommender and product stories
+// ═══════════════════════════════════════════════════════════════════════
+// Settings are written to Supabase when the discovery migration has been
+// run, and to data/db.json otherwise — the same dual path every other
+// dashboard save takes, so the panel works before anyone touches SQL.
+
+/** Read-modify-write for the recommender settings. */
+async function mutateReco(fn: (settings: RecoSettings) => void): Promise<void> {
+  await requireAdminSession();
+
+  const { getRecoSettings } = await import("@/lib/api");
+  const settings = structuredClone(await getRecoSettings());
+  fn(settings);
+
+  const { updateRecoSettingsInSupabase } = await import("@/lib/supabase/mutations");
+  const wrote = await updateRecoSettingsInSupabase(settings);
+  if (!wrote) {
+    await mutateDB((db) => {
+      db.reco = settings;
+    });
+  }
+  refresh();
+}
+
+/** Master switch, pin strength and shelf visibility, saved in one go. */
+export async function updateRecoSettings(formData: FormData): Promise<void> {
+  const enabled = formData.get("enabled") === "on";
+  const pinStrength = clampInt(formData.get("pinStrength"), 0, 100, 55);
+
+  /*
+   * Shelf rows arrive as `shelf:<id>` = "on", plus optional
+   * `shelfTitle:<id>` and `shelfSlot:<id>`. The full key list is submitted
+   * separately in a hidden field because a browser does not send unchecked
+   * boxes at all — without it, "hidden" and "not on this form" would be
+   * indistinguishable, and unticking a shelf would silently do nothing.
+   */
+  const keys = String(formData.get("shelfKeys") ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+
+  await mutateReco((settings) => {
+    settings.enabled = enabled;
+    settings.pinStrength = pinStrength;
+    settings.shelves = keys.map((key) => {
+      const title = String(formData.get(`shelfTitle:${key}`) ?? "").trim();
+      const slot = String(formData.get(`shelfSlot:${key}`) ?? "").trim();
+      return {
+        key,
+        visible: formData.get(`shelf:${key}`) === "on",
+        ...(title ? { title: title.slice(0, 60) } : {}),
+        ...(isShelfSlot(slot) ? { slot } : {}),
+      };
+    });
+  });
+}
+
+/** Prompt settings — what shoppers get asked, and how often. */
+export async function updatePromptSettings(formData: FormData): Promise<void> {
+  await mutateReco((settings) => {
+    settings.prompts = {
+      enabled: formData.get("promptsEnabled") === "on",
+      askDepartments: formData.get("askDepartments") === "on",
+      askBudget: formData.get("askBudget") === "on",
+      askReview: formData.get("askReview") === "on",
+      delaySeconds: clampInt(formData.get("delaySeconds"), 5, 600, 45),
+      cooldownDays: clampInt(formData.get("cooldownDays"), 1, 365, 14),
+    };
+  });
+}
+
+/** Push a product. See RecoPin — a pin is an opinion, not an override. */
+export async function addRecoPin(formData: FormData): Promise<void> {
+  const productId = String(formData.get("productId") ?? "").trim();
+  if (!productId) return;
+
+  const shelf = String(formData.get("shelf") ?? "auto").trim() || "auto";
+  const note = String(formData.get("note") ?? "").trim().slice(0, 90);
+  const startsAt = String(formData.get("startsAt") ?? "").trim();
+  const endsAt = String(formData.get("endsAt") ?? "").trim();
+
+  await mutateReco((settings) => {
+    // Re-pinning a product replaces the old push rather than stacking a
+    // second one the merchandiser would then have to find and delete.
+    settings.pins = settings.pins.filter(
+      (pin) => !(pin.productId === productId && pin.shelf === shelf),
+    );
+    settings.pins.unshift({
+      id: `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      productId,
+      shelf,
+      note: note || undefined,
+      startsAt: startsAt || undefined,
+      endsAt: endsAt || undefined,
+      active: true,
+    });
+  });
+}
+
+export async function toggleRecoPin(id: string): Promise<void> {
+  await mutateReco((settings) => {
+    const pin = settings.pins.find((entry) => entry.id === id);
+    if (pin) pin.active = !pin.active;
+  });
+}
+
+export async function deleteRecoPin(id: string): Promise<void> {
+  await mutateReco((settings) => {
+    settings.pins = settings.pins.filter((pin) => pin.id !== id);
+  });
+}
+
+/** Keep a product out of every recommendation, for everyone. */
+export async function blockFromReco(formData: FormData): Promise<void> {
+  const productId = String(formData.get("productId") ?? "").trim();
+  if (!productId) return;
+  await mutateReco((settings) => {
+    if (!settings.blocked.includes(productId)) settings.blocked.push(productId);
+    // A blocked product cannot also be pushed — leaving a dead pin behind
+    // would show in the panel as an active push that quietly does nothing.
+    settings.pins = settings.pins.filter((pin) => pin.productId !== productId);
+  });
+}
+
+export async function unblockFromReco(productId: string): Promise<void> {
+  await mutateReco((settings) => {
+    settings.blocked = settings.blocked.filter((id) => id !== productId);
+  });
+}
+
+// ── Product stories ────────────────────────────────────────────────────
+
+/**
+ * Create or update a story.
+ *
+ * Chapters arrive as parallel `chapterHeading` / `chapterBody` /
+ * `chapterImage` arrays from a repeating fieldset. Blank rows are dropped,
+ * so spare empty slots in the form never become empty steps on the page.
+ */
+export async function saveStory(formData: FormData): Promise<void> {
+  await requireAdminSession();
+
+  const id =
+    String(formData.get("id") ?? "").trim() ||
+    `story-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  const headings = formData.getAll("chapterHeading").map(String);
+  const bodies = formData.getAll("chapterBody").map(String);
+  const images = formData.getAll("chapterImage").map(String);
+
+  const chapters = headings
+    .map((heading, index) => ({
+      heading: heading.trim(),
+      body: (bodies[index] ?? "").trim(),
+      image: (images[index] ?? "").trim() || undefined,
+    }))
+    .filter((chapter) => chapter.heading && chapter.body);
+
+  /**
+   * Artwork can arrive either way: uploaded through the picker, or as a URL
+   * typed into the field beside it. Uploads win when present, and the
+   * previously saved image is kept when neither is supplied — otherwise
+   * editing a guide's text would silently wipe its cover photo, which is
+   * the same trap saveBanner had to solve.
+   */
+  const [uploadedHero] = await saveImages(filesFrom(formData, "heroImageFile"), "stories");
+  const [uploadedPoster] = await saveImages(filesFrom(formData, "posterFile"), "stories");
+
+  const { getStory: readStory } = await import("@/lib/api");
+  const previous = await readStory(id);
+
+  const heroImage =
+    uploadedHero ?? (String(formData.get("heroImage") ?? "").trim() || previous?.heroImage);
+  const poster =
+    uploadedPoster ?? (String(formData.get("poster") ?? "").trim() || previous?.poster);
+
+  const story: ProductStory = {
+    id,
+    title: String(formData.get("title") ?? "").trim().slice(0, 120) || "Untitled guide",
+    subtitle: String(formData.get("subtitle") ?? "").trim().slice(0, 200) || undefined,
+    kind: String(formData.get("kind") ?? "how-to") as ProductStory["kind"],
+    productIds: splitList(formData.get("productIds")),
+    categorySlugs: splitList(formData.get("categorySlugs")),
+    store: String(formData.get("store") ?? "").trim() || undefined,
+    videoUrl: String(formData.get("videoUrl") ?? "").trim() || undefined,
+    poster,
+    heroImage,
+    chapters,
+    gallery: splitList(formData.get("gallery")),
+    duration: String(formData.get("duration") ?? "").trim() || undefined,
+    published: formData.get("published") === "on",
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { upsertStoryInSupabase } = await import("@/lib/supabase/mutations");
+  const wrote = await upsertStoryInSupabase(story);
+  if (!wrote) {
+    await mutateDB((db) => {
+      const others = (db.stories ?? []).filter((entry) => entry.id !== story.id);
+      db.stories = [story, ...others];
+    });
+  }
+
+  refresh();
+  redirect("/admin/discovery?tab=stories&saved=1");
+}
+
+export async function toggleStoryPublished(id: string): Promise<void> {
+  await requireAdminSession();
+
+  const { getStory } = await import("@/lib/api");
+  const story = await getStory(id);
+  if (!story) return;
+
+  const next: ProductStory = {
+    ...story,
+    published: !story.published,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { upsertStoryInSupabase } = await import("@/lib/supabase/mutations");
+  const wrote = await upsertStoryInSupabase(next);
+  if (!wrote) {
+    await mutateDB((db) => {
+      db.stories = (db.stories ?? []).map((entry) => (entry.id === id ? next : entry));
+    });
+  }
+  refresh();
+}
+
+export async function deleteStory(id: string): Promise<void> {
+  await requireAdminSession();
+
+  const { deleteStoryFromSupabase } = await import("@/lib/supabase/mutations");
+  const removed = await deleteStoryFromSupabase(id);
+  if (!removed) {
+    await mutateDB((db) => {
+      db.stories = (db.stories ?? []).filter((entry) => entry.id !== id);
+    });
+  }
+  refresh();
+}
+
+// ── Small helpers ──────────────────────────────────────────────────────
+
+function clampInt(
+  value: FormDataEntryValue | null,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function splitList(value: FormDataEntryValue | null): string[] {
+  return String(value ?? "")
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 60);
+}
+
+function isShelfSlot(value: string): value is ShelfSlot {
+  return value === "top" || value === "early" || value === "mid" || value === "late";
 }

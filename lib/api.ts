@@ -21,8 +21,12 @@ import {
   fetchOrdersFromSupabase,
   fetchProductsFromSupabase,
   fetchPromotionsFromSupabase,
+  fetchRecoSettingsFromSupabase,
+  fetchReviewsFromSupabase,
+  fetchStoriesFromSupabase,
   fetchStoresFromSupabase,
 } from "./supabase/db-api";
+import { DEFAULT_RECO } from "./db";
 import { resolvePeriod, summariseSales } from "./analytics";
 import { matchesCode, sellableUnits, type SellableUnit } from "./odoo/mapping";
 import { normalizeBarcode, normalizeReference } from "./barcode";
@@ -42,7 +46,10 @@ import type {
   MarketingSettings,
   Order,
   Product,
+  ProductReview,
+  ProductStory,
   Promotion,
+  RecoSettings,
   Review,
   Store,
 } from "./types";
@@ -647,8 +654,35 @@ const REVIEW_TEXTS = [
   "Bought this as a gift and they loved it. Will definitely order again from Banaadir Mall.",
 ];
 
-/** Deterministic sample reviews for a product (demo only). */
+/** Every review left by a real customer. */
+export async function getCustomerReviews(): Promise<ProductReview[]> {
+  const supabaseReviews = await fetchReviewsFromSupabase();
+  if (supabaseReviews) return supabaseReviews;
+  return (await getDB()).reviews ?? [];
+}
+
+/**
+ * Reviews for a product.
+ *
+ * Real customer reviews (collected by the rating prompt, see
+ * lib/reco/prompts.ts) come first and are never mixed in among the
+ * generated demo ones — once a product has a real review, the samples stop
+ * entirely. Padding genuine feedback with invented feedback is the fastest
+ * way to make every review on the site worthless.
+ */
 export async function getReviews(product: Product): Promise<Review[]> {
+  const real = (await getCustomerReviews()).filter((r) => r.productId === product.id);
+  if (real.length > 0) {
+    return real
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((r) => ({
+        author: r.verified ? `${r.author} ✓` : r.author,
+        rating: r.rating,
+        date: r.date,
+        text: r.text || "",
+      }));
+  }
+
   const seed = product.slug.length;
   return Array.from({ length: 3 }, (_, i) => ({
     author: REVIEWERS[(seed + i * 2) % REVIEWERS.length],
@@ -656,4 +690,55 @@ export async function getReviews(product: Product): Promise<Review[]> {
     date: `2026-07-${String(10 + ((seed + i * 5) % 20)).padStart(2, "0")}`,
     text: REVIEW_TEXTS[(seed + i) % REVIEW_TEXTS.length],
   }));
+}
+
+// ── Discovery: recommender settings & product stories ──────────────────
+
+/** Admin control over the recommender. Falls back to the shipped defaults. */
+export async function getRecoSettings(): Promise<RecoSettings> {
+  const fromSupabase = await fetchRecoSettingsFromSupabase();
+  if (fromSupabase) return fromSupabase;
+  return (await getDB()).reco ?? DEFAULT_RECO;
+}
+
+/** Every story, including unpublished drafts. Dashboard view. */
+export async function getAllStories(): Promise<ProductStory[]> {
+  const fromSupabase = await fetchStoriesFromSupabase();
+  if (fromSupabase) return fromSupabase;
+  return (await getDB()).stories ?? [];
+}
+
+/** Storefront view: published stories only. */
+export async function getStories(): Promise<ProductStory[]> {
+  return (await getAllStories()).filter((s) => s.published);
+}
+
+export async function getStory(id: string): Promise<ProductStory | undefined> {
+  return (await getAllStories()).find((s) => s.id === id);
+}
+
+/**
+ * Stories that apply to a product — attached directly, or through its
+ * category so one "how to care for cast iron" piece can serve a whole
+ * range without being re-attached to every new listing.
+ *
+ * Direct attachments rank first: a story written about THIS product beats
+ * one written about its department.
+ */
+export async function getStoriesForProduct(product: Product): Promise<ProductStory[]> {
+  const [stories, ancestors] = await Promise.all([
+    getStories(),
+    getCategoryPath(product.category),
+  ]);
+  const branch = new Set(ancestors.map((c) => c.slug));
+
+  return stories
+    .map((story) => {
+      if (story.productIds.includes(product.id)) return { story, rank: 0 };
+      if (story.categorySlugs?.some((slug) => branch.has(slug))) return { story, rank: 1 };
+      return null;
+    })
+    .filter((entry): entry is { story: ProductStory; rank: number } => entry !== null)
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.story);
 }

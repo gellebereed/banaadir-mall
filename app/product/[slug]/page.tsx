@@ -7,7 +7,14 @@ import RecoStack from "@/components/reco/RecoStack";
 import TrackProductView from "@/components/reco/TrackProductView";
 import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
-import { getCategory, getProduct, getReviews, getStore } from "@/lib/api";
+import StorySection from "@/components/story/StorySection";
+import {
+  getCategory,
+  getProduct,
+  getReviews,
+  getStore,
+  getStoriesForProduct,
+} from "@/lib/api";
 import { compact, shortDate } from "@/lib/format";
 
 interface Props {
@@ -31,17 +38,27 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProduct(slug);
   if (!product) notFound();
 
-  const [store, category, reviews] = await Promise.all([
+  const [store, category, reviews, stories] = await Promise.all([
     getStore(product.store),
     getCategory(product.category),
     getReviews(product),
+    getStoriesForProduct(product),
   ]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="pb-8">
       {/* Records the visit and how long it held attention — the two
           strongest honest signals the recommender has. */}
       <TrackProductView productId={product.id} />
+
+      {/*
+        The buy box and reviews sit in the page column; the guide and the
+        recommendation shelves are full-bleed below it, because their tinted
+        bands only read as a change of surface when they run edge to edge.
+        Nesting them inside a max-width container turns each one into a
+        coloured rectangle floating in the middle of the page.
+      */}
+      <div className="mx-auto max-w-7xl px-4 pt-8">
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-400">
         <Link href="/" className="hover:text-ocean-700">Home</Link>
@@ -101,18 +118,19 @@ export default async function ProductPage({ params }: Props) {
           ))}
         </div>
       </section>
+      </div>
+
+      {/* The episode: how it works, how to look after it, what it looks
+          like in someone's home. Renders nothing when nobody has written
+          one for this product. */}
+      <StorySection stories={stories} />
 
       {/*
         Recommendations. This replaced a flat "first four products in the
         same category" list, which showed every shopper the same four items
         on every product in that category and never changed.
-
-        The stack is rendered full-bleed, so it breaks out of this page's
-        max-w-7xl padding — each shelf carries its own container.
       */}
-      <div className="-mx-4 mt-4">
-        <RecoStack surface="product" seedId={product.id} />
-      </div>
+      <RecoStack surface="product" seedId={product.id} />
     </div>
   );
 }

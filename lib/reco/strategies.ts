@@ -31,6 +31,14 @@ import type { Taste } from "./taste";
 import { tasteScore, topKeys } from "./taste";
 import type { Reason } from "./types";
 
+/** An admin push, resolved and already checked against its date window. */
+export interface ActivePin {
+  productId: string;
+  /** Shelf id to force it into, or "auto". */
+  shelf: string;
+  note?: string;
+}
+
 export interface RecoContext {
   products: Product[];
   byId: Map<string, Product>;
@@ -44,6 +52,10 @@ export interface RecoContext {
   seed?: Product;
   /** Product ids in the basket right now. */
   cartIds: string[];
+  /** Live admin pushes — see the adminPins strategy. */
+  pins: ActivePin[];
+  /** The shelf currently being blended, so pins can target one. */
+  shelfId?: string;
   now: number;
 }
 
@@ -634,7 +646,53 @@ export const discover: Strategy = {
   },
 };
 
+/**
+ * Products the admin is pushing (/admin/discovery).
+ *
+ * A merchandiser has to be able to put something in front of shoppers —
+ * a new franchise launching, stock that has to move before a season turns,
+ * a supplier commitment. Pretending an algorithm should own that decision
+ * outright is how recommender projects end up quietly disabled.
+ *
+ * But the push goes in as an OPINION, not an override. A pinned product
+ * still has to clear the stock check, still loses to a shopper's explicit
+ * "not interested", and still competes under the diversity caps. The admin
+ * sets how loudly it argues (pinStrength), not whether the shelf listens.
+ *
+ * Pins targeted at a specific shelf are silent everywhere else, so a push
+ * meant for "Chosen for you" does not turn up under "Bought together".
+ */
+export const adminPins: Strategy = {
+  key: "pins",
+  run: (ctx) => {
+    if (ctx.pins.length === 0) return [];
+
+    const candidates: Candidate[] = [];
+    ctx.pins.forEach((pin, index) => {
+      if (pin.shelf !== "auto" && pin.shelf !== ctx.shelfId) return;
+      const product = ctx.byId.get(pin.productId);
+      if (!product) return;
+
+      candidates.push({
+        id: pin.productId,
+        // Ordered by how the admin listed them, gently — the ranker still
+        // decides the final order once other signals are mixed in.
+        score: 1 / (1 + index * 0.15),
+        reason: {
+          kind: "store",
+          // An unexplained push is the one card on the shelf that cannot
+          // justify itself, so it gets a plain, honest default.
+          text: pin.note?.trim() || "Picked by Banaadir Mall",
+          anchorName: storeName(ctx, product.store),
+        },
+      });
+    });
+    return candidates;
+  },
+};
+
 export const ALL_STRATEGIES: Strategy[] = [
+  adminPins,
   boughtTogether,
   similarToSeed,
   completesSeed,

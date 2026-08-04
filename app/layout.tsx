@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { CartProvider } from "@/lib/cart-context";
 import { RecoProvider } from "@/components/reco/RecoProvider";
+import PromptHost from "@/components/reco/PromptHost";
 import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { Suspense } from "react";
@@ -68,6 +69,12 @@ export default async function RootLayout({
           <BottomNav />
           {/* Cart / wishlist confirmations */}
           <Toaster />
+          {/* The timed ask — see components/reco/PromptHost. Renders
+              nothing until the engine decides there is a question worth
+              the interruption, and never on checkout. */}
+          <Suspense fallback={null}>
+            <PromptHost />
+          </Suspense>
           </RecoProvider>
         </CartProvider>
       </body>
