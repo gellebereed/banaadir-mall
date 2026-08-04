@@ -202,6 +202,11 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       odooId: p.odoo_id ?? undefined,
       price: Number(p.price),
       compareAt: p.compare_at ? Number(p.compare_at) : undefined,
+      // Supplier provenance (supabase/migration-supplier-import.sql). Both
+      // are absent on hand-entered products and on databases where that
+      // migration hasn't been run.
+      cost: p.cost !== undefined && p.cost !== null ? Number(p.cost) : undefined,
+      supplier: p.supplier_meta || undefined,
       icon: p.icon || "🛍️",
       art: p.art || DEFAULT_ART,
       rating: Number(p.rating || 0),

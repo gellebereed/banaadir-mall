@@ -56,6 +56,9 @@ export async function upsertProduct(product: Product): Promise<boolean> {
       uom: product.uom || "Units",
       price: product.price,
       compare_at: product.compareAt ?? null,
+      // Supplier provenance (supabase/migration-supplier-import.sql).
+      cost: product.cost ?? null,
+      supplier_meta: product.supplier ?? null,
       rating: product.rating ?? 5,
       reviews_count: product.reviewCount ?? 0,
       sold: product.sold ?? 0,
@@ -126,6 +129,9 @@ const EXTENDED_PRODUCT_COLUMNS = [
   "internal_reference",
   "barcode",
   "uom",
+  // Added by supabase/migration-supplier-import.sql.
+  "cost",
+  "supplier_meta",
 ] as const;
 
 /** Store columns added by supabase/migration.sql. */

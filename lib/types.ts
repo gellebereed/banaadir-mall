@@ -153,6 +153,21 @@ export interface Product {
   price: number;
   /** Original price when the product is on sale. */
   compareAt?: number;
+  /**
+   * Odoo `standard_price` — what the goods cost to buy, per unit.
+   *
+   * NEVER shown to a customer. It exists because the selling price of an
+   * imported product is *derived* from it (see lib/import/pricing.ts), and
+   * without it stored, re-pricing later means going back to the supplier's
+   * invoice. Absent on products entered by hand.
+   */
+  cost?: number;
+  /**
+   * Where an imported product came from. Reference data — a customs code
+   * and a shipment number are worth keeping and worth nothing on the
+   * storefront, so they live here rather than becoming columns.
+   */
+  supplier?: SupplierMeta;
   icon: string;
   art: Art;
   rating: number;
@@ -181,6 +196,29 @@ export interface Product {
    * product in catalogue listings. Falls back to the first variant.
    */
   defaultVariantId?: string;
+}
+
+/**
+ * Provenance for a product that arrived through a supplier file import.
+ * Everything here is reference data: traceable, never merchandised.
+ */
+export interface SupplierMeta {
+  /** Brand as the supplier writes it, e.g. "Altınyıldız Classics". */
+  brand?: string;
+  /** Sub-brand or range, e.g. "AC Basics". */
+  line?: string;
+  /** e.g. "2026 Summer" — what makes a product this season's arrival. */
+  season?: string;
+  /** Fabric make-up, already rewritten as "100% Cotton". */
+  composition?: string;
+  /** Customs tariff code. */
+  hsCode?: string;
+  /** Supplier invoice this stock arrived on. */
+  invoiceNo?: string;
+  /** ISO date of that invoice. */
+  invoiceDate?: string;
+  /** ISO timestamp of the import run that last wrote this product. */
+  importedAt?: string;
 }
 
 /**

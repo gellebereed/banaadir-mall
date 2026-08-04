@@ -43,7 +43,9 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { checkBarcode, checkReference, normalizeBarcode, normalizeReference } from "../barcode";
+// Explicit .ts extension: this module is reached from lib/import/plan.ts,
+// which also runs outside the bundler in scripts/import-supplier-file.mjs.
+import { checkBarcode, checkReference, normalizeBarcode, normalizeReference } from "../barcode.ts";
 import type { Category, Product, Variant } from "../types";
 
 /** Odoo returns many-to-one fields as `[id, display_name]`, or false when unset. */

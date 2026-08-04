@@ -48,9 +48,17 @@ export default async function VendorProductsPage() {
           </p>
         </div>
         {mayEdit && (
-          <Link href="/vendor/products/new" className="btn-primary !px-4 !py-2 text-sm">
-            + Add Product
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/vendor/products/import"
+              className="btn-secondary !px-4 !py-2 text-sm"
+            >
+              ⬆ Import from file
+            </Link>
+            <Link href="/vendor/products/new" className="btn-primary !px-4 !py-2 text-sm">
+              + Add Product
+            </Link>
+          </div>
         )}
       </div>
 
