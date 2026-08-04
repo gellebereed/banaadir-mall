@@ -4,7 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import OrderSlipShare from "@/components/checkout/OrderSlipShare";
+import RecoStack from "@/components/reco/RecoStack";
 import { money } from "@/lib/format";
+import type { CartLineRef } from "@/lib/reco/types";
 import {
   buildCustomerReceipt,
   buildVendorOrderMessage,
@@ -66,9 +68,12 @@ export interface PlacedOrder {
 export default function OrderConfirmation({
   order,
   deliveryEstimate,
+  purchased = [],
 }: {
   order: PlacedOrder;
   deliveryEstimate?: string;
+  /** What was just bought — seeds the "goes with your order" shelf. */
+  purchased?: CartLineRef[];
 }) {
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState(false);
@@ -111,7 +116,8 @@ export default function OrderConfirmation({
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12 animate-fade-up">
+    <div className="animate-fade-up">
+    <div className="mx-auto max-w-2xl px-4 py-12">
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="text-center">
         <span className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-4xl shadow-sm">
@@ -360,6 +366,19 @@ export default function OrderConfirmation({
           Keep shopping
         </Link>
       </div>
+    </div>
+
+    {/*
+      The peak-end moment. This is the point in the whole journey where a
+      shopper feels best about the shop, and where an add-on can still be
+      packed into a parcel that hasn't left yet — which makes it useful to
+      them rather than merely well-timed for us.
+    */}
+    {purchased.length > 0 && (
+      <div className="pb-8">
+        <RecoStack surface="confirmation" items={purchased} />
+      </div>
+    )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { getSession } from "@/lib/session";
 import SignOutButton from "@/components/SignOutButton";
 import StoreAvatar from "@/components/StoreAvatar";
 import AccountOrdersClient from "@/components/account/AccountOrdersClient";
+import RecoControls from "@/components/reco/RecoControls";
 
 export const metadata: Metadata = { title: "My Account" };
 
@@ -133,6 +134,11 @@ export default async function AccountPage() {
         userEmail={session.email}
         serverOrders={serverOrders}
       />
+
+      {/* What the recommender knows, and the button that deletes it. */}
+      <div className="mt-8">
+        <RecoControls />
+      </div>
     </div>
   );
 }

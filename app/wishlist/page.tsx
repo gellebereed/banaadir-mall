@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
+import RecoStack from "@/components/reco/RecoStack";
 import { useCart } from "@/lib/cart-context";
 import { getWishlistProductsAction } from "@/app/actions";
 import type { Product } from "@/lib/types";
@@ -58,18 +59,25 @@ export default function WishlistPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <h1 className="mb-6 font-display text-3xl font-extrabold text-ocean-950">
-        My Wishlist{" "}
-        <span className="text-lg font-semibold text-slate-400">
-          ({savedProducts.length} item{savedProducts.length === 1 ? "" : "s"})
-        </span>
-      </h1>
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {savedProducts.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
+    <div className="py-8">
+      <div className="mx-auto max-w-7xl px-4">
+        <h1 className="mb-6 font-display text-3xl font-extrabold text-ocean-950">
+          My Wishlist{" "}
+          <span className="text-lg font-semibold text-slate-400">
+            ({savedProducts.length} item{savedProducts.length === 1 ? "" : "s"})
+          </span>
+        </h1>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+          {savedProducts.map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
+        </div>
       </div>
+
+      {/* A wishlist is the clearest statement of intent a shopper makes, so
+          it earns the strongest shelves: live price drops on saved items
+          first, then what goes with them. */}
+      <RecoStack surface="wishlist" useCartLines />
     </div>
   );
 }

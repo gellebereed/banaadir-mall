@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import ProductImage from "@/components/ProductImage";
+import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
+import RecoStack from "@/components/reco/RecoStack";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import type { MarketingSettings } from "@/lib/types";
@@ -29,17 +31,22 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
 
   if (lines.length === 0) {
     return (
-      <div className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
-        <span className="text-7xl">🛒</span>
-        <h1 className="mt-5 font-display text-2xl font-extrabold text-ocean-950">
-          Your cart is empty
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Fill it with things you love — flash deals are waiting.
-        </p>
-        <Link href="/products" className="btn-primary mt-6">
-          Start Shopping
-        </Link>
+      <div className="pb-10">
+        <div className="mx-auto flex max-w-md flex-col items-center px-4 py-20 text-center">
+          <span className="text-7xl">🛒</span>
+          <h1 className="mt-5 font-display text-2xl font-extrabold text-ocean-950">
+            Your cart is empty
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Fill it with things you love — flash deals are waiting.
+          </p>
+          <Link href="/products" className="btn-primary mt-6">
+            Start Shopping
+          </Link>
+        </div>
+        {/* An empty cart is the best possible place to show somebody the
+            thing they were already looking at. */}
+        <RecoStack surface="home" only={["continue", "price-drops", "for-you", "rising"]} />
       </div>
     );
   }
@@ -175,12 +182,6 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
                 )}
               </dd>
             </div>
-            {delivery > 0 && FREE_DELIVERY_THRESHOLD > 0 && (
-              <p className="rounded-lg bg-mango-50 px-3 py-2 text-xs text-mango-800">
-                Add {money(FREE_DELIVERY_THRESHOLD - subtotal)} more for free
-                delivery 🚚
-              </p>
-            )}
             <div className="flex justify-between border-t border-sand-200 pt-3 text-base">
               <dt className="font-bold text-ocean-950">Total</dt>
               <dd className="font-display text-xl font-extrabold text-ocean-950">
@@ -188,6 +189,11 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
               </dd>
             </div>
           </dl>
+
+          {/* Replaces the old "add $X more for free delivery" line: same
+              real threshold, but it now names things worth buying that
+              actually close the gap. See components/reco. */}
+          <FreeDeliveryMeter />
 
           <Link href="/checkout" className="btn-primary mt-5 w-full">
             Proceed to Checkout →
@@ -199,6 +205,10 @@ export default function CartClient({ settings }: { settings: MarketingSettings }
             Continue shopping
           </Link>
         </aside>
+      </div>
+
+      <div className="-mx-4">
+        <RecoStack surface="cart" useCartLines />
       </div>
     </div>
   );

@@ -2,16 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductView from "@/components/product/ProductView";
-import ProductCard from "@/components/ProductCard";
+import BundleBox from "@/components/reco/BundleBox";
+import RecoStack from "@/components/reco/RecoStack";
+import TrackProductView from "@/components/reco/TrackProductView";
 import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
-import {
-  getCategory,
-  getProduct,
-  getRelatedProducts,
-  getReviews,
-  getStore,
-} from "@/lib/api";
+import { getCategory, getProduct, getReviews, getStore } from "@/lib/api";
 import { compact, shortDate } from "@/lib/format";
 
 interface Props {
@@ -35,15 +31,17 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProduct(slug);
   if (!product) notFound();
 
-  const [store, category, related, reviews] = await Promise.all([
+  const [store, category, reviews] = await Promise.all([
     getStore(product.store),
     getCategory(product.category),
-    getRelatedProducts(product),
     getReviews(product),
   ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
+      {/* Records the visit and how long it held attention — the two
+          strongest honest signals the recommender has. */}
+      <TrackProductView productId={product.id} />
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-400">
         <Link href="/" className="hover:text-ocean-700">Home</Link>
@@ -78,6 +76,10 @@ export default async function ProductPage({ params }: Props) {
         )}
       </ProductView>
 
+      {/* Frequently bought together — only renders when real orders back
+          it up (lib/reco/psychology.ts, buildBundle). */}
+      <BundleBox seedId={product.id} />
+
       {/* Reviews */}
       <section className="mt-14">
         <SectionHeader
@@ -100,20 +102,17 @@ export default async function ProductPage({ params }: Props) {
         </div>
       </section>
 
-      {/* Related products */}
-      {related.length > 0 && (
-        <section className="mt-14">
-          <SectionHeader
-            title="You May Also Like"
-            href={`/category/${product.category}`}
-          />
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {related.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/*
+        Recommendations. This replaced a flat "first four products in the
+        same category" list, which showed every shopper the same four items
+        on every product in that category and never changed.
+
+        The stack is rendered full-bleed, so it breaks out of this page's
+        max-w-7xl padding — each shelf carries its own container.
+      */}
+      <div className="-mx-4 mt-4">
+        <RecoStack surface="product" seedId={product.id} />
+      </div>
     </div>
   );
 }

@@ -53,8 +53,15 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-const CART_KEY = "bm-cart";
-const WISHLIST_KEY = "bm-wishlist";
+/**
+ * Exported because the recommendation tracker reads these keys directly on
+ * mount to establish its baseline — see components/reco/RecoProvider.tsx.
+ * Without knowing what was ALREADY in the cart when the page loaded, it
+ * would read the restore-from-localStorage as a burst of fresh add-to-cart
+ * activity and re-learn the same basket on every page view.
+ */
+export const CART_KEY = "bm-cart";
+export const WISHLIST_KEY = "bm-wishlist";
 
 function readStorage<T>(key: string, fallback: T): T {
   try {

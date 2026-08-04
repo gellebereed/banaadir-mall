@@ -4,6 +4,7 @@ import BannerCarousel from "@/components/home/BannerCarousel";
 import FlashDealsRail from "@/components/home/FlashDealsRail";
 import CountdownTimer from "@/components/CountdownTimer";
 import ProductCard from "@/components/ProductCard";
+import RecoStack from "@/components/reco/RecoStack";
 import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
@@ -85,16 +86,54 @@ export default async function HomePage() {
     new: () => (newArrivals.length > 0 ? <NewArrivals products={newArrivals} /> : null),
   };
 
+  const visibleSections = marketing.sections.filter((s) => s.visible);
+
+  /**
+   * Where the personalised stack lands.
+   *
+   * The admin's arrangement is left exactly as they set it — this page has
+   * always been theirs to order, and a recommender that quietly shoves a
+   * campaign banner down the page is one the marketing team switches off.
+   * The stack is inserted AFTER the first two sections instead: past the
+   * banners and the department row, still high enough to be the first
+   * thing most people scroll into.
+   */
+  const injectAfter = Math.min(1, visibleSections.length - 1);
+
+  /**
+   * What the admin's own rails are already showing. Passed to the engine so
+   * its shelves don't hand the shopper the same eight products a second
+   * time under a different heading — which reads as a small catalogue, not
+   * as two endorsements.
+   */
+  const alreadyOnPage = [...bestsellers, ...newArrivals, ...flashProducts].map((p) => p.id);
+
   return (
     <div>
       <Hero marketing={marketing} heroProducts={heroProducts} />
       {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
 
-      {marketing.sections
-        .filter((s) => s.visible)
-        .map((s) => (
-          <div key={s.key}>{sectionRenderers[s.key]?.()}</div>
-        ))}
+      {/*
+        The unfinished-business strip, immediately under the hero. For a
+        returning shopper the most useful thing on the page is the product
+        they were looking at when they were interrupted — not a new
+        suggestion. Renders nothing at all for a first-time visitor.
+      */}
+      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} only={["continue"]} />
+
+      {visibleSections.map((section, index) => (
+        <div key={section.key}>
+          {sectionRenderers[section.key]?.()}
+          {index === injectAfter && (
+            <RecoStack
+              surface="home"
+              useCartLines
+              excludeIds={alreadyOnPage}
+              exclude={["continue"]}
+            />
+          )}
+        </div>
+      ))}
 
       <SellerBanner />
     </div>

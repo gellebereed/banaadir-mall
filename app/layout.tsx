@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { CartProvider } from "@/lib/cart-context";
+import { RecoProvider } from "@/components/reco/RecoProvider";
 import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { Suspense } from "react";
@@ -43,6 +44,10 @@ export default async function RootLayout({
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
       <body className="flex min-h-screen flex-col">
         <CartProvider>
+          {/* Recommendations sit INSIDE the cart provider: the tracker
+              learns from basket and wishlist changes, and every shelf
+              needs an add-to-cart button. See components/reco. */}
+          <RecoProvider>
           {/* useSearchParams needs a Suspense boundary during prerender. */}
           <Suspense fallback={null}>
             <ScrollToTop />
@@ -63,6 +68,7 @@ export default async function RootLayout({
           <BottomNav />
           {/* Cart / wishlist confirmations */}
           <Toaster />
+          </RecoProvider>
         </CartProvider>
       </body>
     </html>

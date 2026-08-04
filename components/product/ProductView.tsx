@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
+import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
 import {
@@ -57,6 +58,25 @@ export default function ProductView({
   const [activeImage, setActiveImage] = useState(0);
   useEffect(() => setActiveImage(0), [images]);
   useEffect(() => setQty(1), [variant?.id]);
+
+  /**
+   * Picking a colour or a size is the difference between browsing and
+   * shopping: nobody chooses a size for something they are not considering
+   * buying. It is weighted well above a page view in lib/reco/taste.ts.
+   *
+   * The first run is skipped because the component OPENS on the seller's
+   * default variant — that is our choice, not the shopper's.
+   */
+  const { track } = useReco();
+  const optionsUntouched = useRef(true);
+  useEffect(() => {
+    if (!withVariants) return;
+    if (optionsUntouched.current) {
+      optionsUntouched.current = false;
+      return;
+    }
+    track("option", { id: product.id });
+  }, [color, size, withVariants, product.id, track]);
 
   const wished = isWishlisted(product.id);
   const lowStock = stock > 0 && stock <= 15;
@@ -257,9 +277,15 @@ export default function ProductView({
         {/* Store card (server-rendered) */}
         {children}
 
+        {/*
+          Supplier imports quite often repeat a feature line verbatim, and
+          keying on the text made React warn about duplicate keys and drop
+          one of them. De-duplicated instead: a bullet listed twice is not
+          worth rendering twice either.
+        */}
         <ul className="mt-6 grid gap-2 sm:grid-cols-2">
-          {product.features.map((f) => (
-            <li key={f} className="flex items-center gap-2 text-sm text-slate-600">
+          {[...new Set(product.features)].map((f, i) => (
+            <li key={`${f}-${i}`} className="flex items-center gap-2 text-sm text-slate-600">
               <span className="text-emerald-500">✓</span> {f}
             </li>
           ))}

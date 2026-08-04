@@ -13,8 +13,10 @@ import OrderConfirmation, {
   type PlacedParcel,
 } from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
+import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
+import type { CartLineRef } from "@/lib/reco/types";
 import { groupByStore, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
 import type { MarketingSettings, Store } from "@/lib/types";
@@ -37,7 +39,14 @@ export default function CheckoutClient({
 }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const { lines, subtotal, clearCart } = useCart();
+  const { trackPurchase } = useReco();
   const [payment, setPayment] = useState<string>("evc");
+  /**
+   * What was bought, kept for the confirmation screen's recommendations.
+   * The cart is empty by then, so "goes with what you just ordered" has
+   * nothing to work from otherwise.
+   */
+  const [purchased, setPurchased] = useState<CartLineRef[]>([]);
   /**
    * A full snapshot of what was ordered, captured BEFORE the cart is
    * cleared. The confirmation screen needs the items to build each
@@ -283,6 +292,13 @@ export default function CheckoutClient({
       }),
     });
 
+    // Record the purchase BEFORE the cart is cleared — a completed order is
+    // the strongest and longest-lived taste signal there is, and it is the
+    // only one the tracker cannot infer from a cart diff (an emptied cart
+    // looks identical whether it was bought or abandoned).
+    setPurchased(lines.map((l) => ({ productId: l.productId, qty: l.qty })));
+    trackPurchase(lines.map((l) => l.productId));
+
     clearCart();
     setIsSubmitting(false);
     window.scrollTo({ top: 0 });
@@ -290,7 +306,13 @@ export default function CheckoutClient({
 
   // ── Success screen ───────────────────────────────────────────────
   if (placedOrder) {
-    return <OrderConfirmation order={placedOrder} deliveryEstimate={estimate} />;
+    return (
+      <OrderConfirmation
+        order={placedOrder}
+        deliveryEstimate={estimate}
+        purchased={purchased}
+      />
+    );
   }
 
   // ── Empty cart guard ─────────────────────────────────────────────
