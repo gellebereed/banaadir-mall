@@ -143,8 +143,15 @@ export function createBlender(ctx: RecoContext) {
   const memo = new Map<string, Candidate[]>();
 
   function run(strategy: Strategy): Candidate[] {
-    const cached = memo.get(strategy.key);
+    // A shelf-targeted strategy gets one cache entry PER shelf; everything
+    // else is computed once for the whole request. See Strategy.perShelf.
+    const cacheKey = strategy.perShelf
+      ? `${strategy.key}|${ctx.shelfId ?? ""}`
+      : strategy.key;
+
+    const cached = memo.get(cacheKey);
     if (cached) return cached;
+
     let result: Candidate[];
     try {
       result = strategy.run(ctx);
@@ -152,7 +159,7 @@ export function createBlender(ctx: RecoContext) {
       // One broken strategy must degrade a shelf, never break the page.
       result = [];
     }
-    memo.set(strategy.key, result);
+    memo.set(cacheKey, result);
     return result;
   }
 
@@ -211,7 +218,21 @@ export function createBlender(ctx: RecoContext) {
     // Concurrence between independent routes beats either route alone.
     for (const entry of merged.values()) {
       if (entry.agreement > 1) entry.score *= 1 + 0.18 * (entry.agreement - 1);
-      if (spec.demote?.has(entry.id)) entry.score *= REPEAT_PENALTY;
+
+      /*
+       * The repeat penalty does not apply to an admin push.
+       *
+       * The two rules collided in the worst possible place: a merchandiser
+       * pushes the product they most want seen, which is almost always
+       * already in Trending or Just Landed, so the push was cut to 30% of
+       * its score and lost — the one product guaranteed to be pinned was
+       * the one guaranteed not to appear. Somebody using the panel sees a
+       * control that silently does nothing.
+       *
+       * A deliberate push outranks a tidiness heuristic. The de-duplication
+       * within the recommendation stack itself (`exclude`) still holds.
+       */
+      if (!entry.pinned && spec.demote?.has(entry.id)) entry.score *= REPEAT_PENALTY;
     }
 
     const eligible = [...merged.values()]

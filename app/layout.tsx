@@ -44,11 +44,18 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
       <body className="flex min-h-screen flex-col">
-        <CartProvider>
+        {/*
+          The basket, wishlist and taste profile are all stored per ACCOUNT
+          on this device. On a shared phone — which is how a great many
+          people here shop — signing in as somebody else used to leave you
+          looking at the previous person's basket and their recommendations.
+          See lib/storage-scope.ts.
+        */}
+        <CartProvider email={session?.email}>
           {/* Recommendations sit INSIDE the cart provider: the tracker
               learns from basket and wishlist changes, and every shelf
               needs an add-to-cart button. See components/reco. */}
-          <RecoProvider>
+          <RecoProvider email={session?.email}>
           {/* useSearchParams needs a Suspense boundary during prerender. */}
           <Suspense fallback={null}>
             <ScrollToTop />

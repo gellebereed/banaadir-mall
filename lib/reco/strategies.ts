@@ -68,6 +68,19 @@ export interface Candidate {
 export interface Strategy {
   key: string;
   run: (ctx: RecoContext) => Candidate[];
+  /**
+   * This strategy's answer depends on WHICH shelf is asking (ctx.shelfId),
+   * so it must not be memoised across shelves.
+   *
+   * Only admin pushes need it, and getting it wrong is silent: the blender
+   * caches a strategy's first result for the whole request, so a push aimed
+   * at one shelf was computed once against whichever shelf happened to
+   * blend first. Aim at the first one and the push leaked onto every other
+   * shelf; aim at any other and the cached empty answer meant it appeared
+   * nowhere at all — a merchandiser sets a push, sees nothing, and
+   * concludes the panel is broken.
+   */
+  perShelf?: boolean;
 }
 
 /** How deep any one strategy is allowed to go before the blender sees it. */
@@ -664,6 +677,8 @@ export const discover: Strategy = {
  */
 export const adminPins: Strategy = {
   key: "pins",
+  // Shelf-targeted — see Strategy.perShelf.
+  perShelf: true,
   run: (ctx) => {
     if (ctx.pins.length === 0) return [];
 

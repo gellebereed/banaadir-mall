@@ -71,7 +71,16 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   try {
     const supabase = getPublicClient();
     const { data, error } = await supabase.from("stores").select("*");
-    if (error || !data || data.length === 0) return null;
+    /*
+     * An EMPTY table is an answer, not a failure.
+     *
+     * This used to collapse zero rows to null, which the data layer reads
+     * as "Supabase is unavailable, use the bundled seed catalogue". The
+     * result: a marketplace that deliberately cleared its demo data
+     * watched every demo product and store reappear, with no way to reach
+     * zero. Only a real error or a missing response falls back now.
+     */
+    if (error || !data) return null;
     return data.map((s) => ({
       slug: s.slug,
       name: s.name,
@@ -202,7 +211,16 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
   try {
     const supabase = getPublicClient();
     const { data, error } = await supabase.from("products").select("*");
-    if (error || !data || data.length === 0) return null;
+    /*
+     * An EMPTY table is an answer, not a failure.
+     *
+     * This used to collapse zero rows to null, which the data layer reads
+     * as "Supabase is unavailable, use the bundled seed catalogue". The
+     * result: a marketplace that deliberately cleared its demo data
+     * watched every demo product and store reappear, with no way to reach
+     * zero. Only a real error or a missing response falls back now.
+     */
+    if (error || !data) return null;
     return data.map((p) => ({
       id: p.id,
       slug: p.slug,

@@ -36,6 +36,7 @@ import {
 } from "react";
 import { getRecommendationsAction } from "@/app/reco-actions";
 import { CART_KEY, WISHLIST_KEY, useCart } from "@/lib/cart-context";
+import { GUEST_SCOPE, scopeFor, scopedKey } from "@/lib/storage-scope";
 import {
   emptyProfile,
   forRequest,
@@ -81,18 +82,49 @@ interface RecoContextValue {
 
 const RecoCtx = createContext<RecoContextValue | null>(null);
 
-export function RecoProvider({ children }: { children: ReactNode }) {
+export function RecoProvider({
+  children,
+  email,
+}: {
+  children: ReactNode;
+  /** Signed-in account, or undefined for a guest. Scopes the profile. */
+  email?: string;
+}) {
   const [profile, setProfile] = useState<TasteProfile>(emptyProfile);
   const [ready, setReady] = useState(false);
 
+  const scope = scopeFor(email);
+
+  /*
+   * Reload the profile whenever the account changes.
+   *
+   * `ready` is cleared first so the write-back below cannot fire with the
+   * outgoing account's profile and save it under the incoming account's
+   * key — which would hand one person's browsing history to the next.
+   */
   useEffect(() => {
-    setProfile(readProfile());
+    setReady(false);
+
+    // Answers are keyed on the shopper's own signals, so a switch would
+    // eventually miss anyway — but "eventually" is not good enough when the
+    // thing being cached is one person's recommendations and the person at
+    // the keyboard has changed.
+    answerCache.clear();
+
+    if (scope === GUEST_SCOPE) {
+      // Signing out: leave nothing in the guest bucket for the next person
+      // to adopt.
+      setProfile(emptyProfile());
+    } else {
+      setProfile(readProfile(scope));
+    }
+
     setReady(true);
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
-    if (ready) writeProfile(profile);
-  }, [profile, ready]);
+    if (ready) writeProfile(profile, scope);
+  }, [profile, ready, scope]);
 
   const track = useCallback<RecoContextValue["track"]>((kind, payload = {}) => {
     setProfile((current) => record(current, makeEvent(kind, payload)));
@@ -156,7 +188,7 @@ export function RecoProvider({ children }: { children: ReactNode }) {
 
   return (
     <RecoCtx.Provider value={value}>
-      <CartWishlistBridge />
+      <CartWishlistBridge scope={scope} />
       {children}
     </RecoCtx.Provider>
   );
@@ -172,21 +204,29 @@ export function useReco(): RecoContextValue {
  * Turns cart and wishlist changes into taste events, without touching the
  * cart's own API. Rendered once by the provider.
  */
-function CartWishlistBridge() {
+function CartWishlistBridge({ scope }: { scope: string }) {
   const { lines, wishlist } = useCart();
   const { track, ready } = useReco();
 
   const cartBaseline = useRef<Set<string> | null>(null);
   const wishBaseline = useRef<Set<string> | null>(null);
 
-  // Read what was already stored BEFORE React state hydrates — see the
-  // baseline note at the top of this file.
+  /*
+   * Read what was already stored BEFORE React state hydrates — see the
+   * baseline note at the top of this file.
+   *
+   * Re-baselined on an account switch too: the incoming account's basket
+   * arriving would otherwise look like a burst of add-to-cart activity and
+   * be recorded as this person having just chosen all of it.
+   */
   useEffect(() => {
     cartBaseline.current = new Set(
-      readIds(CART_KEY, (item: { productId?: string }) => item?.productId),
+      readIds(scopedKey(CART_KEY, scope), (item: { productId?: string }) => item?.productId),
     );
-    wishBaseline.current = new Set(readIds(WISHLIST_KEY, (id: string) => id));
-  }, []);
+    wishBaseline.current = new Set(
+      readIds(scopedKey(WISHLIST_KEY, scope), (id: string) => id),
+    );
+  }, [scope]);
 
   useEffect(() => {
     if (!ready || !cartBaseline.current) return;
@@ -238,7 +278,32 @@ function diff(
  * re-renders instantly instead of re-running the engine, which matters most
  * on exactly the connections this marketplace serves.
  */
-const answerCache = new Map<string, RecoResponse>();
+const answerCache = new Map<string, { response: RecoResponse; at: number }>();
+
+/**
+ * How long a cached answer is trusted.
+ *
+ * The cache key covers everything the SHOPPER controls, but nothing the
+ * marketplace does — so with no expiry, an admin adding a push, a seller
+ * running a promotion or an order arriving would be invisible to anyone
+ * whose tab was already open. The first of those is the one that bites:
+ * you add a push, click through to the storefront, and the answer you get
+ * is the one cached before the push existed, so the panel looks broken.
+ *
+ * A minute is short enough that a merchandiser checking their own work
+ * sees it, and long enough that scrolling back up a page costs nothing.
+ */
+const ANSWER_TTL_MS = 60_000;
+
+function cachedAnswer(key: string): RecoResponse | undefined {
+  const hit = answerCache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > ANSWER_TTL_MS) {
+    answerCache.delete(key);
+    return undefined;
+  }
+  return hit.response;
+}
 
 /**
  * In-flight requests, so two components on one page asking the same
@@ -254,7 +319,7 @@ function fetchShelves(key: string, request: RecoRequest): Promise<RecoResponse> 
 
   const promise = getRecommendationsAction(request)
     .then((response) => {
-      answerCache.set(key, response);
+      answerCache.set(key, { response, at: Date.now() });
       return response;
     })
     .finally(() => inFlight.delete(key));
@@ -317,7 +382,7 @@ export function useRecommendations(input: UseRecoInput): {
     ].join("|");
   }, [input.surface, input.seedId, cart, wishlist, excludeKey, profile]);
 
-  const [data, setData] = useState<RecoResponse>(() => answerCache.get(key) ?? EMPTY);
+  const [data, setData] = useState<RecoResponse>(() => cachedAnswer(key) ?? EMPTY);
   const [loading, setLoading] = useState(false);
   const latestKey = useRef(key);
 
@@ -326,7 +391,7 @@ export function useRecommendations(input: UseRecoInput): {
 
     if (!ready || !enabled) return;
 
-    const cached = answerCache.get(key);
+    const cached = cachedAnswer(key);
     if (cached) {
       setData(cached);
       setLoading(false);

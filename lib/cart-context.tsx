@@ -17,6 +17,14 @@ import {
   type ReactNode,
 } from "react";
 import { products } from "./data/products";
+import {
+  adoptGuestData,
+  clearGuestData,
+  GUEST_SCOPE,
+  scopeFor,
+  scopedKey,
+  SHOPPER_KEYS,
+} from "./storage-scope";
 import type { CartItem, Product } from "./types";
 
 interface CartLine extends CartItem {
@@ -46,6 +54,14 @@ interface CartContextValue {
   wishlist: string[];
   toggleWishlist: (productId: string, product?: Pick<Product, "name" | "icon" | "images">) => void;
   isWishlisted: (productId: string) => boolean;
+  /**
+   * The storage namespace for the signed-in account ("guest" when signed
+   * out). Exposed here because every client component already has the
+   * cart context, and several of them keep their own per-shopper keys —
+   * checkout addresses, the local order history. One source of truth beats
+   * each of them deriving it and one of them getting it wrong.
+   */
+  scope: string;
   /** Live confirmations rendered by <Toaster />. */
   toasts: Toast[];
   dismissToast: (id: number) => void;
@@ -75,7 +91,20 @@ function readStorage<T>(key: string, fallback: T): T {
 /** How long a confirmation stays on screen. */
 const TOAST_MS = 3200;
 
-export function CartProvider({ children }: { children: ReactNode }) {
+export function CartProvider({
+  children,
+  email,
+}: {
+  children: ReactNode;
+  /**
+   * The signed-in account, or undefined for a guest.
+   *
+   * The basket and the wishlist are stored per account on this device.
+   * Without it, signing in as somebody else on a shared phone showed you
+   * their basket and their saved items — see lib/storage-scope.ts.
+   */
+  email?: string;
+}) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -83,19 +112,46 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // client render matches the server-rendered HTML.
   const [hydrated, setHydrated] = useState(false);
 
+  const scope = scopeFor(email);
+  const cartKey = scopedKey(CART_KEY, scope);
+  const wishlistKey = scopedKey(WISHLIST_KEY, scope);
+
+  /*
+   * Re-read whenever the account changes, not just on mount.
+   *
+   * `hydrated` is dropped first so the write-back effects below cannot fire
+   * with the OUTGOING account's state and stamp it onto the incoming
+   * account's keys — which would copy one person's basket to another at the
+   * exact moment the two are being separated.
+   */
   useEffect(() => {
-    setItems(readStorage<CartItem[]>(CART_KEY, []));
-    setWishlist(readStorage<string[]>(WISHLIST_KEY, []));
+    setHydrated(false);
+
+    if (scope === GUEST_SCOPE) {
+      // Signing out. Whatever the previous person left in the guest bucket
+      // must not be waiting there for the next account to adopt.
+      clearGuestData([...SHOPPER_KEYS]);
+      setItems([]);
+      setWishlist([]);
+    } else {
+      // First sign-in on this device takes over whatever was browsed as a
+      // guest — losing a basket at the point of signing in to pay for it
+      // would be indefensible.
+      adoptGuestData([...SHOPPER_KEYS], scope);
+      setItems(readStorage<CartItem[]>(cartKey, []));
+      setWishlist(readStorage<string[]>(wishlistKey, []));
+    }
+
     setHydrated(true);
-  }, []);
+  }, [scope, cartKey, wishlistKey]);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(CART_KEY, JSON.stringify(items));
-  }, [items, hydrated]);
+    if (hydrated) localStorage.setItem(cartKey, JSON.stringify(items));
+  }, [items, hydrated, cartKey]);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(WISHLIST_KEY, JSON.stringify(wishlist));
-  }, [wishlist, hydrated]);
+    if (hydrated) localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
+  }, [wishlist, hydrated, wishlistKey]);
 
   const value = useMemo<CartContextValue>(() => {
     /**
@@ -160,6 +216,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     };
 
     return {
+      scope,
       lines,
       count: lines.reduce((sum, l) => sum + l.qty, 0),
       subtotal: lines.reduce((sum, l) => sum + l.qty * l.product.price, 0),
@@ -216,7 +273,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       },
       isWishlisted: (productId) => wishlist.includes(productId),
     };
-  }, [items, wishlist, toasts]);
+  }, [items, wishlist, toasts, scope]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

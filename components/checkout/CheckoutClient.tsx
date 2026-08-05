@@ -17,6 +17,7 @@ import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import type { CartLineRef } from "@/lib/reco/types";
+import { scopedKey } from "@/lib/storage-scope";
 import { groupByStore, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
 import type { MarketingSettings, Store } from "@/lib/types";
@@ -38,7 +39,16 @@ export default function CheckoutClient({
   stores: Store[];
 }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
-  const { lines, subtotal, clearCart } = useCart();
+  const { lines, subtotal, clearCart, scope } = useCart();
+  /*
+   * Saved delivery details and the browser-side order history, namespaced
+   * per account. Unscoped, the next person to sign in on a shared phone
+   * got the previous person's name, phone number and address pre-filled
+   * into their checkout — a disclosure, and a misdelivery waiting to
+   * happen. See lib/storage-scope.ts.
+   */
+  const addressKey = scopedKey("banaadir_delivery_address", scope);
+  const ordersKey = scopedKey("banaadir_user_orders", scope);
   const { trackPurchase } = useReco();
   const [payment, setPayment] = useState<string>("evc");
   /**
@@ -78,7 +88,7 @@ export default function CheckoutClient({
   // Load saved delivery address on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("banaadir_delivery_address");
+      const saved = localStorage.getItem(addressKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.name) setName(parsed.name);
@@ -92,7 +102,7 @@ export default function CheckoutClient({
     } catch {
       // Ignore storage errors
     }
-  }, []);
+  }, [addressKey]);
 
   // Handle location auto-detection
   async function handleAutoDetectLocation() {
@@ -154,7 +164,7 @@ export default function CheckoutClient({
     // Save address to localStorage for future orders
     try {
       localStorage.setItem(
-        "banaadir_delivery_address",
+        addressKey,
         JSON.stringify({
           name,
           email,
@@ -167,7 +177,7 @@ export default function CheckoutClient({
       );
 
       // Save order to user's order history
-      const existingUserOrders = JSON.parse(localStorage.getItem("banaadir_user_orders") || "[]");
+      const existingUserOrders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
       const newOrderEntry = {
         id: orderId,
         date: new Date().toISOString().slice(0, 10),
@@ -195,7 +205,7 @@ export default function CheckoutClient({
           selectedSize: l.size,
         })),
       };
-      localStorage.setItem("banaadir_user_orders", JSON.stringify([newOrderEntry, ...existingUserOrders]));
+      localStorage.setItem(ordersKey, JSON.stringify([newOrderEntry, ...existingUserOrders]));
     } catch {
       // Ignore storage errors
     }

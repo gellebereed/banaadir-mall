@@ -1,125 +1,171 @@
 "use client";
 
 /**
- * Demo sign-in. Credentials are validated server-side (app/auth-actions.ts)
- * against the demo accounts AND employees added from the Team pages, then
- * the user is redirected by role:
- *   admin -> /admin · seller -> /vendor · customer -> /account
- * The "Demo accounts" panel fills the form with one tap for easy testing.
+ * Sign in.
+ *
+ * Credentials go to app/auth-actions.ts, which tries Supabase Auth first and
+ * falls back to the built-in accounts, then redirects by role:
+ *   admin → /admin · seller → /vendor · customer → /account
+ *
+ * ── Why the demo-account panel is gone ───────────────────────────────────
+ * This page used to list working credentials for the admin and two seller
+ * accounts, one tap from signing in. That is exactly right for a prototype
+ * being passed around for testing, and indefensible for a marketplace
+ * taking real sellers and real money — it published a set of keys to the
+ * control panel. It came out along with the demo data.
  */
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
 
-const QUICK_LOGINS = [
-  { label: "🛡️ Admin", email: "admin@banaadirmall.com", password: "Admin@2026", note: "Full control panel" },
-  { label: "🍳 Seller — Karaca", email: "karaca-home@seller.banaadirmall.com", password: "Seller@2026", note: "Brand store dashboard" },
-  { label: "🐎 Seller — U.S. Polo Assn.", email: "us-polo-assn@seller.banaadirmall.com", password: "Seller@2026", note: "Brand store dashboard" },
-  { label: "👩🏾 Customer — Ayaan", email: "ayaan@banaadirmall.com", password: "Customer@2026", note: "Account with order history" },
-];
-
 const INITIAL_STATE: SignInState = { error: null };
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [state, formAction, pending] = useActionState(signIn, INITIAL_STATE);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-14">
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Sign-in form */}
-        <div className="card p-6 sm:p-8">
-          <span className="text-4xl">👋</span>
-          <h1 className="mt-3 font-display text-2xl font-extrabold text-ocean-950">
+    <div className="grid min-h-[calc(100vh-13rem)] lg:grid-cols-2">
+      {/* ── The form ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-center px-4 py-12 sm:px-8">
+        <div className="w-full max-w-sm">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ocean-950">
             Welcome back
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Sign in as an admin, seller or customer to test the full flow.
+          <p className="mt-2 text-sm text-slate-500">
+            Sign in to track your orders, save what you like, and pick up
+            where you left off.
           </p>
 
-          <form action={formAction} className="mt-6 space-y-4">
+          <form action={formAction} className="mt-8 space-y-4">
             <div>
-              <label htmlFor="email" className="label">Email</label>
+              <label htmlFor="email" className="label">
+                Email
+              </label>
               <input
                 id="email"
                 name="email"
-                required
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@banaadirmall.com"
+                required
+                autoComplete="email"
+                autoFocus
+                placeholder="you@example.com"
                 className="input"
               />
             </div>
+
             <div>
-              <label htmlFor="password" className="label">Password</label>
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <label htmlFor="password" className="label !mb-0">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((shown) => !shown)}
+                  className="text-xs font-semibold text-ocean-700 transition hover:text-mango-600"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
               <input
                 id="password"
                 name="password"
+                type={showPassword ? "text" : "password"}
                 required
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 placeholder="••••••••"
                 className="input"
               />
             </div>
-            {state.error && (
-              <p className="rounded-xl bg-coral-100 px-4 py-2.5 text-sm font-semibold text-coral-700">
+
+            {state?.error && (
+              <p
+                role="alert"
+                className="rounded-xl bg-coral-100 px-4 py-3 text-sm font-medium text-coral-700"
+              >
                 {state.error}
               </p>
             )}
-            <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">
-              {pending ? "Signing in…" : "Sign In"}
+
+            <button
+              type="submit"
+              disabled={pending}
+              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {pending ? "Signing in…" : "Sign in"}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-500">
             New to Banaadir Mall?{" "}
-            <Link href="/register" className="font-bold text-ocean-700 hover:underline">
+            <Link
+              href="/register"
+              className="font-bold text-ocean-700 transition hover:text-mango-600"
+            >
               Create an account
             </Link>
           </p>
-        </div>
 
-        {/* Demo accounts panel */}
-        <div className="rounded-2xl border-2 border-dashed border-ocean-200 bg-ocean-50 p-6">
-          <h2 className="font-display text-lg font-bold text-ocean-950">
-            🧪 Demo accounts
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Tap one to fill the form. Every active store also has its own
-            login: <code className="font-semibold">&lt;store-id&gt;@seller.banaadirmall.com</code>{" "}
-            with password <code className="font-semibold">Seller@2026</code>.
+          <div className="mt-8 border-t border-sand-200 pt-6">
+            <p className="text-center text-xs text-slate-400">
+              Selling with us?{" "}
+              <Link href="/sell" className="font-semibold text-slate-600 hover:text-ocean-700">
+                Apply to open a store
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/*
+        The brand panel. Hidden below `lg` rather than stacked above the
+        form: on a phone the only thing that matters is signing in, and a
+        decorative half-screen would push the password field under the fold.
+      */}
+      <div className="texture-weave relative hidden overflow-hidden bg-gradient-to-br from-ocean-950 via-ocean-800 to-ocean-600 lg:flex lg:items-center">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-mango-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-ocean-400/20 blur-3xl" />
+
+        <div className="relative px-12 py-16 xl:px-16">
+          <span className="inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-mango-300 ring-1 ring-inset ring-white/20">
+            🇸🇴 Proudly Somali
+          </span>
+
+          <p className="mt-6 max-w-md font-display text-3xl font-extrabold leading-tight text-white xl:text-4xl">
+            The whole market,{" "}
+            <span className="bg-gradient-to-r from-mango-300 to-mango-500 bg-clip-text text-transparent">
+              in your pocket.
+            </span>
           </p>
-          <div className="mt-4 space-y-2.5">
-            {QUICK_LOGINS.map((q) => (
-              <button
-                key={q.email}
-                type="button"
-                onClick={() => { setEmail(q.email); setPassword(q.password); }}
-                className="block w-full rounded-xl bg-white p-3.5 text-left shadow-sm transition hover:shadow-md"
-              >
-                <span className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-ocean-950">{q.label}</span>
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-mango-600">
-                    {q.note}
+
+          <ul className="mt-8 space-y-4">
+            {[
+              ["📦", "Track every parcel", "Each shop ships its own — follow them all in one place."],
+              ["♡", "Keep a wishlist", "Save now, and we'll tell you when the price drops."],
+              ["✦", "Shelves that learn", "The more you browse, the less you have to search."],
+            ].map(([icon, title, body]) => (
+              <li key={title} className="flex gap-3.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm ring-1 ring-inset ring-white/15">
+                  {icon}
+                </span>
+                <span className="max-w-xs">
+                  <span className="block text-sm font-bold text-white">{title}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-ocean-100/80">
+                    {body}
                   </span>
                 </span>
-                <span className="mt-1 block truncate text-xs text-slate-500">
-                  {q.email} · {q.password}
-                </span>
-              </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-10 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-ocean-100/70">
+            {["EVC Plus", "Zaad", "eDahab", "Cash on delivery"].map((method) => (
+              <span key={method} className="rounded-full bg-white/10 px-2.5 py-1">
+                {method}
+              </span>
             ))}
           </div>
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
-            ⚠ Demo only: accounts are hard-coded in <code>lib/auth.ts</code>.
-            Employees added from a Team page sign in with their email and{" "}
-            <code>Employee@2026</code>. Replace with real authentication
-            before launch.
-          </p>
         </div>
       </div>
     </div>

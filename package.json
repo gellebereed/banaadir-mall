@@ -12,7 +12,8 @@
     "import:dry-run": "node --experimental-strip-types scripts/import-supplier-file.mjs",
     "seed:marketing": "node scripts/seed-sample-marketing.mjs",
     "seed:supabase": "node scripts/seed-supabase.mjs",
-    "upload:images": "node scripts/upload-images-to-supabase.mjs"
+    "upload:images": "node scripts/upload-images-to-supabase.mjs",
+    "reset:demo": "node scripts/reset-demo-data.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

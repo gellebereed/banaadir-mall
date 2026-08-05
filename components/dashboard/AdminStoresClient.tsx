@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { setStoreStatus, toggleStoreOfficial } from "@/app/actions";
+import { deleteStore, setStoreStatus, toggleStoreOfficial } from "@/app/actions";
 import StoreAvatar from "@/components/StoreAvatar";
 import { compact, money } from "@/lib/format";
 import type { Store } from "@/lib/types";
@@ -28,6 +28,8 @@ export default function AdminStoresClient({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "official" | "pending" | "inactive">("all");
   const [isPending, startTransition] = useTransition();
+  /** The store the admin is being asked to confirm deleting. */
+  const [deleting, setDeleting] = useState<Store | null>(null);
 
   const officialCount = useMemo(
     () => storesWithStats.filter(({ store }) => store.official).length,
@@ -366,6 +368,15 @@ export default function AdminStoresClient({
                             Suspend
                           </button>
                         </form>
+
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => setDeleting(store)}
+                          className="rounded-full border border-sand-300 px-3 py-1 text-xs font-bold text-slate-500 transition hover:border-coral-500 hover:bg-coral-50 hover:text-coral-700 disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -382,6 +393,115 @@ export default function AdminStoresClient({
             </table>
           </div>
         )}
+      </div>
+
+      {deleting && (
+        <DeleteStoreDialog
+          store={deleting}
+          stats={storesWithStats.find((entry) => entry.store.slug === deleting.slug)?.stats}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Confirmation for deleting a store.
+ *
+ * Typing the store's name is not friction for its own sake. This removes a
+ * seller's entire catalogue and cannot be undone, and it sits two pixels
+ * from "Suspend" — which is reversible and is what an admin usually wants.
+ * A browser `confirm()` is one reflexive Enter away from wiping the wrong
+ * shop; typing the name cannot be done by accident.
+ *
+ * The dialog also states plainly what SURVIVES. Orders are a customer's
+ * receipt and a financial record, and an admin needs to know they are not
+ * signing away their sales history to remove a vendor.
+ */
+function DeleteStoreDialog({
+  store,
+  stats,
+  onCancel,
+}: {
+  store: Store;
+  stats?: { revenue: number; orderCount: number; productCount: number };
+  onCancel: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const confirmed = typed.trim().toLowerCase() === store.name.trim().toLowerCase();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-coral-100 text-xl">
+            ⚠️
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-extrabold text-ocean-950">
+              Delete {store.name}?
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              This cannot be undone.
+            </p>
+          </div>
+        </div>
+
+        <ul className="mt-5 space-y-1.5 rounded-2xl bg-coral-50 p-4 text-sm text-coral-800">
+          <li>
+            • <strong>{stats?.productCount ?? 0}</strong> product
+            {stats?.productCount === 1 ? "" : "s"} removed from the catalogue
+          </li>
+          <li>• Their promotions, staff logins and guides</li>
+          <li>
+            • The owner login{" "}
+            <code className="font-mono text-xs">{store.slug}@seller…</code> stops working
+          </li>
+        </ul>
+
+        <p className="mt-3 rounded-2xl bg-sand-50 p-3 text-xs leading-relaxed text-slate-500">
+          <strong className="text-slate-700">Orders are kept.</strong> They are your
+          customers&apos; receipts and your sales record — removing a vendor
+          doesn&apos;t undo their {stats?.orderCount ?? 0} order
+          {stats?.orderCount === 1 ? "" : "s"}.
+        </p>
+
+        <label className="label mt-5" htmlFor="confirm-store-name">
+          Type <strong className="text-ocean-900">{store.name}</strong> to confirm
+        </label>
+        <input
+          id="confirm-store-name"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          autoComplete="off"
+          className="input"
+          placeholder={store.name}
+        />
+
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-sm font-semibold text-slate-500 transition hover:text-slate-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!confirmed || isPending}
+            onClick={() =>
+              startTransition(async () => {
+                await deleteStore(store.slug);
+                onCancel();
+              })
+            }
+            className="rounded-full bg-coral-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-coral-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isPending ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
       </div>
     </div>
   );

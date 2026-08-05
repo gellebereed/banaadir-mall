@@ -1456,24 +1456,46 @@ export async function getOrderAction(id: string): Promise<Order | undefined> {
   };
 }
 
-export async function getUserOrdersAction(query: {
-  name?: string;
-  phone?: string;
-  email?: string;
-}): Promise<Order[]> {
+/**
+ * The signed-in customer's own orders.
+ *
+ * ── Identity comes from the SESSION, never from the caller ───────────────
+ * This used to take `{ name, phone, email }` as arguments and return every
+ * order matching them. A server action is a public HTTP endpoint: anything
+ * that can reach the site could call it with somebody else's email and be
+ * handed their full order history — name, phone number, delivery address,
+ * items and totals. The page happened to pass the signed-in user's own
+ * details, which made it look correct while leaving the endpoint open to
+ * anyone who didn't.
+ *
+ * Taking no arguments is the fix, and it is deliberately not "validate the
+ * arguments against the session": as long as the parameters exist, the next
+ * caller can pass something else. There is nothing here for a client to
+ * supply.
+ *
+ * Phone matching is gone with it. It was a substring test, so a short or
+ * common number could match another customer's order outright — and now
+ * that identity is the session's, it adds nothing an exact email match
+ * doesn't already cover.
+ */
+export async function getUserOrdersAction(): Promise<Order[]> {
+  const session = await getSession();
+  if (!session) return [];
+
   const { getOrders } = await import("@/lib/api");
   const allOrders = await getOrders();
-  if (!query.name && !query.phone && !query.email) return [];
 
-  const cleanName = (query.name || "").trim().toLowerCase();
-  const cleanPhone = (query.phone || "").replace(/\D/g, "");
-  const cleanEmail = (query.email || "").trim().toLowerCase();
+  const email = session.email.trim().toLowerCase();
+  const name = session.name.trim().toLowerCase();
 
-  return allOrders.filter((o) => {
-    if (cleanEmail && o.email && o.email.trim().toLowerCase() === cleanEmail) return true;
-    if (cleanPhone && cleanPhone.length > 5 && o.phone && o.phone.replace(/\D/g, "").includes(cleanPhone)) return true;
-    if (cleanName && o.customer.trim().toLowerCase() === cleanName) return true;
-    return false;
+  return allOrders.filter((order) => {
+    if (order.email) {
+      // An order that carries an email is matched on it ALONE. Falling back
+      // to the name here is what let two customers called "Ahmed" see each
+      // other's orders.
+      return order.email.trim().toLowerCase() === email;
+    }
+    return Boolean(name) && order.customer?.trim().toLowerCase() === name;
   });
 }
 
@@ -2221,4 +2243,96 @@ function splitList(value: FormDataEntryValue | null): string[] {
 
 function isShelfSlot(value: string): value is ShelfSlot {
   return value === "top" || value === "early" || value === "mid" || value === "late";
+}
+
+/**
+ * Permanently remove a store and everything belonging to it.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ * Suspending a store hides it. That is the right tool for a dispute and the
+ * wrong one for clearing demo brands out of a marketplace about to take
+ * real sellers: the products stay in the catalogue, the owner login keeps
+ * working, and the seller's email is still sitting in the auth table.
+ *
+ * ── What it deletes, and the order it deletes in ─────────────────────────
+ * Children first, store last. If the store row went first and a later step
+ * failed, the products would be orphaned — still in the catalogue, still on
+ * the storefront, and no longer reachable from any store page to clean up.
+ *
+ *   1. products     the catalogue entries, and their uploaded photos
+ *   2. promotions   discounts that would otherwise apply to nothing
+ *   3. employees    staff logins scoped to this store
+ *   4. flash requests
+ *   5. reco pins/blocks referencing the deleted products
+ *   6. the store row itself
+ *
+ * ORDERS ARE NEVER DELETED. They are a customer's receipt and a financial
+ * record; a seller leaving the marketplace does not undo a purchase. They
+ * keep the store slug, which the order screens already de-slugify for
+ * display, so an order for a departed store still reads correctly.
+ */
+export async function deleteStore(slug: string): Promise<void> {
+  await requireAdminSession();
+
+  const clean = String(slug || "").trim();
+  if (!clean) return;
+
+  const { getAllProductsByStore } = await import("@/lib/api");
+  const products = await getAllProductsByStore(clean);
+  const productIds = new Set(products.map((product) => product.id));
+
+  if (useSupabaseMutations()) {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+
+    await supabase.from("products").delete().eq("store", clean);
+    await supabase.from("promotions").delete().eq("store", clean);
+    await supabase.from("employees").delete().eq("store", clean);
+    await supabase.from("flash_requests").delete().eq("store", clean);
+    await supabase.from("product_stories").delete().eq("store", clean);
+    await supabase.from("stores").delete().eq("slug", clean);
+  }
+
+  // Always clear the local overlay too. Leaving it behind means a store
+  // deleted from Supabase reappears the moment Supabase is unreachable.
+  await mutateDB((db) => {
+    db.stores = (db.stores || []).filter((store) => store.slug !== clean);
+    db.newProducts = db.newProducts.filter((product) => product.store !== clean);
+    db.promotions = db.promotions.filter((promotion) => promotion.store !== clean);
+    db.employees = db.employees.filter((employee) => employee.store !== clean);
+    db.flashRequests = db.flashRequests.filter((request) => request.store !== clean);
+    db.stories = (db.stories || []).filter((story) => story.store !== clean);
+    delete db.storeOverrides[clean];
+    delete db.storeStatus[clean];
+
+    for (const id of productIds) {
+      delete db.productOverrides[id];
+      if (!db.deletedProducts.includes(id)) db.deletedProducts.push(id);
+    }
+
+    // A push or a block pointing at a product that no longer exists is
+    // dead weight the admin would have to find and remove by hand.
+    if (db.reco) {
+      db.reco.pins = db.reco.pins.filter((pin) => !productIds.has(pin.productId));
+      db.reco.blocked = db.reco.blocked.filter((id) => !productIds.has(id));
+    }
+    db.flash.productIds = db.flash.productIds.filter((id) => !productIds.has(id));
+  });
+
+  // Same clean-up for the Supabase-held recommender settings.
+  try {
+    const { getRecoSettings } = await import("@/lib/api");
+    const settings = structuredClone(await getRecoSettings());
+    const before = settings.pins.length + settings.blocked.length;
+    settings.pins = settings.pins.filter((pin) => !productIds.has(pin.productId));
+    settings.blocked = settings.blocked.filter((id) => !productIds.has(id));
+    if (settings.pins.length + settings.blocked.length !== before) {
+      const { updateRecoSettingsInSupabase } = await import("@/lib/supabase/mutations");
+      await updateRecoSettingsInSupabase(settings);
+    }
+  } catch (error) {
+    console.warn("[stores] could not tidy recommender settings:", error);
+  }
+
+  refresh();
 }

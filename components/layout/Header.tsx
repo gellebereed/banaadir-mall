@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import AnnouncementBar from "./AnnouncementBar";
+import AccountMenu from "./AccountMenu";
 import CategoryMenu from "./CategoryMenu";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
@@ -137,14 +138,13 @@ export default function Header({
             >
               ⚡ Daily Deals
             </Link>
-            {!session && (
-              <Link
-                href="/sell"
-                className="hidden items-center rounded-full border border-sand-300 bg-sand-100 px-3.5 py-2 text-sm font-bold text-slate-800 transition hover:bg-sand-200 lg:flex"
-              >
-                🏪 Sell on Banaadir
-              </Link>
-            )}
+            {/*
+              "Sell on Banaadir" has moved to the footer. The header is the
+              customer's tool bar, and while the marketplace is recruiting
+              SHOPPERS the loudest thing in it should not be an invitation to
+              become a supplier — sellers arrive deliberately and will find
+              the link.
+            */}
             {session?.role === "admin" && (
               <Link
                 href="/admin"
@@ -161,20 +161,9 @@ export default function Header({
                 🏪 {storeName ?? "My Store"}
               </Link>
             )}
-            {session ? (
-              <Link
-                href="/account"
-                aria-label={`Account — ${session.name}`}
-                title={session.name}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-ocean-700 font-display text-sm font-extrabold text-white transition hover:bg-ocean-800"
-              >
-                {session.name.charAt(0).toUpperCase()}
-              </Link>
-            ) : (
-              <HeaderIcon href="/login" label="Sign in" icon="👤" />
-            )}
             <HeaderIcon href="/wishlist" label="Wishlist" icon="♡" badge={wishlist.length} />
             <HeaderIcon href="/cart" label="Cart" icon="🛒" badge={count} />
+            <AccountMenu session={session} storeName={storeName} />
           </nav>
         </div>
 
@@ -281,13 +270,23 @@ export default function Header({
             <Link href="/stores" onClick={() => setMenuOpen(false)} className="btn-secondary flex-1 !py-2 text-sm">
               Browse Stores
             </Link>
-            <Link
-              href={action.href}
-              onClick={() => setMenuOpen(false)}
-              className="btn-primary flex-1 truncate !py-2 text-sm"
-            >
-              {action.label}
-            </Link>
+            {session ? (
+              <Link
+                href={action.href}
+                onClick={() => setMenuOpen(false)}
+                className="btn-primary flex-1 truncate !py-2 text-sm"
+              >
+                {action.label}
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                onClick={() => setMenuOpen(false)}
+                className="btn-primary flex-1 !py-2 text-sm"
+              >
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       )}

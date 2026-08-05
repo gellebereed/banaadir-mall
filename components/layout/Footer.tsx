@@ -53,6 +53,39 @@ export default function Footer({ session }: { session: Session | null }) {
 
   return (
     <footer className="mt-16 bg-ocean-950 text-ocean-100">
+      {/*
+        The seller invitation, moved here from the header and the home page.
+        The marketplace is recruiting SHOPPERS right now, so the loudest
+        thing on a customer's screen should not be an offer to become a
+        supplier. It stays a real, findable route — at the bottom, where
+        somebody who came looking for it will look.
+      */}
+      {!session && (
+        <div className="border-b border-white/10">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-6">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-lg ring-1 ring-inset ring-white/15">
+                🏪
+              </span>
+              <div>
+                <p className="font-display text-sm font-extrabold text-white">
+                  Have products to sell?
+                </p>
+                <p className="text-xs text-ocean-200">
+                  Free to start · your own dashboard · paid to your mobile money
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/sell"
+              className="shrink-0 rounded-full border border-white/25 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-white hover:text-ocean-950"
+            >
+              Open your store
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-7xl px-4 py-12">
         <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           {/* Brand + newsletter */}

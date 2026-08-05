@@ -9,15 +9,15 @@
  * portal users) before going live. The rest of the app only depends on
  * the `Session` shape, so swapping the mechanism is contained.
  *
- * Demo accounts:
- *   Admin:     admin@banaadirmall.com            / Admin@2026
+ * Accounts:
+ *   Admin:     ADMIN_EMAIL env var, else ahgbered10@gmail.com / Admin@2026
  *   Sellers:   <store-slug>@seller.banaadirmall.com / Seller@2026
- *              e.g. karaca-home@seller.banaadirmall.com
+ *              generated from the active stores, so a store added through
+ *              the dashboard gets a login without any code change.
  *   Customer:  ayaan@banaadirmall.com            / Customer@2026
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { stores } from "./data/stores";
 import type { EmployeeRole } from "./types";
 
 export interface Session {
@@ -39,25 +39,45 @@ interface DemoUser extends Session {
 
 export const SESSION_COOKIE = "bm_session";
 
-/** One seller login per active store, generated from the store list. */
-const sellerUsers: DemoUser[] = stores
-  .filter((s) => s.status === "active")
-  .map((s) => ({
-    name: s.name,
-    email: `${s.slug}@seller.banaadirmall.com`,
-    password: "Seller@2026",
-    role: "seller" as const,
-    store: s.slug,
-  }));
+/**
+ * Owner logins are `<store-slug>@seller.banaadirmall.com`.
+ *
+ * These used to be generated from the BUNDLED seed stores, which meant two
+ * things went wrong the moment a marketplace stopped being a demo: deleted
+ * demo brands kept a working owner login forever, and a real store added
+ * through the dashboard had none. The slug is now resolved against the live
+ * store list at sign-in — see parseSellerEmail and its use in
+ * app/auth-actions.ts.
+ */
+export const SELLER_EMAIL_SUFFIX = "@seller.banaadirmall.com";
+export const SELLER_PASSWORD = process.env.SELLER_PASSWORD || "Seller@2026";
+
+/** The store slug an owner login refers to, or null if it isn't one. */
+export function parseSellerEmail(email: string): string | null {
+  const clean = email.trim().toLowerCase();
+  if (!clean.endsWith(SELLER_EMAIL_SUFFIX)) return null;
+  const slug = clean.slice(0, -SELLER_EMAIL_SUFFIX.length);
+  return /^[a-z0-9-]+$/.test(slug) ? slug : null;
+}
+
+/**
+ * The marketplace owner's account.
+ *
+ * Overridable with ADMIN_EMAIL / ADMIN_PASSWORD so the credentials can be
+ * rotated in the hosting environment without a code change — which is the
+ * least this deserves while the passwords still live in a file. Set both
+ * before launch; the fallback below exists so a fresh clone still starts.
+ */
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "ahgbered10@gmail.com").toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Admin@2026";
 
 export const DEMO_USERS: DemoUser[] = [
   {
     name: "Mall Administrator",
-    email: "admin@banaadirmall.com",
-    password: "Admin@2026",
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD,
     role: "admin",
   },
-  ...sellerUsers,
   {
     // Matches the demo orders so the account page shows order history.
     name: "Ayaan Warsame",

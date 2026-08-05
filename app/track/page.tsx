@@ -1,6 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { useCart } from "@/lib/cart-context";
+import { scopedKey } from "@/lib/storage-scope";
 import { useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import ParcelCard from "@/components/track/ParcelCard";
@@ -19,6 +21,9 @@ function TrackContent() {
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id") || "";
 
+  const { scope } = useCart();
+  // The browser-side order copy is per account — see lib/storage-scope.ts.
+  const ordersKey = scopedKey("banaadir_user_orders", scope);
   const [input, setInput] = useState(queryId);
   const [order, setOrder] = useState<Order | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -49,7 +54,7 @@ function TrackContent() {
 
     // 1. Check local storage user orders first
     try {
-      const localOrders: Order[] = JSON.parse(localStorage.getItem("banaadir_user_orders") || "[]");
+      const localOrders: Order[] = JSON.parse(localStorage.getItem(ordersKey) || "[]");
       const localFound = localOrders.find((o) => o.id.toLowerCase() === cleanId);
       if (localFound) {
         foundOrder = localFound;

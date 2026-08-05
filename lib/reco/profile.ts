@@ -23,6 +23,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { GUEST_SCOPE, scopedKey } from "../storage-scope";
 import type { EventKind, ShopperPreferences, TasteEvent, TasteProfile } from "./types";
 
 export const PROFILE_KEY = "bm-taste";
@@ -198,10 +199,18 @@ export function markRated(
 
 // ── Storage ────────────────────────────────────────────────────────────
 
-export function readProfile(): TasteProfile {
+/**
+ * Profiles are stored per account on this device.
+ *
+ * Without a namespace, signing in as somebody else on a shared phone left
+ * every shelf built from the previous person's browsing — the single most
+ * visible way a recommender can betray that it is not actually personal.
+ * See lib/storage-scope.ts.
+ */
+export function readProfile(scope: string = GUEST_SCOPE): TasteProfile {
   if (typeof window === "undefined") return emptyProfile();
   try {
-    const raw = window.localStorage.getItem(PROFILE_KEY);
+    const raw = window.localStorage.getItem(scopedKey(PROFILE_KEY, scope));
     if (!raw) return emptyProfile();
     const parsed = JSON.parse(raw) as TasteProfile;
     // A stored profile from an older schema is discarded rather than
@@ -221,10 +230,10 @@ export function readProfile(): TasteProfile {
   }
 }
 
-export function writeProfile(profile: TasteProfile): void {
+export function writeProfile(profile: TasteProfile, scope: string = GUEST_SCOPE): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    window.localStorage.setItem(scopedKey(PROFILE_KEY, scope), JSON.stringify(profile));
   } catch {
     // A full or blocked storage quota must never break browsing.
   }

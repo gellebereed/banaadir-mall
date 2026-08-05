@@ -31,6 +31,15 @@ export default function PinManager({
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const pinnable = shelves.filter((shelf) => shelf.pinnable);
 
+  /** Shelves the admin has switched off on the Engine tab. */
+  const hiddenShelves = useMemo(
+    () =>
+      new Set(
+        settings.shelves.filter((entry) => entry.visible === false).map((entry) => entry.key),
+      ),
+    [settings.shelves],
+  );
+
   return (
     <div className="space-y-5">
       {/* ── New push ───────────────────────────────────────────────── */}
@@ -155,6 +164,30 @@ export default function PinManager({
                       <p className="mt-1 text-[11px] font-bold text-coral-600">
                         Out of stock — the engine is skipping this push.
                       </p>
+                    )}
+
+                    {/*
+                      A push aimed at a switched-off shelf does nothing, and
+                      nothing on screen would otherwise say so — you set it,
+                      see no change on the storefront, and conclude the
+                      feature is broken rather than that the row is hidden.
+                    */}
+                    {shelf && hiddenShelves.has(shelf.id) && (
+                      <p className="mt-1 text-[11px] font-bold text-coral-600">
+                        “{shelf.title}” is switched off, so this push has
+                        nowhere to appear.
+                      </p>
+                    )}
+
+                    {/*
+                      Several rows only exist for certain shoppers — "Chosen
+                      for you" needs enough history to be honest, "Loved
+                      across the mall" is the cold-start row. A push aimed at
+                      one of those is not broken when it doesn't show; it is
+                      waiting for the right shopper.
+                    */}
+                    {shelf && !hiddenShelves.has(shelf.id) && (
+                      <p className="mt-1 text-[11px] text-slate-400">{shelf.blurb}</p>
                     )}
                     {product && product.hidden && (
                       <p className="mt-1 text-[11px] font-bold text-coral-600">

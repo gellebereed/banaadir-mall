@@ -11,6 +11,8 @@ import {
   EMPLOYEE_PASSWORD,
   homeForRole,
   matchDemoUser,
+  parseSellerEmail,
+  SELLER_PASSWORD,
   SESSION_COOKIE,
   type Session,
 } from "@/lib/auth";
@@ -69,10 +71,29 @@ export async function signIn(
     }
   }
 
-  // 2. Built-in demo accounts fallback (admin, store owners, customer).
+  // 2. Built-in accounts fallback (admin, customer).
   let session: Session | null = matchDemoUser(email, password);
 
-  // 3. Employees added from a Team page (password is EMPLOYEE_PASSWORD).
+  /*
+   * 3. Store-owner logins, resolved against the LIVE store list.
+   *
+   * These were previously generated from the bundled seed stores, so a
+   * deleted demo brand kept a working owner login and a real store added
+   * through the dashboard had none. Checking the catalogue means the set of
+   * valid owner logins is exactly the set of stores that exist.
+   */
+  if (!session && password === SELLER_PASSWORD) {
+    const slug = parseSellerEmail(email);
+    if (slug) {
+      const { getStore } = await import("@/lib/api");
+      const store = await getStore(slug);
+      if (store && store.status === "active") {
+        session = { name: store.name, email, role: "seller", store: store.slug };
+      }
+    }
+  }
+
+  // 4. Employees added from a Team page (password is EMPLOYEE_PASSWORD).
   if (!session && password === EMPLOYEE_PASSWORD) {
     const employee = (await getDB()).employees.find(
       (e) => e.email.toLowerCase() === email,

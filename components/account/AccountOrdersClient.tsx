@@ -6,6 +6,8 @@ import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import OrderVendorSections from "@/components/account/OrderVendorSections";
 import { getUserOrdersAction } from "@/app/actions";
+import { useCart } from "@/lib/cart-context";
+import { scopedKey } from "@/lib/storage-scope";
 import { money, shortDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
 
@@ -85,6 +87,7 @@ export default function AccountOrdersClient({
   userEmail: string;
   serverOrders?: Order[];
 }) {
+  const { scope } = useCart();
   const [orders, setOrders] = useState<LocalOrderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState("");
@@ -97,7 +100,7 @@ export default function AccountOrdersClient({
       // 1. Load local storage orders (only those belonging to this user)
       try {
         const local: LocalOrderEntry[] = JSON.parse(
-          localStorage.getItem("banaadir_user_orders") || "[]"
+          localStorage.getItem(scopedKey("banaadir_user_orders", scope)) || "[]"
         );
         local
           .filter((o) => matchesUser(o, userName, userEmail))
@@ -135,7 +138,7 @@ export default function AccountOrdersClient({
 
       // 3. Fetch any additional database orders for this user name or email
       try {
-        const dbOrders = await getUserOrdersAction({ name: userName, email: userEmail });
+        const dbOrders = await getUserOrdersAction();
         dbOrders
           .filter((o) => matchesUser(o, userName, userEmail))
           .forEach((o) => {

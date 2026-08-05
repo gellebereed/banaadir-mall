@@ -172,7 +172,6 @@ export default async function HomePage() {
       )}
       <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="late" />
 
-      <SellerBanner />
     </div>
   );
 }
@@ -641,28 +640,3 @@ function StoreSpotlight({ stores }: { stores: Store[] }) {
   );
 }
 
-/* ── Seller CTA banner ────────────────────────────────────────────── */
-
-function SellerBanner() {
-  return (
-    <section className="mx-auto max-w-7xl px-4 pt-14">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-ocean-900 to-ocean-700 px-6 py-10 sm:px-12">
-        <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-mango-500/30 blur-3xl" />
-        <div className="relative flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="font-display text-2xl font-extrabold text-white sm:text-3xl">
-              Have products to sell?
-            </h2>
-            <p className="mt-2 max-w-md text-sm text-ocean-100">
-              Join Banaadir Mall and reach customers across Somalia. Free to
-              start, dashboard included, get paid straight to your mobile money.
-            </p>
-          </div>
-          <Link href="/sell" className="btn-primary shrink-0">
-            Open Your Store — Free
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}

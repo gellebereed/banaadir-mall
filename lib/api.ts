@@ -104,9 +104,12 @@ export async function getCategoryWithDescendants(slug: string): Promise<string[]
  */
 export async function getAllStores(): Promise<Store[]> {
   const supabaseStores = await fetchStoresFromSupabase();
-  if (supabaseStores && supabaseStores.length > 0) {
-    return supabaseStores;
-  }
+  // Not `length > 0`: once Supabase answers, it is the truth — including
+  // when the answer is "no stores". Falling back on empty meant a
+  // marketplace that had deliberately cleared its demo data watched four
+  // demo brands reappear on the storefront, with no way to remove them.
+  // This mirrors the same decision already made for orders below.
+  if (supabaseStores) return supabaseStores;
 
   const db = await getDB();
   return seedStores.map((s) => {
@@ -133,9 +136,10 @@ export async function getStore(slug: string): Promise<Store | undefined> {
  */
 export async function getBaseProducts(): Promise<Product[]> {
   const supabaseProducts = await fetchProductsFromSupabase();
-  if (supabaseProducts && supabaseProducts.length > 0) {
-    return supabaseProducts;
-  }
+  // See getAllStores: an empty Supabase means an empty catalogue, not a cue
+  // to serve the bundled demo products. A shop clearing its demo data has
+  // to be able to reach zero.
+  if (supabaseProducts) return supabaseProducts;
 
   const db = await getDB();
   return [
