@@ -124,7 +124,18 @@ export default function AccountMenu({
             </Link>
           </div>
 
-          <form action={signOut} className="border-t border-sand-100">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await signOut();
+              } catch {
+                // Ignore redirect errors from Next.js
+              }
+              window.location.href = "/";
+            }}
+            className="border-t border-sand-100"
+          >
             <button
               type="submit"
               className="flex w-full items-center gap-2.5 px-4 py-3 text-sm font-semibold text-coral-600 transition hover:bg-coral-50"
