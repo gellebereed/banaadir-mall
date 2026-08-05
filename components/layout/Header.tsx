@@ -188,7 +188,17 @@ export default function Header({
 
         {/* Category strip (desktop) */}
         <div className="hidden border-t border-sand-100 lg:block">
-          <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-1 rail-scroll">
+          {/*
+            `relative`, and no `overflow-x-auto`.
+
+            The strip used to scroll horizontally, which clipped anything
+            absolutely positioned inside it — fine for a 264px dropdown,
+            fatal for a full-width mega panel. Departments wrap instead;
+            there are only a handful of them, so they never needed to
+            scroll. Being the positioned ancestor is what lets a grouped
+            panel span the whole container the way a real shop's does.
+          */}
+          <div className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-1 px-4 py-1">
             <Link
               href="/products"
               className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold text-ocean-800 hover:bg-ocean-50"
@@ -200,6 +210,7 @@ export default function Header({
                 key={c.slug}
                 category={c}
                 subcategories={childrenOf.get(c.slug) ?? []}
+                grandchildrenOf={childrenOf}
               />
             ))}
             <Link
@@ -251,16 +262,40 @@ export default function Header({
                     >
                       All of {c.name} →
                     </Link>
-                    {kids.map((child) => (
-                      <Link
-                        key={child.slug}
-                        href={`/category/${child.slug}`}
-                        onClick={() => setMenuOpen(false)}
-                        className="block rounded-lg px-3 py-1.5 text-xs text-slate-600 hover:bg-sand-100"
-                      >
-                        {child.icon} {child.name}
-                      </Link>
-                    ))}
+                    {/*
+                      Groups are headings with their leaves indented under
+                      them, mirroring the desktop panel. A phone showing a
+                      flat run of 115 links is the same wall of text, just
+                      taller.
+                    */}
+                    {kids.map((child) => {
+                      const leaves = childrenOf.get(child.slug) ?? [];
+                      return (
+                        <div key={child.slug} className={leaves.length > 0 ? "mt-1" : ""}>
+                          <Link
+                            href={`/category/${child.slug}`}
+                            onClick={() => setMenuOpen(false)}
+                            className={`block rounded-lg px-3 py-1.5 hover:bg-sand-100 ${
+                              leaves.length > 0
+                                ? "text-xs font-bold text-ocean-950"
+                                : "text-xs text-slate-600"
+                            }`}
+                          >
+                            {child.icon} {child.name}
+                          </Link>
+                          {leaves.map((leaf) => (
+                            <Link
+                              key={leaf.slug}
+                              href={`/category/${leaf.slug}`}
+                              onClick={() => setMenuOpen(false)}
+                              className="block rounded-lg px-3 py-1 pl-7 text-xs text-slate-500 hover:bg-sand-100"
+                            >
+                              {leaf.name}
+                            </Link>
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </details>
               );

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
 import {
@@ -50,20 +50,75 @@ export default function ProductCard({ product }: { product: Product }) {
 
   /** Colour currently previewed by hovering/tapping a swatch. */
   const [previewImage, setPreviewImage] = useState<string | undefined>();
-  const mainImage = previewImage ?? primaryImage(product);
+  const [hovering, setHovering] = useState(false);
+
+  /*
+   * ── Hover to browse the photos ───────────────────────────────────────
+   * Every large catalogue does this, and for a good reason: the second
+   * photo answers most of what the first one leaves out — the back of a
+   * shirt, the inside of a pan, the scale of a rug — and it answers it
+   * without costing a page load. So pointing at a card cycles its photos.
+   *
+   * It is deliberately hover-only. On touch there is no hover, and
+   * auto-advancing under a thumb would fight the shopper for control of
+   * the card; those devices simply see the first photo, which is exactly
+   * what they see today.
+   *
+   * A hovered colour swatch still wins — that is a specific request about
+   * a specific colour, and the slideshow must not talk over it.
+   */
+  const [slideIndex, setSlideIndex] = useState(0);
+  const photos = product.images ?? [];
+  const canSlide = photos.length > 1;
+
+  useEffect(() => {
+    if (!canSlide || !hovering || previewImage) return;
+    const timer = setInterval(
+      () => setSlideIndex((i) => (i + 1) % photos.length),
+      900,
+    );
+    return () => clearInterval(timer);
+  }, [canSlide, hovering, previewImage, photos.length]);
+
+  const mainImage = previewImage ?? photos[slideIndex] ?? primaryImage(product);
 
   return (
-    <div className="group card relative flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10">
+    <div
+      className="group card relative flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => {
+        setHovering(false);
+        // Back to the cover shot, so a grid never keeps a wall of cards
+        // each frozen on a different arbitrary photo.
+        setSlideIndex(0);
+      }}
+    >
       <Link href={`/product/${product.slug}`} className="block">
         {mainImage ? (
-          <div className="relative aspect-square w-full overflow-hidden bg-sand-100">
+          <div className="relative aspect-square w-full overflow-hidden bg-white">
             <Image
               src={mainImage}
               alt={product.name}
               fill
               sizes="(max-width: 768px) 50vw, 25vw"
-              className="object-cover"
+              // contain, not cover: a portrait fashion shot in a square
+              // tile was having its top and bottom cropped off.
+              className="object-contain transition-opacity duration-300"
             />
+
+            {/* Which photo of how many — only while it is actually moving. */}
+            {canSlide && hovering && !previewImage && (
+              <span className="pointer-events-none absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+                {photos.slice(0, 6).map((photo, i) => (
+                  <span
+                    key={photo}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === slideIndex ? "w-4 bg-ocean-800" : "w-1.5 bg-ocean-800/30"
+                    }`}
+                  />
+                ))}
+              </span>
+            )}
           </div>
         ) : (
           <ProductImage product={product} className="aspect-square w-full" />

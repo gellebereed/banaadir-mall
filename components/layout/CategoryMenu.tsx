@@ -29,13 +29,25 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Category } from "@/lib/types";
 
+/**
+ * Leaves listed under a group before it collapses into "+N more".
+ *
+ * Long enough that most groups show everything, short enough that Bed &
+ * Bath's twenty-one entries do not make its column three times the height
+ * of the ones beside it.
+ */
+const MAX_LEAVES = 8;
+
 export default function CategoryMenu({
   category,
   subcategories,
+  grandchildrenOf,
 }: {
   category: Category;
   /** Sub-categories directly beneath it. */
   subcategories: Category[];
+  /** parent slug → its children, so a group can list what is inside it. */
+  grandchildrenOf?: Map<string, Category[]>;
 }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -44,6 +56,17 @@ export default function CategoryMenu({
   // A department with nothing under it is a plain link. Rendering a
   // disclosure arrow that opens an empty panel is worse than no arrow.
   const hasChildren = subcategories.length > 0;
+
+  /*
+   * Three levels or two?
+   *
+   * A department whose children have children of their own gets the wide
+   * grouped panel. One whose children are all leaves keeps the simple
+   * list — a four-column grid holding three links looks broken.
+   */
+  const grouped =
+    !!grandchildrenOf &&
+    subcategories.some((child) => (grandchildrenOf.get(child.slug)?.length ?? 0) > 0);
 
   useEffect(() => {
     if (!open) return;
@@ -90,7 +113,13 @@ export default function CategoryMenu({
   return (
     <div
       ref={wrapper}
-      className="relative"
+      /*
+       * A grouped panel is NOT positioned against its own button — it spans
+       * the nav row, which is the positioned ancestor. Anchoring a
+       * 72rem-wide panel to a button near the right-hand end would push
+       * most of it off the side of the screen.
+       */
+      className={grouped ? "" : "relative"}
       onMouseEnter={() => {
         cancelClose();
         setOpen(true);
@@ -116,35 +145,99 @@ export default function CategoryMenu({
 
       {open && (
         <div
-          className="absolute left-0 top-full z-50 pt-2"
+          className={`absolute top-full z-50 pt-2 ${grouped ? "inset-x-4" : "left-0"}`}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
-          <div className="w-64 overflow-hidden rounded-2xl border border-sand-200 bg-white shadow-2xl shadow-ocean-950/15">
+          <div
+            className={`overflow-hidden rounded-2xl border border-sand-200 bg-white shadow-2xl shadow-ocean-950/15 ${
+              grouped ? "w-full" : "w-72"
+            }`}
+          >
             <Link
               href={`/category/${category.slug}`}
               onClick={() => setOpen(false)}
-              className="flex items-center justify-between gap-2 border-b border-sand-100 bg-sand-50 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-ocean-800 transition hover:bg-ocean-50"
+              className="flex items-center justify-between gap-2 border-b border-sand-100 bg-sand-50 px-5 py-2.5 text-xs font-extrabold uppercase tracking-wider text-ocean-800 transition hover:bg-ocean-50"
             >
               All of {category.name}
               <span aria-hidden>→</span>
             </Link>
 
-            <div className="max-h-[60vh] overflow-y-auto py-1">
-              {subcategories.map((child) => (
-                <Link
-                  key={child.slug}
-                  href={`/category/${child.slug}`}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2 text-sm text-slate-600 transition hover:bg-sand-50 hover:text-ocean-800"
-                >
-                  <span className="text-base" aria-hidden>
-                    {child.icon}
-                  </span>
-                  <span className="truncate">{child.name}</span>
-                </Link>
-              ))}
-            </div>
+            {grouped ? (
+              /*
+               * ── The grouped panel ──────────────────────────────────────
+               * Each column is a group with its own leaves listed beneath
+               * it — the shape every large retailer's menu has, because a
+               * shopper scans headings, not a hundred-item list.
+               *
+               * The alternative, which this replaces, was one 264px column
+               * holding every descendant of the department. With 115 of
+               * them under Home & Living that is a scrolling wall with no
+               * structure at all: nothing to scan, nothing to skip, and the
+               * thing you want is somewhere in the middle of it.
+               */
+              <div className="max-h-[75vh] overflow-y-auto p-5">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
+                  {subcategories.map((group) => {
+                    const leaves = grandchildrenOf?.get(group.slug) ?? [];
+                    return (
+                      <div key={group.slug} className="min-w-0">
+                        <Link
+                          href={`/category/${group.slug}`}
+                          onClick={() => setOpen(false)}
+                          className="flex items-center gap-2 text-sm font-extrabold text-ocean-950 hover:text-ocean-700"
+                        >
+                          <span aria-hidden>{group.icon}</span>
+                          <span className="truncate">{group.name}</span>
+                        </Link>
+
+                        <ul className="mt-2 space-y-1">
+                          {leaves.slice(0, MAX_LEAVES).map((leaf) => (
+                            <li key={leaf.slug}>
+                              <Link
+                                href={`/category/${leaf.slug}`}
+                                onClick={() => setOpen(false)}
+                                className="block truncate text-[13px] text-slate-500 transition hover:text-ocean-700"
+                              >
+                                {leaf.name}
+                              </Link>
+                            </li>
+                          ))}
+                          {leaves.length > MAX_LEAVES && (
+                            <li>
+                              <Link
+                                href={`/category/${group.slug}`}
+                                onClick={() => setOpen(false)}
+                                className="block text-[13px] font-bold text-ocean-700 hover:underline"
+                              >
+                                +{leaves.length - MAX_LEAVES} more →
+                              </Link>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              /* A department with only leaves — still a grid, not a list. */
+              <div className="max-h-[70vh] overflow-y-auto py-1">
+                {subcategories.map((child) => (
+                  <Link
+                    key={child.slug}
+                    href={`/category/${child.slug}`}
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2.5 px-5 py-2 text-sm text-slate-600 transition hover:bg-sand-50 hover:text-ocean-800"
+                  >
+                    <span className="text-base" aria-hidden>
+                      {child.icon}
+                    </span>
+                    <span className="truncate">{child.name}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -47,7 +47,10 @@ export function defaultSettings(storeSlug: string): ImportSettings {
     sheetIndex: 0,
     mapping: {},
     storeSlug,
-    rootSlug: "mens-fashion",
+    // No department by default — the wizard makes the seller choose, and
+    // the dry-run script takes one on the command line. Guessing menswear
+    // here is what filed a kitchenware catalogue under Men's Fashion.
+    rootSlug: "",
     mergeBasicLines: true,
     pricing: { ...DEFAULT_PRICING, markupByCategory: { ...DEFAULT_PRICING.markupByCategory } },
     // A supplier file is a receipt: the default has to ADD to the shelf.
@@ -221,6 +224,13 @@ export function analyse(
   const missing = mappingProblems(settings.mapping);
   if (missing.length > 0) {
     throw new Error(`Map these columns before continuing: ${missing.join(", ")}.`);
+  }
+
+  // Belt and braces behind the wizard's own check. Every category this
+  // import creates hangs off this slug, and an empty one would either be
+  // rejected by the foreign key or strand the whole branch at the root.
+  if (!settings.rootSlug) {
+    throw new Error("Choose the department this file should be filed under.");
   }
 
   const aggregated = aggregate(

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
 import { useReco } from "@/components/reco/RecoProvider";
@@ -112,7 +112,9 @@ export default function ProductView({
       <div>
         {images.length > 0 ? (
           <ZoomableImage
-            src={images[Math.min(activeImage, images.length - 1)]}
+            images={images}
+            index={Math.min(activeImage, images.length - 1)}
+            onIndexChange={setActiveImage}
             alt={product.name}
           />
         ) : (
@@ -132,13 +134,13 @@ export default function ProductView({
                 key={src}
                 onClick={() => setActiveImage(i)}
                 aria-label={`View photo ${i + 1}`}
-                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 transition ${
+                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-white transition ${
                   i === activeImage
                     ? "border-ocean-700"
-                    : "border-transparent hover:border-ocean-300"
+                    : "border-sand-200 hover:border-ocean-300"
                 }`}
               >
-                <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+                <Image src={src} alt="" fill sizes="80px" className="object-contain" />
               </button>
             ))}
           </div>
@@ -300,29 +302,83 @@ export default function ProductView({
 /**
  * Hover to magnify on desktop (the cursor position drives the zoom
  * origin), click to open a full-screen lightbox that works on touch too.
+ *
+ * ── object-CONTAIN, not object-cover ─────────────────────────────────────
+ * A supplier's photo is whatever shape the supplier shot it in — fashion
+ * comes portrait, kitchenware square. `object-cover` in a square frame
+ * fills the frame by cropping the difference off the top and bottom, which
+ * on a portrait shot of a person cuts their head off. There is no version
+ * of that which is acceptable on a page whose entire job is showing the
+ * customer what they are buying. The frame is padded instead, so the whole
+ * photo is always visible whatever its shape.
+ *
+ * ── The lightbox is a gallery, not a single image ────────────────────────
+ * It used to open the ONE photo you clicked, with a close button and
+ * nothing else — so seeing the seven photos of a shirt meant closing it,
+ * clicking the next thumbnail, and opening it again, seven times. It now
+ * carries the whole set: arrows, arrow keys, a swipe on touch, a counter
+ * and a thumbnail strip.
  */
-function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+function ZoomableImage({
+  images,
+  index,
+  onIndexChange,
+  alt,
+}: {
+  images: string[];
+  index: number;
+  onIndexChange: (next: number) => void;
+  alt: string;
+}) {
   const [origin, setOrigin] = useState("50% 50%");
   const [zooming, setZooming] = useState(false);
   const [lightbox, setLightbox] = useState(false);
+  const touchStartX = useRef<number | null>(null);
 
-  // Close the lightbox with Escape and stop the page scrolling behind it.
+  const src = images[index];
+  const many = images.length > 1;
+
+  // Wrap around: from the last photo, "next" returns to the first. A
+  // gallery that dead-ends at both edges feels broken on a phone.
+  const step = useCallback(
+    (delta: number) => {
+      if (images.length === 0) return;
+      onIndexChange((index + delta + images.length) % images.length);
+    },
+    [images.length, index, onIndexChange],
+  );
+
+  // Escape closes; arrows move. Bound while the lightbox is open only, so
+  // the keys still belong to the page the rest of the time.
   useEffect(() => {
     if (!lightbox) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setLightbox(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(false);
+      if (e.key === "ArrowRight") step(1);
+      if (e.key === "ArrowLeft") step(-1);
+    };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [lightbox]);
+  }, [lightbox, step]);
 
   function handleMove(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     setOrigin(`${x}% ${y}%`);
+  }
+
+  /** A horizontal drag of more than a thumb's width changes photo. */
+  function onTouchEnd(e: React.TouchEvent) {
+    const start = touchStartX.current;
+    touchStartX.current = null;
+    if (start === null) return;
+    const delta = e.changedTouches[0].clientX - start;
+    if (Math.abs(delta) > 50) step(delta < 0 ? 1 : -1);
   }
 
   return (
@@ -332,7 +388,9 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
         onMouseLeave={() => setZooming(false)}
         onMouseMove={handleMove}
         onClick={() => setLightbox(true)}
-        className="group relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-3xl bg-sand-100 shadow-sm"
+        onTouchStart={(e) => (touchStartX.current = e.touches[0].clientX)}
+        onTouchEnd={onTouchEnd}
+        className="group relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-sand-200"
       >
         <Image
           src={src}
@@ -340,12 +398,35 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
           fill
           sizes="(max-width: 1024px) 100vw, 50vw"
           priority
-          className="object-cover transition-transform duration-200 ease-out"
+          className="object-contain transition-transform duration-200 ease-out"
           style={{
             transform: zooming ? "scale(2)" : "scale(1)",
             transformOrigin: origin,
           }}
         />
+
+        {many && (
+          <>
+            <GalleryArrow
+              side="left"
+              onClick={(e) => {
+                e.stopPropagation();
+                step(-1);
+              }}
+            />
+            <GalleryArrow
+              side="right"
+              onClick={(e) => {
+                e.stopPropagation();
+                step(1);
+              }}
+            />
+            <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-semibold text-white">
+              {index + 1} / {images.length}
+            </span>
+          </>
+        )}
+
         <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
           🔍 Hover to zoom · click to expand
         </span>
@@ -357,20 +438,104 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
           aria-modal="true"
           aria-label={alt}
           onClick={() => setLightbox(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/92 p-4"
         >
           <button
             aria-label="Close"
-            className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-xl text-white transition hover:bg-white/25"
+            onClick={() => setLightbox(false)}
+            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-xl text-white transition hover:bg-white/25"
           >
             ✕
           </button>
-          <div className="relative h-full max-h-[85vh] w-full max-w-4xl">
+
+          {many && (
+            <span className="absolute left-4 top-6 text-sm font-semibold text-white/80">
+              {index + 1} / {images.length}
+            </span>
+          )}
+
+          {/* Stop the backdrop's close handler firing on the image itself. */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => (touchStartX.current = e.touches[0].clientX)}
+            onTouchEnd={onTouchEnd}
+            className="relative h-full max-h-[78vh] w-full max-w-4xl"
+          >
             <Image src={src} alt={alt} fill sizes="100vw" className="object-contain" />
+
+            {many && (
+              <>
+                <GalleryArrow
+                  side="left"
+                  large
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    step(-1);
+                  }}
+                />
+                <GalleryArrow
+                  side="right"
+                  large
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    step(1);
+                  }}
+                />
+              </>
+            )}
           </div>
+
+          {many && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1 rail-scroll"
+            >
+              {images.map((thumb, i) => (
+                <button
+                  key={thumb}
+                  onClick={() => onIndexChange(i)}
+                  aria-label={`Photo ${i + 1}`}
+                  aria-current={i === index}
+                  className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-white/10 ring-2 transition ${
+                    i === index ? "ring-white" : "ring-transparent hover:ring-white/40"
+                  }`}
+                >
+                  <Image src={thumb} alt="" fill sizes="64px" className="object-contain" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </>
+  );
+}
+
+/** The prev / next control, shared by the inline gallery and the lightbox. */
+function GalleryArrow({
+  side,
+  large = false,
+  onClick,
+}: {
+  side: "left" | "right";
+  large?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={side === "left" ? "Previous photo" : "Next photo"}
+      className={`absolute top-1/2 z-10 flex -translate-y-1/2 items-center justify-center rounded-full transition ${
+        side === "left" ? "left-2" : "right-2"
+      } ${
+        large
+          ? "h-12 w-12 bg-white/15 text-2xl text-white hover:bg-white/30"
+          : "h-9 w-9 bg-white/85 text-lg text-ocean-950 opacity-0 shadow-md hover:bg-white group-hover:opacity-100"
+      }`}
+    >
+      {side === "left" ? "‹" : "›"}
+    </button>
   );
 }
 

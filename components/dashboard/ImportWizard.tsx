@@ -77,7 +77,17 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
   const [pending, startTransition] = useTransition();
 
   const [settings, setSettings] = useState<Settings>({
-    rootSlug: "mens-fashion",
+    /*
+     * Deliberately EMPTY, not "mens-fashion".
+     *
+     * The old default was the department the first supplier file happened
+     * to be menswear. Every seller after that inherited it silently: a
+     * kitchenware import filed 102 categories — Cake Pans, Duvet Covers,
+     * Toasters — as children of Men's Fashion, and nothing on the screen
+     * ever said so. A wrong answer nobody was asked for is worse than no
+     * answer, so the wizard now requires the seller to pick.
+     */
+    rootSlug: "",
     mergeBasicLines: true,
     stockMode: "receive",
     overwriteDetails: false,
@@ -749,10 +759,12 @@ function SettingsStep({
           <label>
             <span className="label">File everything under</span>
             <select
-              className="input"
+              className={`input ${settings.rootSlug ? "" : "border-mango-400"}`}
               value={settings.rootSlug}
               onChange={(event) => set("rootSlug", event.target.value)}
+              required
             >
+              <option value="">— Choose a department —</option>
               {categories.map((category) => (
                 <option key={category.slug} value={category.slug}>
                   {"— ".repeat(category.depth)}
@@ -764,6 +776,13 @@ function SettingsStep({
               Your file&apos;s own categories become children of this one, and
               are created if they don&apos;t exist.
             </span>
+            {!settings.rootSlug && (
+              <span className="mt-1 block text-xs font-semibold text-mango-700">
+                Pick the department this file belongs to — kitchenware under
+                Home &amp; Living, clothing under a fashion department. Every
+                category the file creates is filed inside it.
+              </span>
+            )}
           </label>
 
           <Toggle
@@ -920,6 +939,10 @@ function SettingsStep({
         onBack={onBack}
         onNext={onNext}
         nextLabel="Preview the import"
+        // No department, no import. This is the one setting on the page
+        // that cannot be corrected afterwards without moving every
+        // category the file created by hand.
+        disabled={!settings.rootSlug}
         pending={pending}
       />
     </div>
