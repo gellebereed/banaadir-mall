@@ -22,10 +22,71 @@ const PERKS = [
   { icon: "📣", title: "Marketing boost", text: "Get featured in flash deals, category pages and the home page." },
 ];
 
+/**
+ * Why a seller was sent here from /vendor.
+ *
+ * Being bounced out of a dashboard with no explanation reads as a bug, and
+ * the seller's next move is to email support. Each case says what state the
+ * application is in and what happens next.
+ */
+const STATUS_NOTICES: Record<string, { icon: string; title: string; body: string; tone: string }> = {
+  pending: {
+    icon: "⏳",
+    title: "Your store is awaiting approval",
+    body: "We review new stores within 48 hours. As soon as yours is approved you'll be able to sign in and open your dashboard — there's nothing more you need to do.",
+    tone: "border-amber-300 bg-amber-50 text-amber-900",
+  },
+  rejected: {
+    icon: "❌",
+    title: "This application wasn't approved",
+    body: "If you think that's a mistake, or you'd like to apply again with more detail about your business, get in touch and we'll take another look.",
+    tone: "border-coral-500/40 bg-coral-100 text-coral-800",
+  },
+  suspended: {
+    icon: "⚠️",
+    title: "Your store is suspended",
+    body: "Dashboard access is paused while we look into something. Contact support and we'll get it resolved.",
+    tone: "border-coral-500/40 bg-coral-100 text-coral-800",
+  },
+  missing: {
+    icon: "🔎",
+    title: "We couldn't find your store",
+    body: "The store linked to your account no longer exists. Apply below and we'll get you set up again.",
+    tone: "border-sand-300 bg-sand-100 text-slate-700",
+  },
+};
+
 /** Seller landing page + store application form. */
-export default function SellPage() {
+export default async function SellPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const { status } = await searchParams;
+  const notice = status ? STATUS_NOTICES[status] : undefined;
+
   return (
     <div>
+      {notice && (
+        <div className="mx-auto max-w-3xl px-4 pt-6">
+          <div className={`rounded-2xl border-2 p-5 ${notice.tone}`}>
+            <p className="flex items-center gap-2 font-display font-extrabold">
+              <span aria-hidden>{notice.icon}</span>
+              {notice.title}
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed opacity-90">{notice.body}</p>
+            {status === "pending" && (
+              <Link
+                href="/help"
+                className="mt-3 inline-block text-sm font-bold underline underline-offset-2"
+              >
+                Contact support
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Hero */}
       <section className="bg-gradient-to-br from-ocean-950 via-ocean-800 to-ocean-600 px-4 py-16 text-center">
         <span className="inline-block rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-mango-300 ring-1 ring-white/20">

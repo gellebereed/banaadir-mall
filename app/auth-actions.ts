@@ -248,6 +248,22 @@ export async function signUpSeller(
 
   const storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+  /*
+   * The number they just gave us IS their WhatsApp number.
+   *
+   * Orders reach a seller over WhatsApp (see lib/whatsapp.ts). Leaving that
+   * field empty at registration meant every order for a new store went to
+   * the platform's fallback number until the owner happened to find the
+   * field in Settings — so the shop's first sales were routed away from the
+   * person who had to pack them. Asking for the same number twice, in two
+   * places, was never going to fix that.
+   *
+   * Normalised on the way in, because sellers write a phone number every
+   * possible way and a malformed one is a dead button.
+   */
+  const { normalizeWhatsAppNumber } = await import("@/lib/whatsapp");
+  const whatsapp = normalizeWhatsAppNumber(phone);
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
@@ -301,6 +317,8 @@ export async function signUpSeller(
           owner: ownerName,
           location: city || "Mogadishu",
           category: category || "general",
+          phone,
+          whatsapp,
           status: "pending",
         },
         { onConflict: "slug" }
@@ -322,6 +340,7 @@ export async function signUpSeller(
         tagline: about.slice(0, 100) || "Quality products & local service",
         city: city || "Mogadishu",
         category: category || "general",
+        whatsapp,
         icon: "🏪",
         art: { from: "#e0f2fe", to: "#bae6fd" },
         rating: 5.0,
@@ -334,6 +353,8 @@ export async function signUpSeller(
       });
     } else {
       existing.status = "pending";
+      // Re-applying updates the contact number too.
+      if (whatsapp) existing.whatsapp = whatsapp;
     }
   });
 

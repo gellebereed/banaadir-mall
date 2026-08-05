@@ -7,7 +7,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import OrderConfirmation, {
   type PlacedOrder,
   type PlacedParcel,
@@ -18,6 +18,17 @@ import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import type { CartLineRef } from "@/lib/reco/types";
 import { scopedKey } from "@/lib/storage-scope";
+import {
+  formatAddress,
+  makeDefault,
+  readAddresses,
+  removeAddress,
+  sortAddresses,
+  upsertAddress,
+  writeAddresses,
+  type SavedAddress,
+} from "@/lib/addresses";
+import type { CheckoutDefaults } from "@/app/checkout/page";
 import { groupByStore, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
 import type { MarketingSettings, Store } from "@/lib/types";
@@ -34,9 +45,12 @@ const PAYMENT_METHODS = [
 export default function CheckoutClient({
   settings,
   stores,
+  defaults,
 }: {
   settings: MarketingSettings;
   stores: Store[];
+  /** What the marketplace already knows — see app/checkout/page.tsx. */
+  defaults?: CheckoutDefaults;
 }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const { lines, subtotal, clearCart, scope } = useCart();
@@ -66,81 +80,198 @@ export default function CheckoutClient({
    */
   const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
 
-  // Delivery form states
-  const [name, setName] = useState("");
+  /*
+   * Delivery form, seeded from what we already know.
+   *
+   * The server supplies the account's name and email, plus the phone and
+   * city from their most recent order (app/checkout/page.tsx). A returning
+   * customer should arrive at a form that is already filled in — every
+   * field they have to retype is a place the order gets abandoned.
+   */
+  const [name, setName] = useState(defaults?.name ?? "");
   /**
    * Optional, and the reason it exists: an order is tied to the person who
    * placed it by email. Matching on name alone means every customer called
    * "Ahmed" shares an order history.
    */
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [countryCode, setCountryCode] = useState("SO");
-  const [city, setCity] = useState("Mogadishu (Xamar)");
+  const [email, setEmail] = useState(defaults?.email ?? "");
+  const [phone, setPhone] = useState(defaults?.phone ?? "");
+  const [countryCode, setCountryCode] = useState(defaults?.countryCode || "SO");
+  const [city, setCity] = useState(defaults?.city || "Mogadishu (Xamar)");
   const [customCity, setCustomCity] = useState("");
-  const [district, setDistrict] = useState("");
+  const [district, setDistrict] = useState(defaults?.district ?? "");
   const [notes, setNotes] = useState("");
 
   // Location detection states
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectStatus, setDetectStatus] = useState<string | null>(null);
+  const [detectTone, setDetectTone] = useState<"ok" | "warn" | "info">("info");
 
-  // Load saved delivery address on mount
+  // ── The address book ───────────────────────────────────────────────
+  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [activeAddressId, setActiveAddressId] = useState<string | null>(null);
+  /** True while entering details that aren't one of the saved addresses. */
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [saveLabel, setSaveLabel] = useState("");
+
+  const applyAddress = useCallback((address: SavedAddress) => {
+    setName(address.name);
+    setPhone(address.phone);
+    setCountryCode(address.countryCode);
+    setCity(address.city);
+    setCustomCity(address.customCity ?? "");
+    setDistrict(address.district ?? "");
+    setActiveAddressId(address.id);
+    setEditingAddress(false);
+  }, []);
+
+  /*
+   * Load the book on mount and whenever the account changes.
+   *
+   * A saved address wins over the server defaults: it is the more specific
+   * statement of where THIS delivery goes, and it is what the shopper
+   * chose last time. The old single-address key is migrated in on first
+   * run so nobody loses the address they already had.
+   */
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(addressKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.name) setName(parsed.name);
-        if (parsed.email) setEmail(parsed.email);
-        if (parsed.phone) setPhone(parsed.phone);
-        if (parsed.countryCode) setCountryCode(parsed.countryCode);
-        if (parsed.city) setCity(parsed.city);
-        if (parsed.customCity) setCustomCity(parsed.customCity);
-        if (parsed.district) setDistrict(parsed.district);
-      }
-    } catch {
-      // Ignore storage errors
-    }
-  }, [addressKey]);
+    let book = readAddresses(scope);
 
-  // Handle location auto-detection
+    if (book.length === 0) {
+      try {
+        const legacy = localStorage.getItem(addressKey);
+        if (legacy) {
+          const parsed = JSON.parse(legacy);
+          if (parsed?.city) {
+            book = upsertAddress([], {
+              label: "Home",
+              name: parsed.name ?? "",
+              phone: parsed.phone ?? "",
+              countryCode: parsed.countryCode ?? "SO",
+              city: parsed.city,
+              customCity: parsed.customCity,
+              district: parsed.district,
+              isDefault: true,
+            });
+            writeAddresses(scope, book);
+          }
+        }
+      } catch {
+        // A malformed legacy entry is not worth failing a checkout over.
+      }
+    }
+
+    const sorted = sortAddresses(book);
+    setAddresses(sorted);
+
+    if (sorted.length > 0) {
+      applyAddress(sorted[0]);
+    } else {
+      setEditingAddress(true);
+    }
+  }, [scope, addressKey, applyAddress]);
+
+  /**
+   * Fill in the delivery city from the device's location.
+   *
+   * ── What changed, and why it mattered ────────────────────────────────
+   * This used to ask an IP-geolocation service and report the answer as
+   * "✓ Location filled" — confirmed, done. Somali mobile traffic is routed
+   * through a handful of gateways that frequently resolve to the wrong
+   * city or the wrong country entirely, so a shopper in Hargeisa got
+   * "Mogadishu" stated as fact, and on a cash-on-delivery order that is a
+   * parcel driven to the wrong town.
+   *
+   * lib/detect-location.ts now asks the DEVICE first (GPS), and marks
+   * anything it isn't sure about as approximate. This function's job is to
+   * pass that uncertainty on honestly rather than launder it into a tick.
+   */
   async function handleAutoDetectLocation() {
     setIsDetecting(true);
-    setDetectStatus("Detecting location…");
+    setDetectTone("info");
+    setDetectStatus("Finding your location…");
 
     const loc = await detectUserLocation();
-
     setIsDetecting(false);
-    if (loc) {
-      // Find matching country code or default to SO
-      const matchedCountry = COUNTRIES.find((c) => c.code === loc.countryCode) ? loc.countryCode : "SO";
-      setCountryCode(matchedCountry);
 
-      if (matchedCountry === "SO") {
-        // Try to match Somali city
-        const somaliCities = SOMALI_REGIONS_CITIES.flatMap((r) => r.cities);
-        const match = somaliCities.find((c) => c.toLowerCase().includes(loc.city.toLowerCase()));
-        if (match) {
-          setCity(match);
-        } else {
-          setCity("Other");
-          setCustomCity(loc.city);
-        }
+    if (!loc) {
+      setDetectTone("warn");
+      setDetectStatus(
+        "Couldn't find your location. Allow location access in your browser, or just pick your city below.",
+      );
+      return;
+    }
+
+    const matchedCountry = COUNTRIES.find((c) => c.code === loc.countryCode)
+      ? loc.countryCode
+      : "SO";
+    setCountryCode(matchedCountry);
+
+    if (matchedCountry === "SO") {
+      const match = matchSomaliCity(loc.city);
+      if (match) {
+        setCity(match);
+        setCustomCity("");
       } else {
+        setCity("Other");
         setCustomCity(loc.city);
       }
-
-      if (loc.district) {
-        setDistrict(loc.district);
-      }
-
-      setDetectStatus(`✓ Location filled: ${loc.city}, ${loc.countryName}`);
-      setTimeout(() => setDetectStatus(null), 5000);
     } else {
-      setDetectStatus("⚠️ Could not auto-detect location. Please select manually.");
-      setTimeout(() => setDetectStatus(null), 4000);
+      setCustomCity(loc.city);
     }
+
+    // Never overwrite a district the customer typed themselves — theirs is
+    // the local knowledge, ours is a guess from a coordinate.
+    if (loc.district && !district.trim()) setDistrict(loc.district);
+
+    // Detected details describe a new place, so this is no longer the
+    // saved address that was selected.
+    setActiveAddressId(null);
+    setEditingAddress(true);
+
+    if (loc.source === "gps" && !loc.approximate) {
+      setDetectTone("ok");
+      setDetectStatus(`Found you in ${loc.city}. Check the district below before you order.`);
+    } else if (loc.source === "gps") {
+      setDetectTone("warn");
+      setDetectStatus(
+        `Roughly ${loc.city} — the signal was weak${loc.accuracyMeters ? ` (±${Math.round(loc.accuracyMeters / 1000)}km)` : ""}. Please confirm your city.`,
+      );
+    } else {
+      setDetectTone("warn");
+      setDetectStatus(
+        `Guessed ${loc.city || "your area"} from your connection — this is often wrong in Somalia. Please check it.`,
+      );
+    }
+  }
+
+  /**
+   * Match a detected city name to the dropdown.
+   *
+   * The old code used `dropdownCity.includes(detected)`, which matches on
+   * any fragment: a detected "Bari" quietly selected "Baridhaale". Exact
+   * match first, then a whole-word check, then nothing — leaving it blank
+   * and letting the customer choose is far better than choosing wrong.
+   */
+  function matchSomaliCity(detected: string): string | undefined {
+    const needle = detected.trim().toLowerCase();
+    if (!needle) return undefined;
+
+    const cities = SOMALI_REGIONS_CITIES.flatMap((region) => region.cities);
+
+    const exact = cities.find((c) => c.toLowerCase() === needle);
+    if (exact) return exact;
+
+    // "Mogadishu" should still find "Mogadishu (Xamar)".
+    const parenthesised = cities.find((c) => {
+      const base = c.toLowerCase().replace(/\s*\(.*\)\s*/, "").trim();
+      return base === needle;
+    });
+    if (parenthesised) return parenthesised;
+
+    return cities.find((c) => {
+      const words = c.toLowerCase().replace(/[()]/g, "").split(/\s+/);
+      return words.includes(needle);
+    });
   }
 
   const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
@@ -161,20 +292,27 @@ export default function CheckoutClient({
     const destinationCity = city === "Other" ? customCity : city;
     const fullAddress = `${district ? district + ", " : ""}${destinationCity}, ${selectedCountry.name}`;
 
-    // Save address to localStorage for future orders
+    /*
+     * File this address in the book.
+     *
+     * upsertAddress matches on the delivery details, so ordering to the
+     * same house every week keeps ONE entry rather than accumulating a
+     * list of near-identical ones. A label is only asked for when the
+     * customer chose to enter a new address.
+     */
     try {
-      localStorage.setItem(
-        addressKey,
-        JSON.stringify({
-          name,
-          email,
-          phone,
-          countryCode,
-          city,
-          customCity,
-          district,
-        })
-      );
+      const book = upsertAddress(readAddresses(scope), {
+        id: activeAddressId ?? undefined,
+        label: saveLabel.trim() || defaultLabel(district, destinationCity),
+        name,
+        phone,
+        countryCode,
+        city,
+        customCity,
+        district,
+        isDefault: addresses.length === 0,
+      });
+      writeAddresses(scope, book);
 
       // Save order to user's order history
       const existingUserOrders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
@@ -366,8 +504,116 @@ export default function CheckoutClient({
             </div>
 
             {detectStatus && (
-              <div className="mt-3 rounded-xl bg-emerald-50 px-3.5 py-2 text-xs font-medium text-emerald-800 border border-emerald-200 animate-fade-up">
+              <div
+                className={`mt-3 animate-fade-up rounded-xl border px-3.5 py-2 text-xs font-medium ${
+                  detectTone === "ok"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : detectTone === "warn"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-sand-200 bg-sand-50 text-slate-600"
+                }`}
+              >
                 {detectStatus}
+              </div>
+            )}
+
+            {/* ── Saved addresses ─────────────────────────────────── */}
+            {addresses.length > 0 && (
+              <div className="mt-4">
+                <p className="label">Deliver to</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {addresses.map((address) => {
+                    const selected = address.id === activeAddressId;
+                    return (
+                      <div
+                        key={address.id}
+                        className={`relative rounded-2xl border p-3 text-left transition ${
+                          selected
+                            ? "border-ocean-600 bg-ocean-50 ring-1 ring-ocean-600"
+                            : "border-sand-200 bg-white hover:border-ocean-300"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => applyAddress(address)}
+                          className="block w-full text-left"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-sm font-bold text-ocean-950">
+                              {address.label}
+                            </span>
+                            {address.isDefault && (
+                              <span className="rounded-full bg-ocean-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                                Default
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-slate-500">
+                            {address.name} · {address.phone}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-slate-400">
+                            {formatAddress(
+                              address,
+                              COUNTRIES.find((c) => c.code === address.countryCode)?.name ?? "",
+                            )}
+                          </span>
+                        </button>
+
+                        <div className="mt-2 flex gap-3 border-t border-sand-100 pt-2">
+                          {!address.isDefault && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = makeDefault(addresses, address.id);
+                                setAddresses(sortAddresses(next));
+                                writeAddresses(scope, next);
+                              }}
+                              className="text-[11px] font-semibold text-slate-400 transition hover:text-ocean-700"
+                            >
+                              Make default
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = removeAddress(addresses, address.id);
+                              setAddresses(sortAddresses(next));
+                              writeAddresses(scope, next);
+                              if (activeAddressId === address.id) {
+                                if (next.length > 0) applyAddress(sortAddresses(next)[0]);
+                                else setEditingAddress(true);
+                              }
+                            }}
+                            className="text-[11px] font-semibold text-slate-400 transition hover:text-coral-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveAddressId(null);
+                      setEditingAddress(true);
+                      setDistrict("");
+                      setCustomCity("");
+                      setSaveLabel("");
+                    }}
+                    className={`rounded-2xl border border-dashed p-3 text-left transition ${
+                      editingAddress
+                        ? "border-ocean-600 bg-ocean-50"
+                        : "border-sand-300 hover:border-ocean-400 hover:bg-sand-50"
+                    }`}
+                  >
+                    <span className="text-sm font-bold text-ocean-900">+ New address</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      Send this order somewhere else
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -525,6 +771,28 @@ export default function CheckoutClient({
                 />
               </div>
 
+              {/* Only asked when this is a NEW address. Naming an address
+                  you already have saved is a question with no purpose. */}
+              {(editingAddress || addresses.length === 0) && (
+                <div>
+                  <label htmlFor="saveLabel" className="label">
+                    Save this address as{" "}
+                    <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <input
+                    id="saveLabel"
+                    value={saveLabel}
+                    onChange={(e) => setSaveLabel(e.target.value)}
+                    placeholder="Home, The shop, Mum's place…"
+                    maxLength={30}
+                    className="input"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Saved on this device so you can pick it next time.
+                  </p>
+                </div>
+              )}
+
               <div className="sm:col-span-2">
                 <label htmlFor="notes" className="label">
                   Delivery notes <span className="font-normal text-slate-400">(optional)</span>
@@ -638,4 +906,17 @@ function StepTitle({ n, title }: { n: number; title: string }) {
       {title}
     </h2>
   );
+}
+
+/**
+ * A name for an address the customer didn't label.
+ *
+ * The district is what people actually use to distinguish places ("Hodan",
+ * "Waberi"), so it leads. Falling back to the city keeps the card readable
+ * rather than showing an empty title.
+ */
+function defaultLabel(district: string, city: string): string {
+  const cleanDistrict = district.trim();
+  if (cleanDistrict) return cleanDistrict;
+  return city.trim() || "My address";
 }

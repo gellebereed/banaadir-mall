@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { signUpCustomer, type AuthActionState } from "@/app/auth-actions";
+import RequiredMark from "@/components/RequiredMark";
 
 const INITIAL_STATE: AuthActionState = { error: null };
 
@@ -21,21 +22,37 @@ export default function RegisterPage() {
           code <strong className="text-mango-600">BANAADIR10</strong>.
         </p>
 
-        <form action={formAction} className="mt-6 space-y-4">
+        <p className="mt-4 text-xs text-slate-400">
+          Fields marked <RequiredMark /> are required.
+        </p>
+
+        <form action={formAction} className="mt-4 space-y-4">
           <div>
-            <label htmlFor="name" className="label">Full name</label>
+            <label htmlFor="name" className="label">
+              Full name
+              <RequiredMark />
+            </label>
             <input id="name" name="name" required placeholder="Ayaan Warsame" className="input" />
           </div>
           <div>
-            <label htmlFor="email" className="label">Email address</label>
+            <label htmlFor="email" className="label">
+              Email address
+              <RequiredMark />
+            </label>
             <input id="email" name="email" required type="email" placeholder="ayaan@banaadirmall.com" className="input" />
           </div>
           <div>
-            <label htmlFor="phone" className="label">Phone number</label>
+            <label htmlFor="phone" className="label">
+              Phone number
+              <RequiredMark />
+            </label>
             <input id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
           </div>
           <div>
-            <label htmlFor="password" className="label">Password</label>
+            <label htmlFor="password" className="label">
+              Password
+              <RequiredMark />
+            </label>
             <input id="password" name="password" required type="password" placeholder="At least 6 characters" className="input" />
           </div>
           {state.error && (

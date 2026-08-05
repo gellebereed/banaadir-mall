@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { signUpSeller, type AuthActionState } from "@/app/auth-actions";
+import RequiredMark from "@/components/RequiredMark";
 
 const INITIAL_STATE: AuthActionState = { error: null };
 
@@ -34,28 +35,49 @@ export default function StoreApplicationForm() {
 
   return (
     <form action={formAction} className="mt-6 grid gap-4 sm:grid-cols-2">
+      <p className="text-xs text-slate-400 sm:col-span-2">
+        Fields marked <RequiredMark /> are required.
+      </p>
       <div>
-        <label htmlFor="storeName" className="label">Store name</label>
+        <label htmlFor="storeName" className="label">
+          Store name
+          <RequiredMark />
+        </label>
         <input id="storeName" name="storeName" required placeholder="e.g. Hodan Electronics" className="input" />
       </div>
       <div>
-        <label htmlFor="ownerName" className="label">Owner name</label>
+        <label htmlFor="ownerName" className="label">
+          Owner name
+          <RequiredMark />
+        </label>
         <input id="ownerName" name="ownerName" required placeholder="Your full name" className="input" />
       </div>
       <div>
-        <label htmlFor="email" className="label">Email address</label>
+        <label htmlFor="email" className="label">
+          Email address
+          <RequiredMark />
+        </label>
         <input id="email" name="email" required type="email" placeholder="owner@store.com" className="input" />
       </div>
       <div>
-        <label htmlFor="password" className="label">Password</label>
+        <label htmlFor="password" className="label">
+          Password
+          <RequiredMark />
+        </label>
         <input id="password" name="password" required type="password" placeholder="At least 6 characters" className="input" />
       </div>
       <div>
-        <label htmlFor="phone" className="label">Phone (WhatsApp)</label>
+        <label htmlFor="phone" className="label">
+          Phone (WhatsApp)
+          <RequiredMark />
+        </label>
         <input id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
       </div>
       <div>
-        <label htmlFor="city" className="label">City</label>
+        <label htmlFor="city" className="label">
+          City
+          <RequiredMark />
+        </label>
         <input id="city" name="city" required placeholder="Mogadishu" className="input" />
       </div>
       <div className="sm:col-span-2">
