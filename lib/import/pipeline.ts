@@ -17,7 +17,7 @@
 
 import type { Product } from "../types.ts";
 import { aggregate, type AggregateResult, type ImportIssue } from "./aggregate.ts";
-import { DEFAULT_MIXED_GROUPINGS, rootForGender } from "./categories.ts";
+import { DEFAULT_MIXED_GROUPINGS, resolveCategory, rootForGender } from "./categories.ts";
 import { DEFAULT_PRICING, type PricingRules } from "./pricing.ts";
 import { buildPlan, type ImportPlan, type StockMode } from "./plan.ts";
 import {
@@ -133,6 +133,69 @@ function suggestRoot(table: SheetTable, mapping: ColumnMapping): string | undefi
     if (root) return root;
   }
   return undefined;
+}
+
+// ── Between the mapping and the settings screen ─────────────────────────
+
+export interface CategoryScan {
+  slug: string;
+  name: string;
+  /** Rows filed here — so the biggest categories can be priced first. */
+  rows: number;
+}
+
+/**
+ * The categories THIS file will create, resolved with the mapping the
+ * seller just confirmed.
+ *
+ * Exists so the markup panel can list them.
+ *
+ * ── Why that panel could not just use a constant ─────────────────────────
+ * It used to be seeded from DEFAULT_MARKUPS, a list of menswear slugs —
+ * shirts, suits, socks, bow-ties — written for the file this importer was
+ * built against. A kitchenware seller opening the wizard was therefore
+ * asked to set the markup on sixteen categories that had nothing to do
+ * with their file and did not exist in their store, while the categories
+ * their file actually creates — Vacuum Flasks, Candles, Lunch Boxes —
+ * were nowhere to be seen and silently took the global default.
+ *
+ * The panel's own caption already promised "these apply to the categories
+ * your file creates". This makes that true.
+ */
+export function scanCategories(
+  bytes: Buffer,
+  filename: string,
+  settings: Pick<ImportSettings, "sheetIndex" | "mapping" | "rootSlug" | "mergeBasicLines">,
+): CategoryScan[] {
+  const tables = readTables(bytes, filename);
+  const table = tables[settings.sheetIndex] ?? tables[0];
+  if (!table) return [];
+
+  const rules = {
+    rootSlug: settings.rootSlug,
+    mergeBasicLines: settings.mergeBasicLines,
+    mixedGroupings: DEFAULT_MIXED_GROUPINGS,
+  };
+
+  const categoryColumn = settings.mapping.category;
+  const familyColumn = settings.mapping.family;
+  if (categoryColumn === undefined && familyColumn === undefined) return [];
+
+  const found = new Map<string, CategoryScan>();
+  for (const row of table.rows) {
+    const resolved = resolveCategory(
+      categoryColumn === undefined ? undefined : row[categoryColumn],
+      familyColumn === undefined ? undefined : row[familyColumn],
+      rules,
+    );
+    if (!resolved) continue;
+
+    const existing = found.get(resolved.slug);
+    if (existing) existing.rows++;
+    else found.set(resolved.slug, { slug: resolved.slug, name: resolved.name, rows: 1 });
+  }
+
+  return [...found.values()].sort((a, b) => b.rows - a.rows || a.name.localeCompare(b.name));
 }
 
 // ── Stages 2–5 — the full analysis ──────────────────────────────────────

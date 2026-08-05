@@ -8,6 +8,7 @@ import { getSession } from "@/lib/session";
 import { Suspense } from "react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
 import Toaster from "@/components/Toaster";
@@ -70,6 +71,15 @@ export default async function RootLayout({
             storeName={store?.name}
             categories={categories}
           />
+          {/*
+            Shown only to the account an invitation was addressed to, so
+            being invited is something you find out inside the app rather
+            than only through a link somebody remembered to send you.
+            Renders nothing for everyone else — see the component.
+          */}
+          <Suspense fallback={null}>
+            <InvitationBanner />
+          </Suspense>
           {/* pb-20 keeps content clear of the mobile bottom nav */}
           <main className="flex-1 pb-20 md:pb-0">{children}</main>
           <Footer session={session} />

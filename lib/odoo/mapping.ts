@@ -391,10 +391,32 @@ export function validateProductCodes(product: Product): string[] {
 
   const seenBarcodes = new Map<string, string>();
   const seenReferences = new Map<string, string>();
-  if (barcode.value) seenBarcodes.set(barcode.value, "the product itself");
-  if (reference.value) seenReferences.set(reference.value, "the product itself");
 
-  (product.variants ?? []).forEach((variant, index) => {
+  /*
+   * ── A single-variant product IS its variant ──────────────────────────
+   *
+   * Odoo's product.template and product.product are two rows describing
+   * one thing whenever there is only one variant, and they carry the SAME
+   * default_code and the SAME barcode. That is not a duplicate; it is the
+   * shape of every product that does not come in colours and sizes.
+   *
+   * Seeding the "already used" maps with the template's own codes
+   * unconditionally treated that normal case as a collision, so an import
+   * of general goods — where every product has exactly one variant — failed
+   * on all 1,714 rows with "Reference DC2363 is on both variant 1 and the
+   * product itself". The codes were right. The check was wrong.
+   *
+   * With two or more variants the ambiguity is real: a template code that
+   * also sits on one specific variant makes a scan's answer depend on which
+   * row is read first. So the seeding is kept for that case only.
+   */
+  const variants = product.variants ?? [];
+  if (variants.length > 1) {
+    if (barcode.value) seenBarcodes.set(barcode.value, "the product itself");
+    if (reference.value) seenReferences.set(reference.value, "the product itself");
+  }
+
+  variants.forEach((variant, index) => {
     // A half-filled variant has no colour or size yet, and its generated id
     // ("vmsbz0mvx1") means nothing to the seller — point at the row instead.
     const label =

@@ -22,10 +22,11 @@ import {
   inspectUpload,
   previewImport,
   runImport,
+  scanFileCategories,
   type PreviewPayload,
   type PreviewProduct,
 } from "@/app/vendor/products/import/actions";
-import type { InspectResult } from "@/lib/import/pipeline";
+import type { CategoryScan, InspectResult } from "@/lib/import/pipeline";
 import {
   IMPORT_FIELDS,
   mappingProblems,
@@ -71,6 +72,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
   const [sheetIndex, setSheetIndex] = useState(0);
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
+  const [fileCategories, setFileCategories] = useState<CategoryScan[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -85,7 +87,10 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
     fxRate: 1,
     defaultMarkup: DEFAULT_PRICING.defaultMarkup,
     rounding: DEFAULT_PRICING.rounding,
-    markupByCategory: { ...DEFAULT_PRICING.markupByCategory },
+    // Empty, and filled from the file — see the scan on the way into
+    // Settings. Seeding it from DEFAULT_MARKUPS put another catalogue's
+    // categories in front of every seller.
+    markupByCategory: {},
   });
 
   const [progress, setProgress] = useState<{
@@ -164,6 +169,40 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
     // meaningless — re-detect rather than carry over columns by position.
     setMapping({});
     setError(null);
+  }
+
+  /**
+   * Step 2 → 3. The mapping is settled, so the file's own categories can
+   * be resolved and offered for pricing.
+   *
+   * Suggested markups are applied only where a category MATCHES one we
+   * have an opinion about — a store selling socks still gets 3.0 — and
+   * anything already typed by hand is left alone, so coming back from the
+   * review step does not discard the seller's numbers.
+   */
+  function loadCategories() {
+    const form = buildForm();
+    if (!form) return;
+    setError(null);
+    setStep(2);
+
+    startTransition(async () => {
+      const response = await scanFileCategories(form);
+      if (!response.ok) {
+        setError(response.error);
+        return;
+      }
+      setFileCategories(response.categories);
+      setSettings((s) => {
+        const markups = { ...s.markupByCategory };
+        for (const category of response.categories) {
+          if (markups[category.slug] !== undefined) continue;
+          const suggested = DEFAULT_PRICING.markupByCategory[category.slug];
+          if (suggested !== undefined) markups[category.slug] = suggested;
+        }
+        return { ...s, markupByCategory: markups };
+      });
+    });
   }
 
   // ── Step 3 → 4 ───────────────────────────────────────────────────
@@ -256,7 +295,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
           canContinue={canContinueFromColumns}
           problems={columnProblems}
           onBack={() => setStep(0)}
-          onNext={() => setStep(2)}
+          onNext={loadCategories}
         />
       )}
 
@@ -265,6 +304,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
           settings={settings}
           setSettings={setSettings}
           categories={categories}
+          fileCategories={fileCategories}
           pending={pending}
           onBack={() => setStep(1)}
           onNext={loadPreview}
@@ -660,6 +700,7 @@ function SettingsStep({
   settings,
   setSettings,
   categories,
+  fileCategories,
   pending,
   onBack,
   onNext,
@@ -667,6 +708,8 @@ function SettingsStep({
   settings: Settings;
   setSettings: (update: (s: Settings) => Settings) => void;
   categories: CategoryOption[];
+  /** The categories this file creates — what the markup panel asks about. */
+  fileCategories: CategoryScan[];
   pending: boolean;
   onBack: () => void;
   onNext: () => void;
@@ -785,40 +828,61 @@ function SettingsStep({
           </label>
         </div>
 
-        <details className="mt-4 rounded-xl bg-sand-50 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-ocean-950">
-            Markup per category ({Object.keys(settings.markupByCategory).length} set)
-          </summary>
-          <p className="mt-2 text-xs text-slate-500">
-            One multiplier cannot suit both socks and suits. These apply to the
-            categories your file creates; anything else uses the default.
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.entries(settings.markupByCategory)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([slug, value]) => (
-                <label key={slug} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 truncate text-slate-600">{slug}</span>
+        {/*
+          The categories in THIS file, not a fixed list.
+
+          A kitchenware seller was previously asked to price shirts, suits,
+          socks and bow-ties — sixteen menswear categories left over from
+          the file this importer was first written against — while Vacuum
+          Flasks and Lunch Boxes, which their file actually creates, were
+          absent and quietly took the global default.
+        */}
+        {fileCategories.length > 0 && (
+          <details className="mt-4 rounded-xl bg-sand-50 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-ocean-950">
+              Markup per category ({fileCategories.length} in this file)
+            </summary>
+            <p className="mt-2 text-xs text-slate-500">
+              One multiplier cannot suit everything in a catalogue. Any
+              category left at the default above uses it.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {fileCategories.map((category) => (
+                <label key={category.slug} className="flex items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate text-slate-600" title={category.name}>
+                    {category.name}
+                    <span className="ml-1 text-xs text-slate-400">({category.rows})</span>
+                  </span>
                   <input
                     className="input !w-20 !py-1.5 text-right"
                     type="number"
                     min="1"
                     step="0.1"
-                    value={value}
+                    aria-label={`Markup for ${category.name}`}
+                    value={settings.markupByCategory[category.slug] ?? settings.defaultMarkup}
                     onChange={(event) =>
                       setSettings((s) => ({
                         ...s,
                         markupByCategory: {
                           ...s.markupByCategory,
-                          [slug]: Number(event.target.value) || 1,
+                          [category.slug]: Number(event.target.value) || 1,
                         },
                       }))
                     }
                   />
                 </label>
               ))}
-          </div>
-        </details>
+            </div>
+          </details>
+        )}
+
+        {fileCategories.length === 0 && (
+          <p className="mt-4 rounded-xl bg-sand-50 px-4 py-3 text-xs text-slate-500">
+            This file has no category column mapped, so every product uses the
+            default markup above and is filed under the parent category you
+            picked.
+          </p>
+        )}
       </section>
 
       <section className="card p-6">

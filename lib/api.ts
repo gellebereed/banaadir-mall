@@ -457,6 +457,25 @@ export async function getEmployeeByEmail(email: string): Promise<Employee | null
   return all.find((e) => e.email.trim().toLowerCase() === clean) ?? null;
 }
 
+/**
+ * Invitations waiting for THIS person, and nobody else.
+ *
+ * The email is matched exactly, and it must come from the session — never
+ * from a query string, a form field, or anything else the caller can
+ * choose. An invitation carries a token that signs the holder straight
+ * into a store's dashboard, so a version of this that could be asked about
+ * an arbitrary address would hand out working credentials to whoever
+ * asked. That is the whole reason it takes one email and returns only
+ * exact matches rather than accepting any kind of filter.
+ */
+export async function getPendingInvitationsFor(email: string): Promise<Employee[]> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return [];
+  return (await getAllEmployees()).filter(
+    (e) => e.email.trim().toLowerCase() === clean && e.status !== "active",
+  );
+}
+
 /** The employee an invite link belongs to. */
 export async function getEmployeeByInviteToken(token: string): Promise<Employee | null> {
   const clean = token.trim();

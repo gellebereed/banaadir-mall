@@ -26,7 +26,14 @@ import { may } from "@/lib/auth";
 import { categoryIcon } from "@/lib/category-icons";
 import { mutateDB } from "@/lib/db";
 import { buildProduct } from "@/lib/import/build";
-import { analyse, defaultSettings, inspect, type ImportSettings } from "@/lib/import/pipeline";
+import {
+  analyse,
+  defaultSettings,
+  inspect,
+  scanCategories,
+  type CategoryScan,
+  type ImportSettings,
+} from "@/lib/import/pipeline";
 import { isSupportedFile } from "@/lib/import/workbook";
 import { validateProductCodes } from "@/lib/odoo/mapping";
 import { getSession } from "@/lib/session";
@@ -120,6 +127,27 @@ export async function inspectUpload(formData: FormData): Promise<InspectResponse
     await requireProductAccess();
     const { bytes, filename } = await readUpload(formData);
     return { ok: true, filename, result: inspect(bytes, filename) };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// ── Between the mapping and the settings screen ────────────────────────
+
+export type CategoryScanResponse =
+  | { ok: true; categories: CategoryScan[] }
+  | { ok: false; error: string };
+
+/**
+ * The categories the confirmed mapping will produce, so the Settings step
+ * can ask about markups for THOSE and nothing else.
+ */
+export async function scanFileCategories(formData: FormData): Promise<CategoryScanResponse> {
+  try {
+    const { storeSlug } = await requireProductAccess();
+    const { bytes, filename } = await readUpload(formData);
+    const settings = readSettings(formData, storeSlug);
+    return { ok: true, categories: scanCategories(bytes, filename, settings) };
   } catch (error) {
     return { ok: false, error: message(error) };
   }
