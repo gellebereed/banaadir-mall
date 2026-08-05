@@ -62,14 +62,26 @@ const PROBE_ID = "__banaadir_migration_probe__";
 async function singleVariantCodesPending() {
   await api(`products?id=eq.${PROBE_ID}`, { method: "DELETE" });
 
+  // `store` and `category` are foreign keys, so the probe has to borrow real
+  // ones — inventing "__probe__" made the insert fail on the FK before the
+  // trigger ever ran, and the probe reported "could not test" every time.
+  const [stores, categories] = await Promise.all([
+    api("stores?select=slug&limit=1").then((r) => (r.ok ? r.json() : [])),
+    api("categories?select=slug&limit=1").then((r) => (r.ok ? r.json() : [])),
+  ]);
+  if (!stores[0] || !categories[0]) {
+    console.warn("⚠️  No stores or categories yet — skipping the trigger check.");
+    return false;
+  }
+
   const response = await api("products", {
     method: "POST",
     body: JSON.stringify({
       id: PROBE_ID,
       slug: PROBE_ID,
-      store: "__probe__",
+      store: stores[0].slug,
       name: "Migration probe",
-      category: "__probe__",
+      category: categories[0].slug,
       price: 1,
       hidden: true,
       internal_reference: "PROBE-REF-1",

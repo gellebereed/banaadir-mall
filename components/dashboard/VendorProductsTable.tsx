@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
@@ -22,14 +22,20 @@ const TABS: { id: string; label: string; icon: string }[] = [
   { id: "no_photos", label: "No Photos", icon: "📸" },
 ];
 
+/** Rows shown at once. An imported catalogue is thousands of products. */
+const PAGE_SIZE = 50;
+
 export default function VendorProductsTable({
   products,
   discounts,
   mayEdit,
+  categoryNames = {},
 }: {
   products: Product[];
   discounts: Record<string, number>;
   mayEdit: boolean;
+  /** category slug → display name, so the filter reads like the shop does. */
+  categoryNames?: Record<string, string>;
 }) {
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState("all");
@@ -37,6 +43,28 @@ export default function VendorProductsTable({
   const [sortBy, setSortBy] = useState("default");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [page, setPage] = useState(1);
+
+  /*
+   * CATEGORY is the filter this list was missing.
+   *
+   * Only `subcategory` was filterable, and an imported catalogue does not
+   * set it — so on 1,688 kitchenware products the one dropdown on the page
+   * was empty, while the 100 real groupings (Cake Pans, Coffee Cups, Pots)
+   * had no filter at all. Categories are listed with their product counts
+   * and sorted by size, so the big ones are reachable first.
+   */
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of products) {
+      if (!p.category) continue;
+      counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([slug, count]) => ({ slug, count, name: categoryNames[slug] ?? slug }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [products, categoryNames]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   // Subcategories present in dataset
   const subcategories = Array.from(
@@ -55,46 +83,79 @@ export default function VendorProductsTable({
   };
 
   // Filter products
-  let filtered = products.filter((p) => {
-    // 1. Tab filter
-    if (activeTab === "live" && p.hidden) return false;
-    if (activeTab === "hidden" && !p.hidden) return false;
-    if (activeTab === "featured" && !p.featured) return false;
-    if (activeTab === "low_stock" && totalStock(p) > 15) return false;
-    if (activeTab === "no_photos" && (p.images?.length ?? 0) > 0) return false;
+  const filtered = useMemo(() => {
+    const list = products.filter((p) => {
+      // 1. Tab filter
+      if (activeTab === "live" && p.hidden) return false;
+      if (activeTab === "hidden" && !p.hidden) return false;
+      if (activeTab === "featured" && !p.featured) return false;
+      if (activeTab === "low_stock" && totalStock(p) > 15) return false;
+      if (activeTab === "no_photos" && (p.images?.length ?? 0) > 0) return false;
 
-    // 2. Subcategory filter
-    if (selectedSubcategory !== "all" && p.subcategory !== selectedSubcategory) return false;
+      // 2. Category / subcategory
+      if (selectedCategory !== "all" && p.category !== selectedCategory) return false;
+      if (selectedSubcategory !== "all" && p.subcategory !== selectedSubcategory) return false;
 
-    // 3. Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        p.name.toLowerCase().includes(q) ||
-        (p.internalReference && p.internalReference.toLowerCase().includes(q)) ||
-        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-        (p.subcategory && p.subcategory.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
+      // 3. Search query — matched against every code a seller might type,
+      // including the variant codes, which is what is on a scanner label.
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.slug.toLowerCase().includes(q) ||
+          (p.internalReference && p.internalReference.toLowerCase().includes(q)) ||
+          (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+          (p.subcategory && p.subcategory.toLowerCase().includes(q)) ||
+          (p.variants ?? []).some(
+            (v) =>
+              (v.sku && v.sku.toLowerCase().includes(q)) ||
+              (v.barcode && v.barcode.toLowerCase().includes(q)),
+          )
+        );
+      }
+      return true;
+    });
 
-  // Sort products
-  if (sortBy === "price_asc") filtered = [...filtered].sort((a, b) => a.price - b.price);
-  if (sortBy === "price_desc") filtered = [...filtered].sort((a, b) => b.price - a.price);
-  if (sortBy === "stock_asc") filtered = [...filtered].sort((a, b) => totalStock(a) - totalStock(b));
-  if (sortBy === "stock_desc") filtered = [...filtered].sort((a, b) => totalStock(b) - totalStock(a));
-  if (sortBy === "name_asc") filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "price_asc") return [...list].sort((a, b) => a.price - b.price);
+    if (sortBy === "price_desc") return [...list].sort((a, b) => b.price - a.price);
+    if (sortBy === "stock_asc") return [...list].sort((a, b) => totalStock(a) - totalStock(b));
+    if (sortBy === "stock_desc") return [...list].sort((a, b) => totalStock(b) - totalStock(a));
+    if (sortBy === "name_asc") return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  }, [products, activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
 
-  // Selection handlers
+  /*
+   * PAGINATION.
+   *
+   * Rendering 1,688 rows put ~20,000 DOM nodes on the page: every keystroke
+   * in the search box re-rendered all of them, and the browser scrolled
+   * like treacle. The batch toolbar still works across the WHOLE filtered
+   * set, not just this page — see "select all matching" below — so paging
+   * costs nothing operationally.
+   */
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // Any change to what is being filtered puts you back on page one —
+  // otherwise a search returning 3 results while you sit on page 12 shows
+  // an empty table.
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
+
+  // Selection handlers. "All" means every row that matches the filters,
+  // across pages — the checkbox in the header covers this page only.
   const allFilteredIds = filtered.map((p) => p.id);
-  const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.includes(id));
+  const visibleIds = visible.map((p) => p.id);
+  const isAllSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const selectedBeyondPage = selectedIds.length > visibleIds.length;
 
   function toggleSelectAll() {
     if (isAllSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !allFilteredIds.includes(id)));
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...allFilteredIds])));
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   }
 
@@ -178,8 +239,23 @@ export default function VendorProductsTable({
           })}
         </div>
 
-        {/* ── Controls: Search, Subcategory & Sort ─────────────────── */}
+        {/* ── Controls: Search, Category, Subcategory & Sort ───────── */}
         <div className="flex flex-wrap items-center gap-2">
+          {categories.length > 1 && (
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="max-w-52 rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none"
+            >
+              <option value="all">All categories ({products.length})</option>
+              {categories.map((category) => (
+                <option key={category.slug} value={category.slug}>
+                  {category.name} ({category.count})
+                </option>
+              ))}
+            </select>
+          )}
+
           {subcategories.length > 0 && (
             <select
               value={selectedSubcategory}
@@ -231,6 +307,20 @@ export default function VendorProductsTable({
             <span className="text-xs font-bold">
               {selectedIds.length === 1 ? "1 product" : `${selectedIds.length} products`} selected
             </span>
+            {/*
+              Batch actions have to be able to reach the whole result set.
+              Publishing 1,688 imported products 50 at a time is not a
+              workflow anyone would finish.
+            */}
+            {!selectedBeyondPage && filtered.length > visibleIds.length && (
+              <button
+                type="button"
+                onClick={() => setSelectedIds(allFilteredIds)}
+                className="text-xs font-bold text-mango-400 underline hover:text-mango-300"
+              >
+                Select all {filtered.length} matching
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -347,7 +437,7 @@ export default function VendorProductsTable({
                   </td>
                 </tr>
               ) : (
-                filtered.map((p) => {
+                visible.map((p) => {
                   const isSelected = selectedIds.includes(p.id);
                   return (
                     <tr
@@ -534,6 +624,45 @@ export default function VendorProductsTable({
             </tbody>
           </table>
         </div>
+
+        {/* ── Pager ──────────────────────────────────────────────── */}
+        {filtered.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sand-200 bg-sand-50/60 px-4 py-3">
+            <p className="text-xs text-slate-500">
+              Showing{" "}
+              <strong className="text-slate-700">
+                {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filtered.length)}
+              </strong>{" "}
+              of <strong className="text-slate-700">{filtered.length}</strong>
+              {filtered.length !== products.length && ` (filtered from ${products.length})`}
+            </p>
+
+            {pageCount > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  ← Previous
+                </button>
+                <span className="text-xs font-semibold text-slate-600">
+                  Page {currentPage} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage(currentPage + 1)}
+                  disabled={currentPage === pageCount}
+                  className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

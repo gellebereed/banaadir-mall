@@ -265,6 +265,38 @@ export default async function EditProductPage({
             </div>
           </section>
 
+          {/* ── Visibility ───────────────────────────────────────── */}
+          <section>
+            <h2 className="mb-3 font-display font-bold text-ocean-950">
+              👁️ Visibility
+            </h2>
+            {/*
+              A SELECT, not a checkbox.
+
+              An unticked checkbox sends nothing at all, so "hide this" and
+              "the field wasn't on the form" arrive identically — and this
+              action also serves forms that do not include it. Two explicit
+              values remove the guesswork.
+            */}
+            <label htmlFor="visibility" className="label">
+              Where this product appears
+            </label>
+            <select
+              id="visibility"
+              name="visibility"
+              defaultValue={product.hidden ? "hidden" : "live"}
+              className="input"
+            >
+              <option value="live">🟢 Live — customers can find and buy it</option>
+              <option value="hidden">👁️ Hidden — only visible to you</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-400">
+              {photos.length === 0
+                ? "This product has no photo yet. It can still go live, but it will show a placeholder in the shop."
+                : "Hidden products keep their stock, price and history — they just leave the storefront."}
+            </p>
+          </section>
+
           <div className="flex flex-wrap gap-3">
             <SubmitButton className="btn-primary flex-1">Save Changes</SubmitButton>
             <Link href={`/product/${product.slug}`} className="btn-secondary">

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { bulkImportPhotos } from "@/app/actions";
-import PhotoPicker from "@/components/dashboard/PhotoPicker";
+import BulkPhotoForm from "@/components/dashboard/BulkPhotoForm";
 import ProductImage from "@/components/ProductImage";
 import { getBaseProductsByStore } from "@/lib/api";
 import { may } from "@/lib/auth";
@@ -21,6 +20,16 @@ export default async function VendorPhotosPage() {
 
   const products = await getBaseProductsByStore(storeSlug);
   const missing = products.filter((p) => (p.images?.length ?? 0) === 0);
+
+  // Show the shortest real filename this catalogue accepts. For an imported
+  // catalogue that is a barcode or product code, not a 90-character slug.
+  const sample = missing[0] ?? products[0];
+  const example =
+    sample?.variants?.[0]?.barcode ??
+    sample?.barcode ??
+    sample?.internalReference ??
+    sample?.slug ??
+    "product-code";
 
   return (
     <div>
@@ -60,34 +69,27 @@ export default async function VendorPhotosPage() {
         <h2 className="font-display font-bold text-ocean-950">📥 Import photos</h2>
         <ol className="mt-3 space-y-1.5 text-sm text-slate-600">
           <li>
-            <strong>1.</strong> Name each file after its product id, e.g.{" "}
+            <strong>1.</strong> Name each file after the product&apos;s{" "}
+            <strong>barcode</strong>, its <strong>product code</strong>, or its
+            page name — whichever your photos already use. For example{" "}
             <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
-              {products[0]?.slug ?? "product-id"}.jpg
+              {example}.jpg
             </code>
           </li>
           <li>
             <strong>2.</strong> For extra photos of the same product, add a
-            suffix:{" "}
+            number:{" "}
             <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
-              {products[0]?.slug ?? "product-id"}-2.jpg
+              {example}-2.jpg
             </code>
           </li>
           <li>
-            <strong>3.</strong> Select them all below and import. Files that
-            don&apos;t match a product id are skipped.
+            <strong>3.</strong> Select them all below and import. Any file that
+            matches no product is listed back to you afterwards.
           </li>
         </ol>
 
-        <form action={bulkImportPhotos} className="mt-4 space-y-4">
-          <PhotoPicker name="photos" label="Select many photos at once" />
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" name="replace" className="h-4 w-4 accent-ocean-700" />
-            Replace existing photos instead of adding to them
-          </label>
-          <button type="submit" className="btn-primary">
-            Import Photos
-          </button>
-        </form>
+        <BulkPhotoForm />
       </div>
 
       {/* Products still missing photos, with their exact file names */}
@@ -109,7 +111,13 @@ export default async function VendorPhotosPage() {
                   <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
                   <p className="truncate text-xs text-slate-400">
                     name the file{" "}
-                    <code className="rounded bg-sand-100 px-1 py-0.5">{p.slug}.jpg</code>
+                    <code className="rounded bg-sand-100 px-1 py-0.5">
+                      {(p.variants?.[0]?.barcode ??
+                        p.barcode ??
+                        p.internalReference ??
+                        p.slug)}
+                      .jpg
+                    </code>
                   </p>
                 </div>
                 <Link

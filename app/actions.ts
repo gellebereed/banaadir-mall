@@ -361,6 +361,18 @@ export async function updateProduct(formData: FormData): Promise<void> {
     defaultVariantId,
   };
 
+  /*
+   * Visibility, only when the form actually asked about it.
+   *
+   * Absent means "this form has no visibility control", which must leave
+   * the product exactly as it was — not silently publish 1,688 hidden
+   * products, and not silently hide a live one.
+   */
+  const visibility = formData.get("visibility");
+  if (visibility !== null) {
+    updatedFields.hidden = String(visibility) === "hidden";
+  }
+
   // Validate against the catalogue before writing. Photos have already been
   // uploaded at this point, but they are only referenced by this product —
   // a rejected save leaves them orphaned in storage, which is far cheaper
@@ -555,62 +567,193 @@ export async function createProduct(formData: FormData): Promise<void> {
   redirect("/vendor/products");
 }
 
+export interface BulkPhotoState {
+  ok: boolean;
+  message: string;
+  /** Products that gained photos. */
+  matched: number;
+  /** Photos actually stored. */
+  uploaded: number;
+  /** Filenames that matched nothing, so they can be renamed and retried. */
+  skipped: string[];
+  /** Products whose write failed after the upload succeeded. */
+  failed: string[];
+}
+
+/**
+ * Every string that can name a product in a filename.
+ *
+ * ── Why this is more than the slug ───────────────────────────────────────
+ * Matching only on slug is fine for a hand-built catalogue and useless for
+ * an imported one. An import generates slugs like
+ *
+ *   70-piece-fine-porcelain-dinner-set-luxury-white-dinnerware-with-
+ *   elegant-gold-pattern-full-serving-set-for-6-guests-xk-25119
+ *
+ * and nobody names a photo that. What the photos ARE named after, in every
+ * supplier media pack, is the barcode or the internal reference — which
+ * the catalogue already stores. So those are matched too, and a whole
+ * upload no longer silently matches nothing.
+ */
+function photoKeysFor(product: Product): string[] {
+  const keys = [product.id, product.slug, product.internalReference, product.barcode];
+  for (const variant of product.variants ?? []) {
+    keys.push(variant.sku, variant.barcode);
+  }
+  return keys
+    .filter((key): key is string => typeof key === "string" && key.trim() !== "")
+    .map((key) => key.trim().toLowerCase());
+}
+
+/** A filename stem, and the same stem with a photo-order suffix removed. */
+function filenameCandidates(filename: string): string[] {
+  const stem = filename.replace(/\.[^.]+$/, "").trim().toLowerCase();
+  // "ref-2", "ref_2", "ref (2)", "ref-copy" — the ways people number a
+  // second shot of the same thing.
+  const withoutSuffix = stem
+    .replace(/[\s_-]*\(\d+\)$/, "")
+    .replace(/[\s_-]+(?:copy|\d{1,3})$/, "")
+    .trim();
+  return withoutSuffix && withoutSuffix !== stem ? [stem, withoutSuffix] : [stem];
+}
+
 /**
  * Bulk photo import: attach many photos to many products in one go.
  *
- * Each file is matched to a product by its FILENAME:
- *   uspa-pique-polo.jpg      → product "uspa-pique-polo"
- *   uspa-pique-polo-2.jpg    → second photo of the same product
- * Unmatched files are reported back so nothing fails silently.
+ * Files are matched to a product by filename — its id, slug, internal
+ * reference, barcode, or any of its variants' codes — with an optional
+ * `-2` style suffix for extra shots of the same product.
+ *
+ * ── It reports what happened ─────────────────────────────────────────────
+ * This used to return void and, when nothing matched, return EARLY and
+ * silently. Uploading 40 photos and being shown the same screen with no
+ * message, no error and no photos is indistinguishable from the feature
+ * being broken. Every file is now accounted for in the result.
  */
-export async function bulkImportPhotos(formData: FormData): Promise<void> {
-  const session = await requirePermission("photos.manage");
-  const files = filesFrom(formData, "photos");
-  const products = await getBaseProducts();
-  const replace = formData.get("replace") === "on";
+export async function bulkImportPhotos(
+  _prev: BulkPhotoState,
+  formData: FormData,
+): Promise<BulkPhotoState> {
+  const empty = { matched: 0, uploaded: 0, skipped: [], failed: [] };
+  try {
+    const session = await requirePermission("photos.manage");
+    const files = filesFrom(formData, "photos");
+    const replace = formData.get("replace") === "on";
 
-  // productId -> newly uploaded URLs, in filename order.
-  const additions = new Map<string, string[]>();
-
-  for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
-    const stem = file.name.replace(/\.[^.]+$/, "").toLowerCase();
-    // Longest matching slug wins, so "uspa-polo-2" maps to "uspa-polo".
-    const match = products
-      .filter((p) => stem === p.slug || stem.startsWith(`${p.slug}-`))
-      .sort((a, b) => b.slug.length - a.slug.length)[0];
-    if (!match) continue;
-    if (session.role !== "admin" && match.store !== session.store) continue;
-
-    const [url] = await saveImages([file], "products");
-    if (!url) continue;
-    additions.set(match.id, [...(additions.get(match.id) ?? []), url]);
-  }
-
-  if (additions.size === 0) return;
-
-  if (useSupabaseMutations()) {
-    for (const [productId, urls] of additions) {
-      const existing = replace
-        ? []
-        : (products.find((p) => p.id === productId)?.images ?? []);
-      await updateProductFields(productId, { images: [...existing, ...urls] });
+    if (files.length === 0) {
+      return { ok: false, message: "Choose some photos first.", ...empty };
     }
-  } else {
-    await mutateDB((db) => {
-      for (const [productId, urls] of additions) {
-        const existing = replace
-          ? []
-          : (db.productOverrides[productId]?.images ??
-             products.find((p) => p.id === productId)?.images ??
-             []);
-        db.productOverrides[productId] = {
-          ...db.productOverrides[productId],
-          images: [...existing, ...urls],
-        };
+
+    const products = (await getBaseProducts()).filter(
+      (p) => session.role === "admin" || p.store === session.store,
+    );
+
+    // key → product. First writer wins, and products are indexed in a
+    // stable order, so a code shared by two products resolves the same way
+    // on every run rather than depending on upload order.
+    const byKey = new Map<string, Product>();
+    for (const product of products) {
+      for (const key of photoKeysFor(product)) {
+        if (!byKey.has(key)) byKey.set(key, product);
       }
-    });
+    }
+    const slugs = products
+      .map((p) => p.slug.toLowerCase())
+      .sort((a, b) => b.length - a.length);
+
+    const additions = new Map<string, string[]>();
+    const skipped: string[] = [];
+    let uploaded = 0;
+
+    for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+      let match: Product | undefined;
+      for (const candidate of filenameCandidates(file.name)) {
+        match = byKey.get(candidate);
+        if (match) break;
+        // Fall back to the old prefix rule, which also catches "slug-detail".
+        const slug = slugs.find((s) => candidate.startsWith(`${s}-`));
+        if (slug) {
+          match = byKey.get(slug);
+          if (match) break;
+        }
+      }
+
+      if (!match) {
+        skipped.push(file.name);
+        continue;
+      }
+
+      const [url] = await saveImages([file], "products");
+      if (!url) {
+        skipped.push(file.name);
+        continue;
+      }
+      uploaded++;
+      additions.set(match.id, [...(additions.get(match.id) ?? []), url]);
+    }
+
+    const failed: string[] = [];
+
+    if (useSupabaseMutations()) {
+      for (const [productId, urls] of additions) {
+        const product = products.find((p) => p.id === productId);
+        const existing = replace ? [] : (product?.images ?? []);
+        // Checked, unlike before: a rejected write left the photo in
+        // storage and the product still empty, with nobody told.
+        const saved = await updateProductFields(productId, {
+          images: [...existing, ...urls],
+        });
+        if (!saved) failed.push(product?.name ?? productId);
+      }
+    } else {
+      await mutateDB((db) => {
+        for (const [productId, urls] of additions) {
+          const existing = replace
+            ? []
+            : (db.productOverrides[productId]?.images ??
+              products.find((p) => p.id === productId)?.images ??
+              []);
+          db.productOverrides[productId] = {
+            ...db.productOverrides[productId],
+            images: [...existing, ...urls],
+          };
+        }
+      });
+    }
+
+    refresh();
+
+    const matched = additions.size - failed.length;
+    const parts: string[] = [];
+    if (matched > 0) {
+      parts.push(
+        `${uploaded} photo${uploaded === 1 ? "" : "s"} added to ${matched} product${matched === 1 ? "" : "s"}.`,
+      );
+    }
+    if (failed.length > 0) {
+      parts.push(`${failed.length} could not be saved.`);
+    }
+    if (skipped.length > 0) {
+      parts.push(
+        `${skipped.length} file${skipped.length === 1 ? "" : "s"} matched no product.`,
+      );
+    }
+
+    return {
+      ok: matched > 0 && failed.length === 0,
+      message: parts.join(" ") || "Nothing to do.",
+      matched,
+      uploaded,
+      skipped,
+      failed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not import those photos.",
+      ...empty,
+    };
   }
-  refresh();
 }
 
 // ── Store profile / branding ───────────────────────────────────────────

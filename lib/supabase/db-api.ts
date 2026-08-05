@@ -19,6 +19,48 @@ export { isSupabaseConfigured };
 
 const DEFAULT_ART = { from: "#e0f2fe", to: "#bae6fd" };
 
+/**
+ * PostgREST returns at most 1,000 rows per request, whatever you ask for.
+ * Pages are this big; the last short page ends the loop.
+ */
+const PAGE_SIZE = 1000;
+
+/**
+ * Read an ENTIRE table, not the first thousand rows of it.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ * `.select("*")` looks like it returns everything and does not: PostgREST
+ * caps every response at its `max-rows` setting, which is 1,000 by default,
+ * and reports no error when it truncates. That is invisible on a demo
+ * catalogue and catastrophic the moment a real one arrives — a supplier
+ * import took this marketplace to 1,793 products, and 793 of them silently
+ * ceased to exist. Not hidden, not out of stock: absent from the storefront,
+ * absent from search, and absent from the seller's own dashboard, with
+ * every count on every page quietly wrong.
+ *
+ * Anything that reads a whole table has to page. A truncated read is worse
+ * than a failed one, because nothing about it looks like a failure.
+ */
+async function fetchAllRows<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[] | null> {
+  const rows: T[] = [];
+  for (let page = 0; ; page++) {
+    const from = page * PAGE_SIZE;
+    const { data, error } = await query(from, from + PAGE_SIZE - 1);
+    if (error || !data) return null;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) return rows;
+
+    // A table that never returns a short page would loop forever. Far more
+    // rows than this marketplace will hold, and still a bounded loop.
+    if (page > 200) {
+      console.warn("[Supabase] stopped paging after 200 pages — is a table unbounded?");
+      return rows;
+    }
+  }
+}
+
 /** Stands in for "seen long ago" — see the seenAt mapping in orders. */
 const EPOCH = new Date(0).toISOString();
 
@@ -70,7 +112,9 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("stores").select("*");
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("stores").select("*").range(from, to),
+    );
     /*
      * An EMPTY table is an answer, not a failure.
      *
@@ -80,7 +124,7 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
      * watched every demo product and store reappear, with no way to reach
      * zero. Only a real error or a missing response falls back now.
      */
-    if (error || !data) return null;
+    if (!data) return null;
     return data.map((s) => ({
       slug: s.slug,
       name: s.name,
@@ -128,8 +172,10 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("categories").select("*");
-    if (error || !data || data.length === 0) return null;
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("categories").select("*").range(from, to),
+    );
+    if (!data || data.length === 0) return null;
     const mapped = data.map((c) => {
       const taglineRaw = c.description || "";
       const isHidden = Boolean(c.hidden) || taglineRaw.startsWith("[HIDDEN]");
@@ -210,7 +256,9 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("products").select("*");
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("products").select("*").range(from, to),
+    );
     /*
      * An EMPTY table is an answer, not a failure.
      *
@@ -220,7 +268,7 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
      * watched every demo product and store reappear, with no way to reach
      * zero. Only a real error or a missing response falls back now.
      */
-    if (error || !data) return null;
+    if (!data) return null;
     return data.map((p) => ({
       id: p.id,
       slug: p.slug,
@@ -272,12 +320,14 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("orders").select("*");
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("orders").select("*").range(from, to),
+    );
     // `null` means "no answer" (unconfigured or failed) — only then should
     // the caller fall back to demo data. An EMPTY table is a real answer:
     // this shop has no orders yet. Treating the two the same made a
     // freshly-cleared database repopulate the dashboard with fake orders.
-    if (error || !data) return null;
+    if (!data) return null;
     return data.map((o) => ({
       id: o.id,
       date: o.date,
@@ -310,8 +360,10 @@ async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("promotions").select("*");
-    if (error || !data) return null;
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("promotions").select("*").range(from, to),
+    );
+    if (!data) return null;
     return data.map((p) => ({
       id: p.id,
       store: p.store,
@@ -332,8 +384,10 @@ async function fetchEmployeesFromSupabaseRaw(): Promise<Employee[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const supabase = getPublicClient();
-    const { data, error } = await supabase.from("employees").select("*");
-    if (error || !data) return null;
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("employees").select("*").range(from, to),
+    );
+    if (!data) return null;
     return data.map((e) => ({
       id: e.id,
       store: e.store,

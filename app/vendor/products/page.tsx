@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import VendorProductsTable from "@/components/dashboard/VendorProductsTable";
-import { getBaseProductsByStore, getDiscountMap } from "@/lib/api";
+import { getBaseProductsByStore, getCategories, getDiscountMap } from "@/lib/api";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
@@ -19,10 +19,14 @@ export default async function VendorProductsPage() {
   const { session, storeSlug } = await requireVendor();
   // Base prices, so sellers always see and edit their own numbers rather
   // than the temporarily discounted ones customers are charged.
-  const [products, discounts] = await Promise.all([
+  const [products, discounts, categories] = await Promise.all([
     getBaseProductsByStore(storeSlug),
     getDiscountMap(storeSlug),
+    // Hidden ones included: a product can sit in a category the shopper
+    // cannot browse to, and the seller still needs to filter by it.
+    getCategories(true),
   ]);
+  const categoryNames = Object.fromEntries(categories.map((c) => [c.slug, c.name]));
   const mayEdit = may(session, "products.edit");
   const discountedCount = Object.keys(discounts).length;
 
@@ -91,6 +95,7 @@ export default async function VendorProductsPage() {
         products={products}
         discounts={discounts}
         mayEdit={mayEdit}
+        categoryNames={categoryNames}
       />
     </div>
   );
