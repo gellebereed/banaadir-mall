@@ -55,6 +55,21 @@ export async function signIn(
           access: metadata.access || undefined,
         };
 
+        if (role === "seller" && metadata.store) {
+          const { getStore } = await import("@/lib/api");
+          const store = await getStore(metadata.store);
+          if (store && store.status === "pending") {
+            return {
+              error: `⏳ Your store application for "${store.name}" is currently awaiting admin review. Once approved, you will be able to access your store dashboard.`,
+            };
+          }
+          if (store && (store.status === "suspended" || store.status === "rejected")) {
+            return {
+              error: `❌ Your store application for "${store.name}" is currently inactive or suspended. Please contact support.`,
+            };
+          }
+        }
+
         const cookieStore = await cookies();
         cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
           path: "/",
@@ -87,8 +102,20 @@ export async function signIn(
     if (slug) {
       const { getStore } = await import("@/lib/api");
       const store = await getStore(slug);
-      if (store && store.status === "active") {
-        session = { name: store.name, email, role: "seller", store: store.slug };
+      if (store) {
+        if (store.status === "pending") {
+          return {
+            error: `⏳ Your store application for "${store.name}" is currently awaiting admin review. Once approved, you will be able to access your store dashboard.`,
+          };
+        }
+        if (store.status === "suspended" || store.status === "rejected") {
+          return {
+            error: `❌ Your store account for "${store.name}" is currently inactive or suspended.`,
+          };
+        }
+        if (store.status === "active") {
+          session = { name: store.name, email, role: "seller", store: store.slug };
+        }
       }
     }
   }

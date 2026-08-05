@@ -31,6 +31,65 @@ export default async function VendorLayout({
     .filter((o) => !o.seenAt)
     .sort((a, b) => b.id.localeCompare(a.id));
 
+  // If seller's store is pending admin approval, block dashboard access and show notice
+  if (session.role !== "admin" && store?.status === "pending") {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-3xl border-2 border-amber-300 bg-amber-50/80 p-8 shadow-sm animate-fade-up">
+          <span className="text-5xl">⏳</span>
+          <h1 className="mt-4 font-display text-2xl font-extrabold text-amber-950">
+            Store Application Pending Review
+          </h1>
+          <p className="mt-2 text-sm text-amber-900 font-medium">
+            Your store application for <strong className="text-amber-950">&quot;{store.name}&quot;</strong> has been received and is currently undergoing review by the Banaadir Mall administration team.
+          </p>
+          <div className="mt-6 rounded-2xl bg-white p-4 text-xs text-slate-600 border border-amber-200/80 text-left space-y-2">
+            <p>• <strong>Status:</strong> <span className="text-amber-700 font-bold uppercase">Pending Approval</span></p>
+            <p>• <strong>Location:</strong> {store.city}</p>
+            <p>• <strong>Submitted:</strong> {store.joinedYear ? `Year ${store.joinedYear}` : "Recently"}</p>
+          </div>
+          <p className="mt-6 text-xs text-slate-500">
+            Once an admin approves your store in the control panel, your product management dashboard will unlock automatically.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <a
+              href="/"
+              className="rounded-full bg-amber-600 px-6 py-2.5 text-xs font-bold text-white transition hover:bg-amber-700"
+            >
+              Return to Mall
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If seller's store is suspended or rejected, block dashboard access
+  if (session.role !== "admin" && store && (store.status === "suspended" || store.status === "rejected")) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-3xl border-2 border-coral-300 bg-coral-50/80 p-8 shadow-sm">
+          <span className="text-5xl">❌</span>
+          <h1 className="mt-4 font-display text-2xl font-extrabold text-coral-950">
+            Store Account Inactive
+          </h1>
+          <p className="mt-2 text-sm text-coral-900">
+            The store application for <strong className="text-coral-950">&quot;{store.name}&quot;</strong> is currently inactive or has been suspended.
+          </p>
+          <p className="mt-4 text-xs text-slate-500">
+            If you believe this is an error, please contact Banaadir Mall merchant support.
+          </p>
+          <a
+            href="/"
+            className="mt-6 inline-block rounded-full bg-ocean-800 px-6 py-2.5 text-xs font-bold text-white transition hover:bg-ocean-900"
+          >
+            Return to Storefront
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row">
       <aside className="lg:w-56 lg:shrink-0">
