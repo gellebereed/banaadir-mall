@@ -134,13 +134,13 @@ export default function ProductView({
                 key={src}
                 onClick={() => setActiveImage(i)}
                 aria-label={`View photo ${i + 1}`}
-                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-white transition ${
+                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 transition ${
                   i === activeImage
                     ? "border-ocean-700"
-                    : "border-sand-200 hover:border-ocean-300"
+                    : "border-transparent hover:border-ocean-300"
                 }`}
               >
-                <Image src={src} alt="" fill sizes="80px" className="object-contain" />
+                <Image src={src} alt="" fill sizes="80px" className="object-cover" />
               </button>
             ))}
           </div>
@@ -303,14 +303,18 @@ export default function ProductView({
  * Hover to magnify on desktop (the cursor position drives the zoom
  * origin), click to open a full-screen lightbox that works on touch too.
  *
- * ── object-CONTAIN, not object-cover ─────────────────────────────────────
+ * ── The inline frame CROPS; only the lightbox letterboxes ────────────────
  * A supplier's photo is whatever shape the supplier shot it in — fashion
- * comes portrait, kitchenware square. `object-cover` in a square frame
- * fills the frame by cropping the difference off the top and bottom, which
- * on a portrait shot of a person cuts their head off. There is no version
- * of that which is acceptable on a page whose entire job is showing the
- * customer what they are buying. The frame is padded instead, so the whole
- * photo is always visible whatever its shape.
+ * comes portrait, kitchenware square — so a square frame can either crop
+ * the difference or pad it. This was briefly switched to `object-contain`
+ * to stop a portrait shot losing the top of the model's head, and that
+ * cure was worse than the disease: a tall photo in a square frame becomes
+ * a narrow strip between two broad white bars, and the product ends up
+ * smaller and cheaper-looking on the page than the crop ever made it.
+ *
+ * So the frame crops, and the LIGHTBOX is where the whole photo is shown
+ * uncropped — which is now one click away and properly navigable, rather
+ * than the dead end it used to be.
  *
  * ── The lightbox is a gallery, not a single image ────────────────────────
  * It used to open the ONE photo you clicked, with a close button and
@@ -390,7 +394,7 @@ function ZoomableImage({
         onClick={() => setLightbox(true)}
         onTouchStart={(e) => (touchStartX.current = e.touches[0].clientX)}
         onTouchEnd={onTouchEnd}
-        className="group relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-sand-200"
+        className="group relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-3xl bg-sand-100 shadow-sm"
       >
         <Image
           src={src}
@@ -398,7 +402,7 @@ function ZoomableImage({
           fill
           sizes="(max-width: 1024px) 100vw, 50vw"
           priority
-          className="object-contain transition-transform duration-200 ease-out"
+          className="object-cover transition-transform duration-200 ease-out"
           style={{
             transform: zooming ? "scale(2)" : "scale(1)",
             transformOrigin: origin,
@@ -500,7 +504,7 @@ function ZoomableImage({
                     i === index ? "ring-white" : "ring-transparent hover:ring-white/40"
                   }`}
                 >
-                  <Image src={thumb} alt="" fill sizes="64px" className="object-contain" />
+                  <Image src={thumb} alt="" fill sizes="64px" className="object-cover" />
                 </button>
               ))}
             </div>

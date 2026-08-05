@@ -95,15 +95,13 @@ export default function ProductCard({ product }: { product: Product }) {
     >
       <Link href={`/product/${product.slug}`} className="block">
         {mainImage ? (
-          <div className="relative aspect-square w-full overflow-hidden bg-white">
+          <div className="relative aspect-square w-full overflow-hidden bg-sand-100">
             <Image
               src={mainImage}
               alt={product.name}
               fill
               sizes="(max-width: 768px) 50vw, 25vw"
-              // contain, not cover: a portrait fashion shot in a square
-              // tile was having its top and bottom cropped off.
-              className="object-contain transition-opacity duration-300"
+              className="object-cover transition-opacity duration-300"
             />
 
             {/* Which photo of how many — only while it is actually moving. */}
