@@ -5,7 +5,7 @@ import { bulkImportPhotos } from "@/app/actions";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import ProductImage from "@/components/ProductImage";
 import { getBaseProductsByStore } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Bulk Photos" };
@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Bulk Photos" };
  */
 export default async function VendorPhotosPage() {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "photos.manage")) redirect("/vendor");
 
   const products = await getBaseProductsByStore(storeSlug);
   const missing = products.filter((p) => (p.images?.length ?? 0) === 0);

@@ -32,8 +32,20 @@ import {
 } from "@/lib/order-utils";
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp";
 import { recordEvent, sameCourier } from "@/lib/delivery";
-import { can, type AccessArea, type Session } from "@/lib/auth";
+import {
+  can,
+  may,
+  parsePermissions,
+  PERMISSIONS_BY_KEY,
+  type AccessArea,
+  type Session,
+} from "@/lib/auth";
 import { mutateDB } from "@/lib/db";
+import {
+  MIGRATION_REQUIRED,
+  newInviteToken,
+  saveEmployeeChange,
+} from "@/lib/employees";
 import { getSession } from "@/lib/session";
 import type {
   Banner,
@@ -43,6 +55,7 @@ import type {
   Order,
   OrderStatus,
   ParcelDelivery,
+  Permission,
   Product,
   ProductStory,
   RecoSettings,
@@ -102,6 +115,20 @@ async function requireAccess(area: AccessArea): Promise<Session> {
   if (!session || session.role === "customer") redirect("/login");
   if (!can(session, area)) {
     throw new Error(`Your account does not have "${area}" access.`);
+  }
+  return session;
+}
+
+/**
+ * The finer check, for the actions where "can edit products" is too blunt
+ * an answer — deleting one is not the same act as renaming it.
+ */
+async function requirePermission(permission: Permission): Promise<Session> {
+  const session = await getSession();
+  if (!session || session.role === "customer") redirect("/login");
+  if (!may(session, permission)) {
+    const label = PERMISSIONS_BY_KEY[permission]?.label ?? permission;
+    throw new Error(`Your account is not allowed to: ${label}.`);
   }
   return session;
 }
@@ -451,7 +478,9 @@ export async function batchUpdateProducts(
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  const session = await requireAccess("products");
+  // Deleting is its own permission: someone who maintains prices and stock
+  // all day does not thereby need to be able to erase the catalogue.
+  const session = await requirePermission("products.delete");
   const product = await getBaseProduct(id);
   if (!product) return;
   assertOwnsStore(session, product.store);
@@ -535,7 +564,7 @@ export async function createProduct(formData: FormData): Promise<void> {
  * Unmatched files are reported back so nothing fails silently.
  */
 export async function bulkImportPhotos(formData: FormData): Promise<void> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("photos.manage");
   const files = filesFrom(formData, "photos");
   const products = await getBaseProducts();
   const replace = formData.get("replace") === "on";
@@ -601,7 +630,7 @@ export async function updateStoreSettings(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("settings.manage");
   const storeSlug =
     session.role === "admin"
       ? String(formData.get("store") ?? "sahra-fashion")
@@ -659,7 +688,7 @@ export async function createPromotion(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("promotions.manage");
   const storeSlug =
     session.role === "seller" && session.store ? session.store : "sahra-fashion";
   const pct = Math.min(90, Math.max(1, Number(formData.get("pct"))));
@@ -719,7 +748,7 @@ export async function createPromotion(
 }
 
 export async function togglePromotion(id: string): Promise<void> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("promotions.manage");
 
   if (useSupabaseMutations()) {
     // We need to read the current state to toggle it
@@ -741,7 +770,7 @@ export async function togglePromotion(id: string): Promise<void> {
 }
 
 export async function deletePromotion(id: string): Promise<void> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("promotions.manage");
 
   if (useSupabaseMutations()) {
     const { fetchPromotionsFromSupabase } = await import("@/lib/supabase/db-api");
@@ -931,6 +960,27 @@ export async function toggleStoreOfficial(slug: string): Promise<void> {
 
 // ── Team / employees ───────────────────────────────────────────────────
 
+/**
+ * The grants a Team form is asking for.
+ *
+ * An unticked box sends nothing, so "role defaults" and "everything
+ * unticked" would look identical in FormData. A hidden `permissions-set`
+ * marker distinguishes them: present means the boxes were shown and the
+ * answer is exactly what came back, absent means fall back to the role.
+ */
+function permissionsFromForm(formData: FormData): Permission[] | undefined {
+  if (!formData.has("permissions-set")) return undefined;
+  return parsePermissions(formData.getAll("permissions").map(String));
+}
+
+/**
+ * Invite somebody onto the team.
+ *
+ * They land as `pending` with an invite token. The owner shares the link;
+ * opening it, or signing in with the shared password, flips them to
+ * `active`. Nothing here sends an email — there is no mail provider wired
+ * up, and pretending otherwise would be worse than saying so on the page.
+ */
 export async function addEmployee(formData: FormData): Promise<void> {
   const session = await requireAccess("team");
   const storeSlug =
@@ -939,42 +989,106 @@ export async function addEmployee(formData: FormData): Promise<void> {
       : session.store!;
 
   const email = String(formData.get("email")).trim().toLowerCase();
+
+  // One account per person. Without this the second invite wins some reads
+  // and loses others, and which store they land in becomes a coin toss.
+  const { getEmployeeByEmail } = await import("@/lib/api");
+  if (await getEmployeeByEmail(email)) {
+    throw new Error(`${email} is already on a team. Remove them there first.`);
+  }
+
   const emp = {
     id: "emp-" + Date.now().toString(36),
     store: storeSlug,
     name: String(formData.get("name")).trim(),
     email,
     role: String(formData.get("role")) as EmployeeRole,
+    permissions: permissionsFromForm(formData),
+    status: "pending" as const,
+    inviteToken: newInviteToken(),
+    invitedAt: new Date().toISOString(),
   };
 
-  const supabaseOk = await insertEmployee(emp);
-  if (!supabaseOk) {
+  const result = await insertEmployee(emp);
+  if (!result.ok) {
     await mutateDB((db) => {
       if (db.employees.some((e) => e.email.toLowerCase() === email)) return;
       db.employees.push(emp);
     });
   }
   refresh();
+
+  // The person IS on the team either way — this only reports that their
+  // invite link and custom permissions had nowhere to be stored, which the
+  // owner needs to know before they go looking for a link that isn't there.
+  if (result.ok && result.droppedColumns) throw new Error(MIGRATION_REQUIRED);
+}
+
+/** Change one person's role and exact grants. */
+export async function updateEmployeeAccess(id: string, formData: FormData): Promise<void> {
+  const session = await requireAccess("team");
+  const employee = await requireManageableEmployee(session, id);
+
+  const role = String(formData.get("role") ?? employee.role) as EmployeeRole;
+  const permissions = permissionsFromForm(formData) ?? [];
+
+  const result = await saveEmployeeChange(employee, { role, permissions });
+  if (!result.ok) throw new Error("Could not save that access change.");
+  if (result.droppedColumns) throw new Error(MIGRATION_REQUIRED);
+  refresh();
+}
+
+/**
+ * Issue a new invite link, invalidating the old one.
+ *
+ * Does double duty: it is "resend" for an invite that got lost, and it is
+ * the only way to REVOKE one — the previous URL stops working the moment
+ * this runs, which matters when a link has been forwarded somewhere it
+ * should not have been.
+ */
+export async function resetInviteLink(id: string): Promise<void> {
+  const session = await requireAccess("team");
+  const employee = await requireManageableEmployee(session, id);
+
+  const result = await saveEmployeeChange(employee, {
+    inviteToken: newInviteToken(),
+    invitedAt: new Date().toISOString(),
+    status: "pending",
+    acceptedAt: null,
+  });
+  // An invite link that silently was not stored is the worst outcome here:
+  // the owner sends nothing and believes they sent something.
+  if (!result.ok) throw new Error(result.droppedColumns ? MIGRATION_REQUIRED : "Could not create an invite link.");
+  refresh();
+}
+
+/** The employee this session is allowed to administer, or an error. */
+async function requireManageableEmployee(session: Session, id: string) {
+  const { getAllEmployees } = await import("@/lib/api");
+  const employee = (await getAllEmployees()).find((e) => e.id === id);
+  if (!employee) throw new Error("That team member no longer exists.");
+  if (session.role !== "admin") assertOwnsStore(session, employee.store);
+  return employee;
 }
 
 export async function removeEmployee(id: string): Promise<void> {
   const session = await requireAccess("team");
+  await requireManageableEmployee(session, id);
 
-  if (useSupabaseMutations()) {
-    const { fetchEmployeesFromSupabase } = await import("@/lib/supabase/db-api");
-    const employees = await fetchEmployeesFromSupabase();
-    const employee = employees?.find((e) => e.id === id);
-    if (!employee) return;
-    if (session.role !== "admin") assertOwnsStore(session, employee.store);
-    await deleteEmployeeFromSupabase(id);
-  } else {
-    await mutateDB((db) => {
-      const employee = db.employees.find((e) => e.id === id);
-      if (!employee) return;
-      if (session.role !== "admin") assertOwnsStore(session, employee.store);
-      db.employees = db.employees.filter((e) => e.id !== id);
-    });
-  }
+  /*
+   * Delete from BOTH stores, unconditionally.
+   *
+   * This used to pick one based on whether Supabase was configured, which
+   * meant a row written to the JSON overlay during an outage could not be
+   * removed once Supabase came back — the remove button reported success
+   * and the person kept their access. Removing someone's access is exactly
+   * the operation that must not depend on guessing where they are.
+   */
+  if (useSupabaseMutations()) await deleteEmployeeFromSupabase(id);
+  await mutateDB((db) => {
+    db.employees = db.employees.filter((e) => e.id !== id);
+  });
+
   refresh();
 }
 
@@ -1715,7 +1829,7 @@ export async function requestFlashDeal(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("promotions.manage");
   const storeSlug =
     session.role === "seller" && session.store ? session.store : "sahra-fashion";
 
@@ -1795,7 +1909,7 @@ export async function decideFlashRequest(
 }
 
 export async function withdrawFlashRequest(id: string): Promise<void> {
-  const session = await requireAccess("products");
+  const session = await requirePermission("promotions.manage");
   await mutateDB((db) => {
     const request = db.flashRequests.find((r) => r.id === id);
     if (!request) return;

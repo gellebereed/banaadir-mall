@@ -419,6 +419,32 @@ export interface Promotion {
 
 export type EmployeeRole = "manager" | "products" | "orders" | "marketing" | "viewer";
 
+/**
+ * One thing a team member may do.
+ *
+ * Roles are presets over this list, not a replacement for it. Five fixed
+ * roles could not express the case every shop actually has — "let Hodan
+ * edit products but never see what we paid for them" — so the role picks a
+ * starting set and the owner adjusts it per person from there.
+ */
+export type Permission =
+  | "products.view"
+  | "products.edit"
+  | "products.import"
+  | "products.delete"
+  | "orders.view"
+  | "orders.manage"
+  | "promotions.manage"
+  | "photos.manage"
+  | "settings.manage"
+  | "team.manage"
+  | "marketing.manage"
+  /** See cost price, margin and stock value. Off by default for everyone. */
+  | "costs.view";
+
+/** Where an invited team member is in the journey from invite to account. */
+export type EmployeeStatus = "pending" | "active";
+
 /** A team member of a store (or of the platform when store === "platform"). */
 export interface Employee {
   id: string;
@@ -427,6 +453,18 @@ export interface Employee {
   name: string;
   email: string;
   role: EmployeeRole;
+  /**
+   * Explicit grants. Absent means "whatever the role implies" — which is
+   * what every employee added before this existed gets, so nobody's access
+   * changed the day it shipped.
+   */
+  permissions?: Permission[];
+  /** "pending" until they open their invite; "active" afterwards. */
+  status?: EmployeeStatus;
+  /** The secret in their invite link. Rotating it invalidates the old one. */
+  inviteToken?: string;
+  invitedAt?: string;
+  acceptedAt?: string;
 }
 
 /** A full-width promotional banner in the home-page carousel. */

@@ -3,6 +3,7 @@ import Image from "next/image";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import OrderNotifications from "@/components/dashboard/OrderNotifications";
 import { getOrdersByStore, getStore } from "@/lib/api";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -126,16 +127,46 @@ export default async function VendorLayout({
             </div>
             <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
           </div>
+          {/*
+            Only the tabs this person can actually open.
+
+            Every page behind these enforces its own access, so showing them
+            all was never a security hole — it was worse than that in daily
+            use: an employee clicking Team, Settings and Promotions in turn
+            and being bounced back to the dashboard each time, with nothing
+            saying why.
+          */}
           <DashboardSidebar
             items={[
               { href: "/vendor", icon: "📊", label: "Dashboard", exact: true },
-              { href: "/vendor/products", icon: "📦", label: "Products" },
-              { href: "/vendor/photos", icon: "📸", label: "Bulk Photos" },
-              { href: "/vendor/orders", icon: "🧾", label: "Orders", badge: newOrders.length },
-              { href: "/vendor/promotions", icon: "🏷️", label: "Promotions" },
-              { href: "/vendor/flash", icon: "⚡", label: "Flash Deals" },
-              { href: "/vendor/team", icon: "👥", label: "Team" },
-              { href: "/vendor/settings", icon: "⚙️", label: "Settings" },
+              ...(may(session, "products.view")
+                ? [{ href: "/vendor/products", icon: "📦", label: "Products" }]
+                : []),
+              ...(may(session, "photos.manage")
+                ? [{ href: "/vendor/photos", icon: "📸", label: "Bulk Photos" }]
+                : []),
+              ...(may(session, "orders.view")
+                ? [
+                  {
+                    href: "/vendor/orders",
+                    icon: "🧾",
+                    label: "Orders",
+                    badge: newOrders.length,
+                  },
+                ]
+                : []),
+              ...(may(session, "promotions.manage")
+                ? [
+                  { href: "/vendor/promotions", icon: "🏷️", label: "Promotions" },
+                  { href: "/vendor/flash", icon: "⚡", label: "Flash Deals" },
+                ]
+                : []),
+              ...(may(session, "team.manage")
+                ? [{ href: "/vendor/team", icon: "👥", label: "Team" }]
+                : []),
+              ...(may(session, "settings.manage")
+                ? [{ href: "/vendor/settings", icon: "⚙️", label: "Settings" }]
+                : []),
             ]}
           />
         </div>

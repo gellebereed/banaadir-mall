@@ -24,6 +24,7 @@ import {
   summariseSales,
 } from "@/lib/analytics";
 import { getAllProductsByStore, getCategories, getOrdersByStore, getStore } from "@/lib/api";
+import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
 import { totalStock } from "@/lib/product-utils";
 import { requireVendor } from "@/lib/session";
@@ -63,7 +64,8 @@ export default async function VendorDashboardPage({
   const tab = TABS.some((t) => t.key === params.tab) ? params.tab! : "sales";
   const period = resolvePeriod(range);
 
-  const { storeSlug } = await requireVendor();
+  const { session, storeSlug } = await requireVendor();
+  const seesCosts = may(session, "costs.view");
   const [store, orders, products, categories] = await Promise.all([
     getStore(storeSlug),
     getOrdersByStore(storeSlug),
@@ -404,30 +406,50 @@ export default async function VendorDashboardPage({
             <h3 className="font-display font-bold text-ocean-950">What your stock is worth</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <MiniStat label="Units on hand" value={String(health.stockUnits)} />
-              <MiniStat
-                label="At cost"
-                value={money(health.stockAtCost)}
-                note={
-                  health.costKnownFor < health.total
-                    ? `cost known for ${health.costKnownFor} of ${health.total}`
-                    : "all products"
-                }
-              />
+              {/*
+                Cost and margin are behind `costs.view`, which no role grants
+                by default. Everything else on this page is about what the
+                shop sells; these two are about what the owner pays, and an
+                employee with no reason to know it should not learn it from
+                a dashboard tile.
+              */}
+              {seesCosts && (
+                <MiniStat
+                  label="At cost"
+                  value={money(health.stockAtCost)}
+                  note={
+                    health.costKnownFor < health.total
+                      ? `cost known for ${health.costKnownFor} of ${health.total}`
+                      : "all products"
+                  }
+                />
+              )}
               <MiniStat label="At retail" value={money(health.stockAtRetail)} tone="good" />
-              <MiniStat
-                label="Potential margin"
-                value={health.potentialMargin === null ? "—" : money(health.potentialMargin)}
-                note={
-                  health.potentialMargin === null
-                    ? "no cost recorded yet"
-                    : `on the ${health.costKnownFor} products with a cost`
-                }
-              />
+              {seesCosts && (
+                <MiniStat
+                  label="Potential margin"
+                  value={health.potentialMargin === null ? "—" : money(health.potentialMargin)}
+                  note={
+                    health.potentialMargin === null
+                      ? "no cost recorded yet"
+                      : `on the ${health.costKnownFor} products with a cost`
+                  }
+                />
+              )}
             </div>
             <Footnote>
-              Cost comes from imported supplier files and is never shown to
-              customers. Margin is calculated only across products that have
-              one — counting the rest would report their full price as profit.
+              {seesCosts ? (
+                <>
+                  Cost comes from imported supplier files and is never shown to
+                  customers. Margin is calculated only across products that have
+                  one — counting the rest would report their full price as profit.
+                </>
+              ) : (
+                <>
+                  Retail value only. Cost price and profit are not part of your
+                  access — ask the store owner if you need them.
+                </>
+              )}
             </Footnote>
           </div>
 

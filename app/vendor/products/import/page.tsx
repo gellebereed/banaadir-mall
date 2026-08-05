@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import ImportWizard from "@/components/dashboard/ImportWizard";
 import { getCategoriesFlat } from "@/lib/api";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Import products" };
@@ -14,7 +15,29 @@ export const metadata: Metadata = { title: "Import products" };
  * indented, and including hidden categories, which are still valid parents.
  */
 export default async function ImportProductsPage() {
-  await requireVendor();
+  const { session } = await requireVendor();
+
+  // Matched by the same check in ./actions.ts. This one only saves the
+  // person a wasted upload — the action is what actually enforces it.
+  if (!may(session, "products.import") || !may(session, "costs.view")) {
+    return (
+      <div className="card mx-auto max-w-lg p-8 text-center">
+        <span className="text-4xl">🔒</span>
+        <h1 className="mt-3 font-display text-xl font-extrabold text-ocean-950">
+          You cannot import supplier files
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Importing works from supplier cost prices, so it needs both the
+          import and the &ldquo;see cost price &amp; profit&rdquo; permissions.
+          Ask the store owner if you need them.
+        </p>
+        <Link href="/vendor/products" className="btn-primary mt-6 inline-block">
+          Back to products
+        </Link>
+      </div>
+    );
+  }
+
   const categories = await getCategoriesFlat(true);
 
   return (

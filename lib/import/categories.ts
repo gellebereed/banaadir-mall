@@ -140,12 +140,42 @@ export function resolveCategory(
   };
 }
 
-/** Uppercase, de-accented, punctuation-flattened — the comparison form. */
+/**
+ * Groupings that are structure, not merchandising.
+ *
+ * Odoo ships every database with an "All" category and puts "Saleable"
+ * under it, so an export's Product Category column is full of rows saying
+ * nothing more than "this is a product". Left alone they become a
+ * storefront category called "Alls" containing whatever the supplier had
+ * not filed yet.
+ */
+const STRUCTURAL_GROUPINGS = new Set([
+  "ALL", "ALLS", "SALEABLE", "SALABLE", "EXPENSES", "CONSUMABLE",
+  "NONE", "N A", "NA", "UNCATEGORIZED", "UNCATEGORISED", "GENEL", "DIGER",
+]);
+
+/**
+ * Uppercase, de-accented, punctuation-flattened — the comparison form.
+ *
+ * Odoo writes a category as its full path ("All / Saleable / Kitchenware"),
+ * so the leaf is taken and the structural ancestors above it are dropped.
+ * A path that is nothing BUT structure resolves to no category at all,
+ * which leaves the product in the seller's chosen root instead of in a
+ * category named after Odoo's plumbing.
+ */
 function normalizeGrouping(raw: string | undefined): string {
-  return deturkify(cleanText(raw))
-    .toUpperCase()
-    .replace(/[^A-Z0-9&]+/g, " ")
-    .trim();
+  const flatten = (value: string) =>
+    deturkify(value)
+      .toUpperCase()
+      .replace(/[^A-Z0-9&]+/g, " ")
+      .trim();
+
+  const segments = cleanText(raw)
+    .split("/")
+    .map(flatten)
+    .filter((segment) => segment && !STRUCTURAL_GROUPINGS.has(segment));
+
+  return segments[segments.length - 1] ?? "";
 }
 
 /** "BASIC SHIRT" → "SHIRT"; "PREMIUM SUIT" → "SUIT". */

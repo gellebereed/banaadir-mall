@@ -22,7 +22,7 @@ import { DEFAULT_PRICING, type PricingRules } from "./pricing.ts";
 import { buildPlan, type ImportPlan, type StockMode } from "./plan.ts";
 import {
   detectMapping,
-  missingRequired,
+  mappingProblems,
   normalizeHeader,
   type ColumnMapping,
 } from "./schema.ts";
@@ -119,7 +119,7 @@ export function inspect(bytes: Buffer, filename: string): InspectResult {
     sheets,
     suggestedSheet,
     suggestedMapping,
-    missing: missingRequired(suggestedMapping).map((field) => field.label),
+    missing: mappingProblems(suggestedMapping),
     suggestedRoot: suggestRoot(chosen, suggestedMapping),
   };
 }
@@ -155,11 +155,9 @@ export function analyse(
   const table = tables[settings.sheetIndex] ?? tables[0];
   if (!table) throw new Error("That file has no readable sheet.");
 
-  const missing = missingRequired(settings.mapping);
+  const missing = mappingProblems(settings.mapping);
   if (missing.length > 0) {
-    throw new Error(
-      `Map these columns before continuing: ${missing.map((f) => f.label).join(", ")}.`,
-    );
+    throw new Error(`Map these columns before continuing: ${missing.join(", ")}.`);
   }
 
   const aggregated = aggregate(

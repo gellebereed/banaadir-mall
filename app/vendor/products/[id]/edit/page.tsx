@@ -11,7 +11,7 @@ import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
 import { getBaseProduct, getCategories, getDiscountMap, getSubcategories } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { discountPct } from "@/lib/format";
 import { hasVariants } from "@/lib/product-utils";
 import { requireVendor } from "@/lib/session";
@@ -29,7 +29,7 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "products.edit")) redirect("/vendor");
 
   const { id } = await params;
   // getBaseProduct (not getProduct): the form must edit the seller's own

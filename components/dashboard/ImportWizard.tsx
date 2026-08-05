@@ -28,6 +28,7 @@ import {
 import type { InspectResult } from "@/lib/import/pipeline";
 import {
   IMPORT_FIELDS,
+  mappingProblems,
   ROLE_LABELS,
   type ColumnMapping,
   type FieldKey,
@@ -228,10 +229,8 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
     });
   }
 
-  const canContinueFromColumns = useMemo(
-    () => IMPORT_FIELDS.every((field) => !field.required || mapping[field.key] !== undefined),
-    [mapping],
-  );
+  const columnProblems = useMemo(() => mappingProblems(mapping), [mapping]);
+  const canContinueFromColumns = columnProblems.length === 0;
 
   return (
     <div>
@@ -255,6 +254,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
           mapping={mapping}
           setMapping={setMapping}
           canContinue={canContinueFromColumns}
+          problems={columnProblems}
           onBack={() => setStep(0)}
           onNext={() => setStep(2)}
         />
@@ -465,6 +465,7 @@ function ColumnStep({
   mapping,
   setMapping,
   canContinue,
+  problems,
   onBack,
   onNext,
 }: {
@@ -474,6 +475,7 @@ function ColumnStep({
   mapping: ColumnMapping;
   setMapping: (mapping: ColumnMapping) => void;
   canContinue: boolean;
+  problems: string[];
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -542,9 +544,14 @@ function ColumnStep({
         </div>
 
         {!canContinue && (
-          <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
-            Pick a column for each field marked <strong>Required</strong> before continuing.
-          </p>
+          <div className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
+            <p className="font-semibold">Still needed before you can continue:</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <div className="mt-6 space-y-8">

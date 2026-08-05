@@ -16,7 +16,7 @@ import {
   SESSION_COOKIE,
   type Session,
 } from "@/lib/auth";
-import { getDB } from "@/lib/db";
+import { markInviteAccepted, sessionForEmployee } from "@/lib/employees";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
@@ -120,22 +120,22 @@ export async function signIn(
     }
   }
 
-  // 4. Employees added from a Team page (password is EMPLOYEE_PASSWORD).
+  /*
+   * 4. Employees added from a Team page (password is EMPLOYEE_PASSWORD).
+   *
+   * This used to read `getDB().employees` — the JSON overlay — and only
+   * that. Every employee added while Supabase is configured is written to
+   * Supabase and never touches the overlay, so the lookup found nothing and
+   * the person the owner had just invited was told their password was
+   * wrong. Which is how a team page can look like it works, save a real
+   * row, and still hand out an account nobody can sign in to.
+   */
   if (!session && password === EMPLOYEE_PASSWORD) {
-    const employee = (await getDB()).employees.find(
-      (e) => e.email.toLowerCase() === email,
-    );
+    const { getEmployeeByEmail } = await import("@/lib/api");
+    const employee = await getEmployeeByEmail(email);
     if (employee) {
-      session =
-        employee.store === "platform"
-          ? { name: employee.name, email: employee.email, role: "admin", access: employee.role }
-          : {
-            name: employee.name,
-            email: employee.email,
-            role: "seller",
-            store: employee.store,
-            access: employee.role,
-          };
+      session = sessionForEmployee(employee);
+      await markInviteAccepted(employee);
     }
   }
 

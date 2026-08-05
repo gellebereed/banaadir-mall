@@ -12,15 +12,19 @@
  * field here and it appears in all three.
  *
  * ── What is actually required ────────────────────────────────────────────
- * Only three things. `barcode`, because it is the identity a scan resolves
- * and the key that makes re-importing the same file update instead of
- * duplicate. `itemCode`, because it is what groups sizes and colours into
- * one product rather than 909 unrelated listings. And `qty`, because a
- * catalogue entry with no stock is not sellable.
+ * Two things: a quantity, because a catalogue entry with no stock is not
+ * sellable, and SOME identity — a barcode, a product code, or a variant
+ * code. Any one of the three is enough.
  *
- * Everything else improves the result and none of it blocks the import — a
- * supplier list with only those three columns still produces a working,
- * scannable catalogue.
+ * That last part used to read "barcode AND product code", which was written
+ * against a fashion invoice where both always exist. It does not survive
+ * contact with the rest of retail. A kitchenware export out of Odoo carries
+ * an Internal Reference and a barcode per LINE, with no style code grouping
+ * anything — every row is already its own product. Demanding a separate
+ * product code there blocks an import that has everything it needs, so the
+ * requirement is now a group: fill any identity column and the file passes.
+ *
+ * Everything else improves the result and none of it blocks the import.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -29,6 +33,7 @@ export type FieldKey =
   | "variantCode"
   | "barcode"
   | "name"
+  | "description"
   | "colorCode"
   | "colorName"
   | "size"
@@ -72,12 +77,15 @@ export const IMPORT_FIELDS: ImportField[] = [
     key: "itemCode",
     label: "Product code",
     role: "identity",
-    required: true,
-    hint: "The style code shared by every colour and size. This is what groups rows into one product.",
+    required: false,
+    hint: "The style code shared by every colour and size. This is what groups rows into one product. Left blank, each row is its own product.",
     synonyms: [
       "ITEM", "ITEM CODE", "ITEM NO", "PRODUCT CODE", "STYLE", "STYLE CODE",
       "MODEL", "MODEL CODE", "TEMPLATE", "TEMPLATE CODE", "ARTICLE", "ARTICLE CODE",
       "URUN KODU", "MODEL KODU", "STOK KODU",
+      // Odoo's own name for default_code, in the languages its exports ship in.
+      "INTERNAL REFERENCE", "INTERNAL REF", "DEFAULT CODE", "PRODUCT REFERENCE",
+      "REFERENCE INTERNE", "REFERENCIA INTERNA", "STOK KODU REF",
     ],
     odoo: "product.template.default_code",
     examples: ["4A2021200056", "4A2021200056", "YDA222520013"],
@@ -99,7 +107,7 @@ export const IMPORT_FIELDS: ImportField[] = [
     key: "barcode",
     label: "Barcode",
     role: "identity",
-    required: true,
+    required: false,
     hint: "EAN-13, UPC or the supplier's own code. Must be unique — this is what a scanner reads, and what makes a re-import update instead of duplicate.",
     synonyms: ["BARCODE", "BAR CODE", "EAN", "EAN13", "EAN 13", "GTIN", "UPC", "BARKOD"],
     odoo: "product.product.barcode",
@@ -156,7 +164,12 @@ export const IMPORT_FIELDS: ImportField[] = [
     role: "commercial",
     required: true,
     hint: "Units of this exact colour+size. Rows repeating the same barcode are added together.",
-    synonyms: ["QTY", "QUANTITY", "PCS", "PIECES", "UNITS", "STOCK", "ADET", "MIKTAR"],
+    synonyms: [
+      "QTY", "QUANTITY", "PCS", "PIECES", "UNITS", "STOCK", "ADET", "MIKTAR",
+      // Odoo stock exports.
+      "QUANTITY ON HAND", "QTY ON HAND", "ON HAND", "ON HAND QUANTITY",
+      "STOCK ON HAND", "QUANTITY AVAILABLE", "QTY AVAILABLE", "AVAILABLE QUANTITY",
+    ],
     odoo: "qty_available",
     examples: ["1", "3", "2"],
   },
@@ -180,7 +193,8 @@ export const IMPORT_FIELDS: ImportField[] = [
     required: false,
     hint: "Your retail price, if the file already has one. Supplied here, it wins over the markup calculation.",
     synonyms: [
-      "SELLING PRICE", "SALE PRICE", "RETAIL PRICE", "LIST PRICE", "RRP", "MSRP",
+      "SELLING PRICE", "SALE PRICE", "SALES PRICE", "SELL PRICE", "RETAIL PRICE",
+      "LIST PRICE", "PUBLIC PRICE", "RRP", "MSRP",
       "SATIS FIYATI", "PERAKENDE FIYAT",
     ],
     odoo: "list_price",
@@ -199,12 +213,36 @@ export const IMPORT_FIELDS: ImportField[] = [
     examples: ["", "", ""],
   },
   {
+    key: "description",
+    label: "Description",
+    role: "product",
+    required: false,
+    /*
+     * Deliberately NOT synonymous with a bare "DESCRIPTION" — in the fashion
+     * exports this importer was built against, that header is the sub-group
+     * ("SHIRT", "SHOES"), and stealing it would file every garment under a
+     * category called by its own sales copy. Only the unambiguous spellings
+     * are claimed here; a bare "DESCRIPTION" still goes to Sub-group, and a
+     * seller can always reassign it by hand.
+     */
+    hint: "The supplier's own sales copy. Used as the product description when present, instead of the generated one.",
+    synonyms: [
+      "PRODUCT DESCRIPTION", "SALES DESCRIPTION", "LONG DESCRIPTION",
+      "ITEM DESCRIPTION", "DESCRIPTION SALE", "URUN ACIKLAMASI",
+    ],
+    odoo: "description_sale",
+    examples: ["", "", ""],
+  },
+  {
     key: "category",
     label: "Category",
     role: "product",
     required: false,
     hint: "Becomes a category under your chosen parent, creating it if it does not exist yet.",
-    synonyms: ["CATEGORY", "CATEGORIES", "MAIN CATEGORY", "KATEGORI", "GRUP"],
+    synonyms: [
+      "CATEGORY", "CATEGORIES", "MAIN CATEGORY", "KATEGORI", "GRUP",
+      "PRODUCT CATEGORY", "INTERNAL CATEGORY", "POS CATEGORY", "CATEG",
+    ],
     odoo: "product.category",
     examples: ["SHIRT", "SHIRT", "SHOES"],
   },
@@ -297,7 +335,16 @@ export const IMPORT_FIELDS: ImportField[] = [
     role: "reference",
     required: false,
     hint: "Recorded against the stock this import adds, so a shipment can be traced later.",
-    synonyms: ["INVOICE NR", "INVOICE NO", "INVOICE", "INVOICE NUMBER", "FATURA NO", "REFERENCE"],
+    /*
+     * "REFERENCE" used to sit in this list, which meant Odoo's "Internal
+     * Reference" — the product's own code — was read as a shipment number
+     * and the product code was left unmapped, blocking the whole import.
+     * Only invoice-specific spellings belong here.
+     */
+    synonyms: [
+      "INVOICE NR", "INVOICE NO", "INVOICE", "INVOICE NUMBER",
+      "INVOICE REFERENCE", "SHIPMENT NO", "FATURA NO",
+    ],
     examples: ["IHR2026000000033", "IHR2026000000033", "IHR2026000000033"],
   },
   {
@@ -357,6 +404,26 @@ export function normalizeHeader(header: string): string {
     .trim();
 }
 
+/**
+ * The forms of a header worth matching against a synonym.
+ *
+ * Odoo exports a related model's field as "Products/Barcode",
+ * "Products/Product Category" — the relation, a slash, then the field. The
+ * relation part carries no meaning for us and stops "BARCODE" matching
+ * exactly, so the segment after the last slash is offered as an
+ * alternative. The full header is still offered first, because a header
+ * that genuinely contains a slash ("S/M") must not be truncated to
+ * something that happens to match.
+ */
+function headerVariants(header: string): string[] {
+  const full = normalizeHeader(header);
+  if (!header.includes("/")) return [full];
+
+  const tail = normalizeHeader(header.slice(header.lastIndexOf("/") + 1));
+  if (!tail || tail === full) return [full];
+  return [full, tail];
+}
+
 /** Does this header name a *code* column rather than a value column? */
 function isCodeHeader(normalized: string): boolean {
   return /\bCODE\b/.test(normalized) || /\bKODU?\b/.test(normalized);
@@ -371,7 +438,10 @@ function isCodeHeader(normalized: string): boolean {
  * catalogue fills with names like "GM20".
  */
 function scoreHeader(header: string, field: ImportField): number {
-  const normalized = normalizeHeader(header);
+  return Math.max(...headerVariants(header).map((form) => scoreForm(form, field)));
+}
+
+function scoreForm(normalized: string, field: ImportField): number {
   if (!normalized) return 0;
 
   const synonyms = field.synonyms.map(normalizeHeader);
@@ -434,6 +504,26 @@ export function detectMapping(headers: string[]): ColumnMapping {
 /** Required fields the mapping still leaves unfilled. */
 export function missingRequired(mapping: ColumnMapping): ImportField[] {
   return IMPORT_FIELDS.filter((field) => field.required && mapping[field.key] === undefined);
+}
+
+/** Any one of these identifies a row well enough to import it. */
+export const IDENTITY_FIELDS: FieldKey[] = ["barcode", "itemCode", "variantCode"];
+
+/**
+ * Everything still standing between this mapping and an import, phrased for
+ * the person looking at the wizard. Empty means good to go.
+ *
+ * This is the real gate — `missingRequired` only covers fields that are
+ * required on their own, and identity is required as a GROUP.
+ */
+export function mappingProblems(mapping: ColumnMapping): string[] {
+  const problems = missingRequired(mapping).map((field) => field.label);
+
+  if (IDENTITY_FIELDS.every((key) => mapping[key] === undefined)) {
+    problems.push("a Barcode or Product code column — either one is enough");
+  }
+
+  return problems;
 }
 
 // ── Sample template ──────────────────────────────────────────────────────

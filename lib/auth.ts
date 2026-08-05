@@ -18,7 +18,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import type { EmployeeRole } from "./types";
+import type { Employee, EmployeeRole, Permission } from "./types";
 
 export interface Session {
   name: string;
@@ -31,6 +31,12 @@ export interface Session {
    * which have full access. See can() below.
    */
   access?: EmployeeRole;
+  /**
+   * The employee's exact grants, resolved at sign-in. Absent means the
+   * role's defaults apply — which is also what an older cookie, written
+   * before permissions existed, correctly falls back to.
+   */
+  permissions?: Permission[];
 }
 
 interface DemoUser extends Session {
@@ -122,13 +128,193 @@ function safeDecode(raw: string): string {
   }
 }
 
+// ── Permissions ─────────────────────────────────────────────────────────
+//
+// The owner of a store has no `access` and no `permissions`: they own the
+// place, so every check below short-circuits to true for them. Everything
+// here is about the people they let in.
+
+interface PermissionSpec {
+  key: Permission;
+  label: string;
+  /** What granting it actually lets the person do. */
+  hint: string;
+  group: "Products" | "Orders" | "Storefront" | "Money" | "Store";
+  /** Shown on store Team pages / on the platform Team page / on both. */
+  scope: "store" | "platform" | "both";
+}
+
+/**
+ * Every grant, in the order they are shown when assigning them.
+ *
+ * `costs.view` sits in its own group on purpose. It is the one permission
+ * on this list that is not about breaking things — it is about a number
+ * the person holding it can walk out of the building with, and it belongs
+ * nowhere near a row of checkboxes about editing photos.
+ */
+export const PERMISSIONS: PermissionSpec[] = [
+  {
+    key: "products.view",
+    label: "View products",
+    hint: "See the product list, stock levels and selling prices.",
+    group: "Products",
+    scope: "both",
+  },
+  {
+    key: "products.edit",
+    label: "Add & edit products",
+    hint: "Create products and change names, prices, stock and photos.",
+    group: "Products",
+    scope: "both",
+  },
+  {
+    key: "products.import",
+    label: "Import supplier files",
+    hint: "Run the bulk importer, which can create hundreds of products at once.",
+    group: "Products",
+    scope: "store",
+  },
+  {
+    key: "products.delete",
+    label: "Delete products",
+    hint: "Permanently remove products from the catalogue.",
+    group: "Products",
+    scope: "both",
+  },
+  {
+    key: "orders.view",
+    label: "View orders",
+    hint: "See incoming orders and customer delivery details.",
+    group: "Orders",
+    scope: "both",
+  },
+  {
+    key: "orders.manage",
+    label: "Fulfil orders",
+    hint: "Change order status, assign couriers and mark orders delivered.",
+    group: "Orders",
+    scope: "both",
+  },
+  {
+    key: "promotions.manage",
+    label: "Run promotions",
+    hint: "Create discounts and apply for flash-deal campaigns.",
+    group: "Storefront",
+    scope: "store",
+  },
+  {
+    key: "photos.manage",
+    label: "Bulk photo upload",
+    hint: "Match uploaded photos to products in bulk.",
+    group: "Storefront",
+    scope: "store",
+  },
+  {
+    key: "marketing.manage",
+    label: "Storefront marketing",
+    hint: "Edit the home page, banners and announcements seen by every shopper.",
+    group: "Storefront",
+    scope: "platform",
+  },
+  {
+    key: "costs.view",
+    label: "See cost price & profit",
+    hint: "Cost per unit, margin, and what the stock on hand is worth. Leave off for staff who only need selling prices.",
+    group: "Money",
+    scope: "both",
+  },
+  {
+    key: "settings.manage",
+    label: "Change store settings",
+    hint: "Store name, logo, delivery charges and payment details.",
+    group: "Store",
+    scope: "store",
+  },
+  {
+    key: "team.manage",
+    label: "Manage the team",
+    hint: "Invite people, change their access, and remove them. Grant carefully — it lets them grant themselves anything.",
+    group: "Store",
+    scope: "both",
+  },
+];
+
+export const PERMISSION_KEYS: Permission[] = PERMISSIONS.map((p) => p.key);
+
+export const PERMISSIONS_BY_KEY: Record<Permission, PermissionSpec> = Object.fromEntries(
+  PERMISSIONS.map((p) => [p.key, p]),
+) as Record<Permission, PermissionSpec>;
+
+/** The permissions shown when assigning access in this context. */
+export function permissionsForScope(store: string): PermissionSpec[] {
+  const wanted = store === "platform" ? "platform" : "store";
+  return PERMISSIONS.filter((p) => p.scope === "both" || p.scope === wanted);
+}
+
+/**
+ * What each role grants out of the box.
+ *
+ * Note what is NOT in any of them: `costs.view`. A role called "products"
+ * used to imply seeing cost price, because cost sat on the product page
+ * and nothing distinguished the two. Now it is a deliberate act.
+ */
+export const ROLE_PERMISSIONS: Record<EmployeeRole, Permission[]> = {
+  manager: [
+    "products.view", "products.edit", "products.import", "products.delete",
+    "orders.view", "orders.manage", "promotions.manage", "photos.manage",
+    "marketing.manage", "settings.manage", "team.manage",
+  ],
+  products: [
+    "products.view", "products.edit", "products.import",
+    "promotions.manage", "photos.manage",
+  ],
+  orders: ["orders.view", "orders.manage", "products.view"],
+  marketing: ["marketing.manage", "promotions.manage", "products.view"],
+  viewer: ["products.view", "orders.view"],
+};
+
+/** The grants an employee actually holds — explicit ones, else the role's. */
+export function permissionsFor(employee: Pick<Employee, "role" | "permissions">): Permission[] {
+  const explicit = employee.permissions;
+  if (explicit && explicit.length > 0) return explicit;
+  // An empty array is a real answer ("this person may do nothing"), but an
+  // empty array and an absent one are indistinguishable once a form has
+  // round-tripped through FormData, so absent-or-empty both mean "role".
+  return ROLE_PERMISSIONS[employee.role] ?? [];
+}
+
+/** Discard anything that is not a permission we know about. */
+export function parsePermissions(values: unknown): Permission[] {
+  if (!Array.isArray(values)) return [];
+  const known = new Set<string>(PERMISSION_KEYS);
+  return values.filter((v): v is Permission => typeof v === "string" && known.has(v));
+}
+
+/** May this session do this exact thing? Owners and admins always may. */
+export function may(session: Session, permission: Permission): boolean {
+  if (!session.access) return true;
+  return permissionsFor({ role: session.access, permissions: session.permissions }).includes(
+    permission,
+  );
+}
+
 /** What a session may manage. Owners, admins and managers can do everything. */
 export type AccessArea = "products" | "orders" | "marketing" | "team";
 
+/**
+ * The coarse check the pages and actions were written against, kept so a
+ * finer model did not require touching every guard at once. Each area is
+ * the permission that area's pages actually exercise.
+ */
+const AREA_PERMISSION: Record<AccessArea, Permission> = {
+  products: "products.edit",
+  orders: "orders.manage",
+  marketing: "marketing.manage",
+  team: "team.manage",
+};
+
 export function can(session: Session, area: AccessArea): boolean {
-  if (!session.access || session.access === "manager") return true;
-  if (session.access === "viewer") return false;
-  return session.access === area;
+  return may(session, AREA_PERMISSION[area]);
 }
 
 /** Human-readable description per employee role (shown on Team pages). */

@@ -10,7 +10,7 @@ import {
   getPromotionsByStore,
   isPromotionLive,
 } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 import type { Promotion } from "@/lib/types";
@@ -36,7 +36,7 @@ function promoStatus(promo: Promotion): { label: string; tone: string } {
 
 export default async function VendorPromotionsPage() {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "promotions.manage")) redirect("/vendor");
 
   const [promotions, products, categories, discounts] = await Promise.all([
     getPromotionsByStore(storeSlug),

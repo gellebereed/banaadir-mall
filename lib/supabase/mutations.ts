@@ -19,7 +19,9 @@ import { isSupabaseConfigured } from "./storage";
 import type {
   Employee,
   EmployeeRole,
+  EmployeeStatus,
   MarketingSettings,
+  Permission,
   Order,
   OrderStatus,
   Product,
@@ -655,7 +657,36 @@ export async function deletePromotionFromSupabase(id: string): Promise<boolean> 
 }
 
 // ── Employees ──────────────────────────────────────────────────────────
-// Actual columns: id, store, name, email, role, added_at
+// Base columns: id, store, name, email, role, added_at
+// Added by supabase/migration-employee-permissions.sql:
+//   permissions, status, invite_token, invited_at, accepted_at
+
+/**
+ * Does this PostgREST error mean the column simply isn't there yet?
+ *
+ * The invitation columns arrive in a migration the operator applies by
+ * hand. Between deploying this code and running that SQL, an insert
+ * carrying those columns is rejected outright — and losing the whole
+ * employee because the optional half of the row could not be stored is a
+ * far worse outcome than storing the half that fits. So the writers below
+ * fall back to the base columns and log what was dropped.
+ */
+function isMissingColumn(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "PGRST204" ||
+    error.code === "42703" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? "")
+  );
+}
+
+/** Columns that exist only after the invitation migration. */
+type EmployeeExtras = Partial<{
+  permissions: Permission[] | null;
+  status: EmployeeStatus;
+  invite_token: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+}>;
 
 export async function insertEmployee(emp: {
   id: string;
@@ -663,25 +694,125 @@ export async function insertEmployee(emp: {
   name: string;
   email: string;
   role: EmployeeRole;
-}): Promise<boolean> {
-  if (!useSupabaseMutations()) return false;
+  permissions?: Permission[];
+  status?: EmployeeStatus;
+  inviteToken?: string;
+  invitedAt?: string;
+}): Promise<EmployeeWriteResult> {
+  if (!useSupabaseMutations()) return { ok: false, droppedColumns: false };
+
+  const base = {
+    id: emp.id,
+    store: emp.store,
+    name: emp.name,
+    email: emp.email,
+    role: emp.role,
+  };
+  const extras: EmployeeExtras = {
+    permissions: emp.permissions ?? null,
+    status: emp.status ?? "pending",
+    invite_token: emp.inviteToken ?? null,
+    invited_at: emp.invitedAt ?? null,
+  };
+
   try {
     const supabase = await createClient();
-    const { error } = await supabase.from("employees").insert({
-      id: emp.id,
-      store: emp.store,
-      name: emp.name,
-      email: emp.email,
-      role: emp.role,
-    });
-    if (error) {
+    const { error } = await supabase.from("employees").insert({ ...base, ...extras });
+    if (!error) return { ok: true, droppedColumns: false };
+
+    if (!isMissingColumn(error)) {
       console.error("[Supabase Mutations] insertEmployee error:", error.message);
-      return false;
+      return { ok: false, droppedColumns: false };
     }
-    return true;
+
+    console.warn(
+      "[Supabase Mutations] employees table is missing the invitation columns — " +
+        "storing name/email/role only. Apply supabase/migration-employee-permissions.sql.",
+    );
+    const retry = await supabase.from("employees").insert(base);
+    if (retry.error) {
+      console.error("[Supabase Mutations] insertEmployee error:", retry.error.message);
+      return { ok: false, droppedColumns: true };
+    }
+    return { ok: true, droppedColumns: true };
   } catch (err) {
     console.error("[Supabase Mutations] insertEmployee exception:", err);
-    return false;
+    return { ok: false, droppedColumns: false };
+  }
+}
+
+export interface EmployeeUpdate {
+  name?: string;
+  role?: EmployeeRole;
+  permissions?: Permission[] | null;
+  status?: EmployeeStatus;
+  inviteToken?: string | null;
+  invitedAt?: string | null;
+  acceptedAt?: string | null;
+}
+
+/**
+ * The outcome of an employee write, in enough detail to tell the truth
+ * about it.
+ *
+ * `ok` alone cannot: a write that stored the role and dropped the
+ * permissions because the column does not exist is neither a success nor a
+ * failure, and reporting it as either misleads whoever pressed the button.
+ * `droppedColumns` is what lets the caller say "saved, but the permissions
+ * need that migration".
+ */
+export interface EmployeeWriteResult {
+  ok: boolean;
+  droppedColumns: boolean;
+}
+
+/**
+ * Change an existing employee: their role, their exact grants, or where
+ * they are in the invitation flow. Only the fields passed are touched.
+ */
+export async function updateEmployeeInSupabase(
+  id: string,
+  changes: EmployeeUpdate,
+): Promise<EmployeeWriteResult> {
+  if (!useSupabaseMutations()) return { ok: false, droppedColumns: false };
+
+  const base: Record<string, unknown> = {};
+  if (changes.name !== undefined) base.name = changes.name;
+  if (changes.role !== undefined) base.role = changes.role;
+
+  const extras: EmployeeExtras = {};
+  if (changes.permissions !== undefined) extras.permissions = changes.permissions;
+  if (changes.status !== undefined) extras.status = changes.status;
+  if (changes.inviteToken !== undefined) extras.invite_token = changes.inviteToken;
+  if (changes.invitedAt !== undefined) extras.invited_at = changes.invitedAt;
+  if (changes.acceptedAt !== undefined) extras.accepted_at = changes.acceptedAt;
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("employees")
+      .update({ ...base, ...extras })
+      .eq("id", id);
+    if (!error) return { ok: true, droppedColumns: false };
+
+    if (!isMissingColumn(error)) {
+      console.error("[Supabase Mutations] updateEmployee error:", error.message);
+      return { ok: false, droppedColumns: false };
+    }
+
+    // Nothing left to write once the missing columns are removed, so there
+    // is no half-measure to fall back to — this write did not happen.
+    if (Object.keys(base).length === 0) return { ok: false, droppedColumns: true };
+
+    const retry = await supabase.from("employees").update(base).eq("id", id);
+    if (retry.error) {
+      console.error("[Supabase Mutations] updateEmployee error:", retry.error.message);
+      return { ok: false, droppedColumns: true };
+    }
+    return { ok: true, droppedColumns: true };
+  } catch (err) {
+    console.error("[Supabase Mutations] updateEmployee exception:", err);
+    return { ok: false, droppedColumns: false };
   }
 }
 

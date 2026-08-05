@@ -74,7 +74,14 @@ export interface DraftVariant {
 }
 
 export interface DraftProduct {
+  /** The grouping key. Falls back to the barcode when the file has no code. */
   itemCode: string;
+  /**
+   * The supplier's own product code, present only when the file actually
+   * had that column. `itemCode` may be a barcode standing in for one, and
+   * a barcode must never be written back as an Internal Reference.
+   */
+  styleCode?: string;
   name: string;
   slug: string;
   category?: ResolvedCategory;
@@ -175,6 +182,8 @@ export function aggregate(
 ): AggregateResult {
   const issues: ImportIssue[] = [];
   const source = readRows(rows, mapping, firstRowNumber);
+  /** False when the item codes below are barcodes standing in for one. */
+  const hasItemCodeColumn = mapping.itemCode !== undefined;
 
   // ── Stage 3: lines → sellable units ────────────────────────────────
   const units = new Map<string, UnitDraft>();
@@ -188,9 +197,20 @@ export function aggregate(
     const size = cleanText(values.size).toUpperCase();
     const drop = cleanText(values.drop).toUpperCase();
 
+    /*
+     * The barcode is a legitimate SKU of last resort.
+     *
+     * A fashion invoice always carries a style code and colour/size, so the
+     * variant code composes itself. A general-goods export does not: one row
+     * is one product, identified by its Internal Reference and its barcode,
+     * with nothing to compose from. This used to skip every such row with
+     * "no product code" — refusing an entire catalogue that was, in fact,
+     * completely identified.
+     */
     const sku =
       normalizeReference(values.variantCode) ||
-      composeVariantCode({ itemCode, colorCode, size, drop });
+      composeVariantCode({ itemCode, colorCode, size, drop }) ||
+      barcode;
 
     // Nothing identifies this row, so nothing downstream could match or
     // update it. Skipping loudly beats importing an anonymous product.
@@ -201,16 +221,6 @@ export function aggregate(
         code: "row-unidentified",
         row,
         message: "Skipped: the row has no product code and no barcode.",
-      });
-      continue;
-    }
-    if (!itemCode && !sku) {
-      skippedRows++;
-      issues.push({
-        level: "warning",
-        code: "row-no-item",
-        row,
-        message: "Skipped: no product code, so the row cannot be grouped into a product.",
       });
       continue;
     }
@@ -368,8 +378,12 @@ export function aggregate(
     // "2026 SUMMER" shouted in a feature bullet reads as a warning label.
     const season = displayPhrase(head.season ?? "") || undefined;
 
+    // The supplier's own copy beats anything we can assemble from fields.
+    const suppliedDescription = cleanText(head.description);
+
     products.push({
       itemCode,
+      styleCode: hasItemCodeColumn ? itemCode : undefined,
       name,
       slug,
       category,
@@ -386,8 +400,18 @@ export function aggregate(
       price: priced.price,
       compareAt: priced.compareAt,
       totalQty: variants.reduce((sum, v) => sum + v.qty, 0),
-      description: buildDescription({ name, brand, composition, season, productType }),
-      features: buildFeatures({ composition, season, brand, itemCode }),
+      description:
+        suppliedDescription ||
+        buildDescription({ name, brand, composition, season, productType }),
+      features: buildFeatures({
+        composition,
+        season,
+        brand,
+        // Printing "Style code: 8680214252116" on a napkin ring is worse
+        // than printing nothing — that is the barcode standing in for a
+        // code the file never had.
+        itemCode: hasItemCodeColumn ? itemCode : undefined,
+      }),
       variants,
     });
   }
@@ -490,12 +514,12 @@ function buildFeatures(parts: {
   composition?: string;
   season?: string;
   brand?: string;
-  itemCode: string;
+  itemCode?: string;
 }): string[] {
   const features: string[] = [];
   if (parts.composition) features.push(`Fabric: ${parts.composition}`);
   if (parts.brand) features.push(`Brand: ${parts.brand}`);
   if (parts.season) features.push(`Season: ${parts.season}`);
-  features.push(`Style code: ${parts.itemCode}`);
+  if (parts.itemCode) features.push(`Style code: ${parts.itemCode}`);
   return features;
 }

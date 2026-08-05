@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import MarkOrdersSeen from "@/components/dashboard/MarkOrdersSeen";
 import VendorOrdersTable from "@/components/dashboard/VendorOrdersTable";
 import { getAnyProduct, getOrdersByStore, getStore } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 
@@ -15,7 +15,7 @@ export default async function VendorOrdersPage() {
     getOrdersByStore(storeSlug),
     getStore(storeSlug),
   ]);
-  const mayManage = can(session, "orders");
+  const mayManage = may(session, "orders.manage");
   const savedCouriers = store?.couriers ?? [];
 
   const rows = await Promise.all(

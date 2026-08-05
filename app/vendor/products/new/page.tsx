@@ -10,7 +10,7 @@ import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
 import { getCategories, getSubcategories } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Add Product" };
@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: "Add Product" };
  */
 export default async function NewProductPage() {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "products.edit")) redirect("/vendor");
   const [categories, subcategories] = await Promise.all([
     getCategories(),
     getSubcategories(),

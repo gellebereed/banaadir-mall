@@ -423,13 +423,46 @@ export async function getPromotionsByStore(storeSlug: string): Promise<Promotion
   return (await getPromotions()).filter((p) => p.store === storeSlug);
 }
 
+/**
+ * Every employee, wherever they were stored.
+ *
+ * Employees are written to Supabase when it is configured and to the JSON
+ * overlay when it is not — but a store can end up with rows in BOTH, when
+ * a Supabase insert failed and the code fell back to the file. Reading only
+ * one of the two is how an invitation gets accepted, saved, and then
+ * vanishes from the page that created it. Both are read, Supabase wins on
+ * a shared id, and nothing added through either path disappears.
+ */
+export async function getAllEmployees(): Promise<Employee[]> {
+  const [remote, local] = await Promise.all([
+    fetchEmployeesFromSupabase(),
+    getDB().then((db) => db.employees),
+  ]);
+
+  if (!remote) return local;
+
+  const seen = new Set(remote.map((e) => e.email.toLowerCase()));
+  return [...remote, ...local.filter((e) => !seen.has(e.email.toLowerCase()))];
+}
+
 /** Employees of a store, or of the platform when storeSlug === "platform". */
 export async function getEmployees(storeSlug: string): Promise<Employee[]> {
-  const supabaseEmployees = await fetchEmployeesFromSupabase();
-  if (supabaseEmployees) {
-    return supabaseEmployees.filter((e) => e.store === storeSlug);
-  }
-  return (await getDB()).employees.filter((e) => e.store === storeSlug);
+  return (await getAllEmployees()).filter((e) => e.store === storeSlug);
+}
+
+/** The employee this email signs in as, from either store. */
+export async function getEmployeeByEmail(email: string): Promise<Employee | null> {
+  const clean = email.trim().toLowerCase();
+  const all = await getAllEmployees();
+  return all.find((e) => e.email.trim().toLowerCase() === clean) ?? null;
+}
+
+/** The employee an invite link belongs to. */
+export async function getEmployeeByInviteToken(token: string): Promise<Employee | null> {
+  const clean = token.trim();
+  if (!clean) return null;
+  const all = await getAllEmployees();
+  return all.find((e) => e.inviteToken && e.inviteToken === clean) ?? null;
 }
 
 export async function getMarketingSettings(): Promise<MarketingSettings> {

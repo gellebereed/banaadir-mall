@@ -3,7 +3,7 @@ import Link from "next/link";
 import VendorProductsTable from "@/components/dashboard/VendorProductsTable";
 import { getBaseProductsByStore, getDiscountMap } from "@/lib/api";
 import { sellableUnits } from "@/lib/odoo/mapping";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 import type { Product } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export default async function VendorProductsPage() {
     getBaseProductsByStore(storeSlug),
     getDiscountMap(storeSlug),
   ]);
-  const mayEdit = can(session, "products");
+  const mayEdit = may(session, "products.edit");
   const discountedCount = Object.keys(discounts).length;
 
   // Catalogue readiness. Every unit without a barcode is one a stocktake

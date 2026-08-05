@@ -22,7 +22,7 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getBaseProducts, getCategories } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { categoryIcon } from "@/lib/category-icons";
 import { mutateDB } from "@/lib/db";
 import { buildProduct } from "@/lib/import/build";
@@ -50,8 +50,21 @@ const BATCH_SIZE = 20;
 async function requireProductAccess(): Promise<{ storeSlug: string; isAdmin: boolean }> {
   const session = await getSession();
   if (!session || session.role === "customer") throw new Error("Please sign in.");
-  if (!can(session, "products")) {
-    throw new Error('Your account does not have "products" access.');
+  if (!may(session, "products.import")) {
+    throw new Error("Your account is not allowed to import supplier files.");
+  }
+  /*
+   * The importer is a cost-price tool end to end: it reads cost from the
+   * file, prices from it, and shows it in every preview row and total.
+   * There is no meaningful "import without seeing cost", so rather than
+   * blank out half the wizard and leak the rest through the margin column,
+   * the two permissions are required together.
+   */
+  if (!may(session, "costs.view")) {
+    throw new Error(
+      "Importing shows supplier cost prices, so it also needs the " +
+        '"see cost price & profit" permission. Ask the store owner to enable it.',
+    );
   }
   const storeSlug = session.role === "seller" && session.store ? session.store : "sahra-fashion";
   return { storeSlug, isAdmin: session.role === "admin" };

@@ -118,7 +118,9 @@ export function buildProduct(
 
     // The supplier's codes always win — they are the identity the next
     // import, and every barcode scan, will match on.
-    internalReference: normalizeReference(draft.itemCode) || undefined,
+    // styleCode, not itemCode: the latter falls back to the barcode when the
+    // file has no product-code column, and a barcode is not a reference.
+    internalReference: normalizeReference(draft.styleCode ?? "") || undefined,
     barcode: existing?.barcode,
     uom: existing?.uom ?? "Units",
     odooId: existing?.odooId,

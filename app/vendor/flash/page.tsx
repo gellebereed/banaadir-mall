@@ -9,7 +9,7 @@ import {
   getFlashDeal,
   getFlashRequests,
 } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { shortDate } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 
@@ -28,7 +28,7 @@ const STATUS_STYLES: Record<string, string> = {
  */
 export default async function VendorFlashPage() {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "promotions.manage")) redirect("/vendor");
 
   const [flash, requests, products, categories] = await Promise.all([
     getFlashDeal(),

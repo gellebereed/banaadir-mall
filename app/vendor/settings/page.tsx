@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import StoreSettingsForm from "@/components/dashboard/StoreSettingsForm";
 import { getStore } from "@/lib/api";
-import { can } from "@/lib/auth";
+import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Store Settings" };
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Store Settings" };
  */
 export default async function VendorSettingsPage() {
   const { session, storeSlug } = await requireVendor();
-  if (!can(session, "products")) redirect("/vendor");
+  if (!may(session, "settings.manage")) redirect("/vendor");
   const store = await getStore(storeSlug);
   if (!store) redirect("/vendor");
 
