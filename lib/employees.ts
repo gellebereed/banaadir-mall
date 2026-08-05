@@ -54,7 +54,7 @@ export function sessionForEmployee(employee: Employee): Session {
 export const MIGRATION_REQUIRED =
   "Saved what could be saved — but this database has not had the team " +
   "migration applied, so invitation links and per-person permissions " +
-  "cannot be stored yet. Run: npm run migrate:team";
+  "cannot be stored yet. Run: npm run migrate";
 
 /** Write a change to whichever store holds this employee. */
 export async function saveEmployeeChange(

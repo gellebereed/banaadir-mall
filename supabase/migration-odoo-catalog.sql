@@ -193,6 +193,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   v_variants   JSONB;
+  v_variant_n  INT;
   v_codes      TEXT[];
   v_refs       TEXT[];
   v_dup        TEXT;
@@ -204,11 +205,27 @@ BEGIN
 
   v_variants := CASE WHEN jsonb_typeof(NEW.variants) = 'array'
                      THEN NEW.variants ELSE '[]'::jsonb END;
+  v_variant_n := jsonb_array_length(v_variants);
 
-  -- Every barcode this row claims: its own plus each variant's.
+  /*
+   * A SINGLE-VARIANT PRODUCT IS ITS VARIANT.
+   *
+   * product.template and product.product are two rows describing one thing
+   * whenever there is only one variant, and they carry the SAME
+   * default_code and barcode. Counting the template's own codes as a
+   * separate claimant rejected that entirely normal shape — which is every
+   * product that does not come in colours and sizes.
+   *
+   * So the product's own codes join the WITHIN-product duplicate pool only
+   * when there are two or more variants, where a template code sitting on
+   * one specific variant genuinely is ambiguous. Cross-product checks below
+   * always include them: sharing a code with another product is never fine.
+   */
+
+  -- Every barcode this row claims against ITSELF.
   SELECT ARRAY(
     SELECT code FROM (
-      SELECT NEW.barcode AS code
+      SELECT CASE WHEN v_variant_n > 1 THEN NEW.barcode ELSE NULL::TEXT END AS code
       UNION ALL
       SELECT NULLIF(BTRIM(e.value ->> 'barcode'), '')
       FROM jsonb_array_elements(v_variants) AS e
@@ -228,6 +245,15 @@ BEGIN
 
   -- (b) Duplicates against the REST of the catalogue. The view reads the
   -- pre-update state of this row, so exclude it by id.
+  SELECT ARRAY(
+    SELECT code FROM (
+      SELECT NEW.barcode AS code
+      UNION ALL
+      SELECT NULLIF(BTRIM(e.value ->> 'barcode'), '')
+      FROM jsonb_array_elements(v_variants) AS e
+    ) codes WHERE code IS NOT NULL
+  ) INTO v_codes;
+
   IF array_length(v_codes, 1) > 0 THEN
     SELECT i.barcode INTO v_dup
     FROM public.product_variant_index i
@@ -244,7 +270,7 @@ BEGIN
   -- Same treatment for internal references, compared case-insensitively.
   SELECT ARRAY(
     SELECT UPPER(ref) FROM (
-      SELECT NEW.internal_reference AS ref
+      SELECT CASE WHEN v_variant_n > 1 THEN NEW.internal_reference ELSE NULL::TEXT END AS ref
       UNION ALL
       SELECT NULLIF(BTRIM(e.value ->> 'sku'), '')
       FROM jsonb_array_elements(v_variants) AS e
@@ -260,6 +286,15 @@ BEGIN
       'Internal reference "%" is used by more than one variant of this product.',
       v_dup USING ERRCODE = '23505';
   END IF;
+
+  SELECT ARRAY(
+    SELECT UPPER(ref) FROM (
+      SELECT NEW.internal_reference AS ref
+      UNION ALL
+      SELECT NULLIF(BTRIM(e.value ->> 'sku'), '')
+      FROM jsonb_array_elements(v_variants) AS e
+    ) refs WHERE ref IS NOT NULL
+  ) INTO v_refs;
 
   IF array_length(v_refs, 1) > 0 THEN
     SELECT i.default_code INTO v_dup
