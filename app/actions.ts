@@ -641,6 +641,71 @@ function filenameCandidates(filename: string): string[] {
 }
 
 /**
+ * Short enough to be a real code, long enough not to match by accident.
+ * Guards the prefix rules below — without it a two-character filename
+ * would claim the first product whose code happened to start that way.
+ */
+const MIN_CODE_LENGTH = 5;
+
+/**
+ * Which product a filename names.
+ *
+ * ── Why exact matching was not enough ────────────────────────────────────
+ * A fashion photo pack is shot PER COLOURWAY, so its files are named after
+ * the style plus the colour — COE030252204MAV, YDA302420007BEJ. The
+ * catalogue holds neither of those strings: the product's reference is the
+ * style alone (COE030252204) and its variants carry style+colour+size+drop
+ * (COE030252204MAV466N). The filename sits between the two, matched
+ * nothing, and a correctly named 30-file upload was rejected in full.
+ *
+ * So three rules, strongest first:
+ *   1. the filename IS a code                       (barcode.jpg)
+ *   2. a code is the START of the filename          (style+colour packs)
+ *   3. the filename is the START of a code          (a code typed short)
+ *
+ * Longest key wins in the prefix rules, so a file that could belong to
+ * both a style and one of its variants goes to the more specific one.
+ */
+function matchProductByFilename(
+  stem: string,
+  byKey: Map<string, Product>,
+  keysLongestFirst: string[],
+): Product | undefined {
+  const exact = byKey.get(stem);
+  if (exact) return exact;
+  if (stem.length < MIN_CODE_LENGTH) return undefined;
+
+  const startsWithCode = keysLongestFirst.find(
+    (key) => key.length >= MIN_CODE_LENGTH && stem.startsWith(key),
+  );
+  if (startsWithCode) return byKey.get(startsWithCode);
+
+  const codeStartsWithStem = keysLongestFirst.find((key) => key.startsWith(stem));
+  return codeStartsWithStem ? byKey.get(codeStartsWithStem) : undefined;
+}
+
+/**
+ * The variants a colourway filename refers to.
+ *
+ * `COE030252204MAV` names every size of the blue suit, so its photos
+ * belong on those variants rather than dumped into one shared gallery —
+ * which is what makes picking "Blue" on the product page show the blue
+ * photographs. Returns nothing when the filename covers the whole product
+ * (every variant, or none of them), because then it IS a product photo.
+ */
+function colourwayVariants(product: Product, stem: string): Variant[] {
+  const variants = product.variants ?? [];
+  if (variants.length === 0) return [];
+
+  const matched = variants.filter((variant) => {
+    const sku = (variant.sku ?? "").trim().toLowerCase();
+    return sku.length > stem.length && sku.startsWith(stem);
+  });
+
+  return matched.length > 0 && matched.length < variants.length ? matched : [];
+}
+
+/**
  * Bulk photo import: attach many photos to many products in one go.
  *
  * Files are matched to a product by filename — its id, slug, internal
@@ -680,25 +745,31 @@ export async function bulkImportPhotos(
         if (!byKey.has(key)) byKey.set(key, product);
       }
     }
-    const slugs = products
-      .map((p) => p.slug.toLowerCase())
-      .sort((a, b) => b.length - a.length);
+    const keysLongestFirst = [...byKey.keys()].sort((a, b) => b.length - a.length);
 
+    /** productId → photos for the product's own gallery. */
     const additions = new Map<string, string[]>();
+    /** productId → variantId → photos for that colourway. */
+    const variantAdditions = new Map<string, Map<string, string[]>>();
     const skipped: string[] = [];
     let uploaded = 0;
+    let colourways = 0;
 
-    for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+    /*
+     * Natural sort, so "_10" comes after "_9" rather than after "_1".
+     * Plain string comparison put a ten-photo set in the order 1, 10, 11,
+     * 2, 3 … which silently made photo 10 the cover shot.
+     */
+    const ordered = [...files].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    );
+
+    for (const file of ordered) {
+      const candidates = filenameCandidates(file.name);
       let match: Product | undefined;
-      for (const candidate of filenameCandidates(file.name)) {
-        match = byKey.get(candidate);
+      for (const candidate of candidates) {
+        match = matchProductByFilename(candidate, byKey, keysLongestFirst);
         if (match) break;
-        // Fall back to the old prefix rule, which also catches "slug-detail".
-        const slug = slugs.find((s) => candidate.startsWith(`${s}-`));
-        if (slug) {
-          match = byKey.get(slug);
-          if (match) break;
-        }
       }
 
       if (!match) {
@@ -712,33 +783,102 @@ export async function bulkImportPhotos(
         continue;
       }
       uploaded++;
-      additions.set(match.id, [...(additions.get(match.id) ?? []), url]);
+
+      /*
+       * A colourway filename lands on that colour's variants; anything
+       * else is a photo of the product as a whole.
+       *
+       * Tried against EVERY candidate, not just the one that found the
+       * product. "…ATR_1" matches the style code on its raw form, but the
+       * colour is only visible once the "_1" is off — checking only the
+       * matching form sent every numbered photo to the shared gallery.
+       */
+      let colourVariants: Variant[] = [];
+      for (const candidate of candidates) {
+        colourVariants = colourwayVariants(match, candidate);
+        if (colourVariants.length > 0) break;
+      }
+      if (colourVariants.length > 0) {
+        const perVariant = variantAdditions.get(match.id) ?? new Map<string, string[]>();
+        for (const variant of colourVariants) {
+          perVariant.set(variant.id, [...(perVariant.get(variant.id) ?? []), url]);
+        }
+        variantAdditions.set(match.id, perVariant);
+        colourways++;
+      } else {
+        additions.set(match.id, [...(additions.get(match.id) ?? []), url]);
+      }
+    }
+
+    /*
+     * A product whose photos ALL went to colourways would still have an
+     * empty gallery, and the grid card would show a placeholder next to a
+     * product page full of photographs. So the first colourway's photos
+     * double as the product's own cover set when it has none.
+     */
+    for (const [productId, perVariant] of variantAdditions) {
+      const product = products.find((p) => p.id === productId);
+      const hasGallery = (product?.images?.length ?? 0) > 0 && !replace;
+      if (hasGallery || additions.has(productId)) continue;
+      const first = [...perVariant.values()][0];
+      if (first?.length) additions.set(productId, first);
     }
 
     const failed: string[] = [];
 
+    /** Every product that gained photos, at either level. */
+    const touched = new Set([...additions.keys(), ...variantAdditions.keys()]);
+
+    /** The product's variants with this run's colourway photos merged in. */
+    const nextVariants = (product: Product): Variant[] | undefined => {
+      const perVariant = variantAdditions.get(product.id);
+      if (!perVariant) return undefined;
+      return (product.variants ?? []).map((variant) => {
+        const added = perVariant.get(variant.id);
+        if (!added) return variant;
+        const existing = replace ? [] : (variant.images ?? []);
+        return { ...variant, images: [...existing, ...added] };
+      });
+    };
+
     if (useSupabaseMutations()) {
-      for (const [productId, urls] of additions) {
+      for (const productId of touched) {
         const product = products.find((p) => p.id === productId);
-        const existing = replace ? [] : (product?.images ?? []);
+        if (!product) continue;
+
+        const gallery = additions.get(productId);
+        const variants = nextVariants(product);
+
         // Checked, unlike before: a rejected write left the photo in
         // storage and the product still empty, with nobody told.
         const saved = await updateProductFields(productId, {
-          images: [...existing, ...urls],
+          ...(gallery
+            ? { images: [...(replace ? [] : (product.images ?? [])), ...gallery] }
+            : {}),
+          ...(variants ? { variants } : {}),
         });
-        if (!saved) failed.push(product?.name ?? productId);
+        if (!saved) failed.push(product.name ?? productId);
       }
     } else {
       await mutateDB((db) => {
-        for (const [productId, urls] of additions) {
-          const existing = replace
-            ? []
-            : (db.productOverrides[productId]?.images ??
-              products.find((p) => p.id === productId)?.images ??
-              []);
+        for (const productId of touched) {
+          const product = products.find((p) => p.id === productId);
+          if (!product) continue;
+          const override = db.productOverrides[productId] ?? {};
+          const gallery = additions.get(productId);
+          const variants = nextVariants(product);
+
           db.productOverrides[productId] = {
-            ...db.productOverrides[productId],
-            images: [...existing, ...urls],
+            ...override,
+            ...(gallery
+              ? {
+                images: [
+                  ...(replace ? [] : (override.images ?? product.images ?? [])),
+                  ...gallery,
+                ],
+              }
+              : {}),
+            ...(variants ? { variants } : {}),
           };
         }
       });
@@ -746,12 +886,17 @@ export async function bulkImportPhotos(
 
     refresh();
 
-    const matched = additions.size - failed.length;
+    const matched = touched.size - failed.length;
     const parts: string[] = [];
     if (matched > 0) {
       parts.push(
         `${uploaded} photo${uploaded === 1 ? "" : "s"} added to ${matched} product${matched === 1 ? "" : "s"}.`,
       );
+      if (colourways > 0) {
+        parts.push(
+          `${colourways} went to a specific colour, so each shows when that colour is selected.`,
+        );
+      }
     }
     if (failed.length > 0) {
       parts.push(`${failed.length} could not be saved.`);

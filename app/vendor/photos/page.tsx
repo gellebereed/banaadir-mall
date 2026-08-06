@@ -81,10 +81,23 @@ export default async function VendorPhotosPage() {
             number:{" "}
             <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
               {example}-2.jpg
-            </code>
+            </code>{" "}
+            — <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">_2</code>{" "}
+            and{" "}
+            <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">(2)</code>{" "}
+            work too.
           </li>
           <li>
-            <strong>3.</strong> Select them all below and import. Any file that
+            <strong>3.</strong> A supplier pack named by{" "}
+            <strong>style + colour</strong> — like{" "}
+            <code className="rounded bg-sand-100 px-1.5 py-0.5 text-xs">
+              4A4800000001ATR_1.jpg
+            </code>{" "}
+            — is understood as it is. Those photos attach to that colour, so
+            they appear when a shopper picks it.
+          </li>
+          <li>
+            <strong>4.</strong> Select them all below and import. Any file that
             matches no product is listed back to you afterwards.
           </li>
         </ol>
