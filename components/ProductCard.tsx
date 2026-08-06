@@ -92,13 +92,31 @@ export default function ProductCard({
   const photos = product.images ?? [];
   const canSlide = photos.length > 1;
 
+  /*
+   * ── Pace ─────────────────────────────────────────────────────────────
+   * 900ms was a flicker, not a slideshow: a ten-photo product cycled its
+   * whole set in nine seconds and no single frame was on screen long
+   * enough to actually look at. Moving the mouse across a grid set several
+   * cards flickering at once.
+   *
+   * 1800ms is roughly how long it takes to register what a photo shows.
+   * The extra HOLD on the first frame matters just as much — passing the
+   * pointer over a card on the way somewhere else should not start a
+   * slideshow at all, so nothing moves until you have rested on it.
+   */
   useEffect(() => {
     if (!canSlide || !hovering || previewImage) return;
-    const timer = setInterval(
-      () => setSlideIndex((i) => (i + 1) % photos.length),
-      900,
-    );
-    return () => clearInterval(timer);
+
+    let timer: ReturnType<typeof setInterval>;
+    const start = setTimeout(() => {
+      setSlideIndex((i) => (i + 1) % photos.length);
+      timer = setInterval(() => setSlideIndex((i) => (i + 1) % photos.length), 1800);
+    }, 700);
+
+    return () => {
+      clearTimeout(start);
+      clearInterval(timer);
+    };
   }, [canSlide, hovering, previewImage, photos.length]);
 
   const mainImage = previewImage ?? photos[slideIndex] ?? primaryImage(product);

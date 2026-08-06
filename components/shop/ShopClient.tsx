@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { categories as seedCategories } from "@/lib/data/categories";
+import CategoryChips from "./CategoryChips";
 import type { Category, Product, Store } from "@/lib/types";
 
 type SortKey = "featured" | "sold" | "price-asc" | "price-desc" | "rating" | "discount" | "new";
@@ -251,50 +252,30 @@ export default function ShopClient({
       {/* Quick cut across the results — by category on a mixed list, by
           sub-grouping once everything shares one category. */}
       {chipMode === "category" && categoriesPresent.length > 1 && (
-        <div className="mb-5 flex flex-wrap gap-2">
-          <Chip
-            active={activeCategories.length === 0}
-            onClick={() => setActiveCategories([])}
-            label="All"
-            count={products.length}
-          />
-          {categoriesPresent.map((c) => (
-            <Chip
-              key={c.slug}
-              active={activeCategories.length === 1 && activeCategories[0] === c.slug}
-              // Chips are a quick single cut; the sidebar is where several
-              // categories get combined. Selecting one here replaces rather
-              // than adds, which is what a row of pills reads as.
-              onClick={() =>
-                setActiveCategories((prev) =>
-                  prev.length === 1 && prev[0] === c.slug ? [] : [c.slug],
-                )
-              }
-              label={c.icon ? `${c.icon} ${c.name}` : c.name}
-              count={c.count}
-            />
-          ))}
-        </div>
+        <CategoryChips
+          options={categoriesPresent}
+          // Chips are a quick single cut; the sidebar is where several
+          // categories get combined. Selecting one here replaces rather
+          // than adds, which is what a row of pills reads as — so the row
+          // only ever reflects a single-category selection.
+          activeSlug={activeCategories.length === 1 ? activeCategories[0] : null}
+          onSelect={(slug) => setActiveCategories(slug ? [slug] : [])}
+          allCount={products.length}
+        />
       )}
 
+      {/* Same treatment: a big store's sub-groupings run to dozens too. */}
       {chipMode === "subcategory" && subcategories.length > 1 && (
-        <div className="mb-5 flex flex-wrap gap-2">
-          <Chip
-            active={activeSubcategory === null}
-            onClick={() => setActiveSubcategory(null)}
-            label="All"
-            count={products.length}
-          />
-          {subcategories.map((sub) => (
-            <Chip
-              key={sub}
-              active={activeSubcategory === sub}
-              onClick={() => setActiveSubcategory(sub === activeSubcategory ? null : sub)}
-              label={sub}
-              count={products.filter((p) => p.subcategory === sub).length}
-            />
-          ))}
-        </div>
+        <CategoryChips
+          options={subcategories.map((sub) => ({
+            slug: sub,
+            name: sub,
+            count: products.filter((p) => p.subcategory === sub).length,
+          }))}
+          activeSlug={activeSubcategory}
+          onSelect={setActiveSubcategory}
+          allCount={products.length}
+        />
       )}
 
       {/* Toolbar: result count, mobile filter toggle, grid view switcher, sort */}

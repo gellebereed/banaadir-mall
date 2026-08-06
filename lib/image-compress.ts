@@ -19,10 +19,29 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-/** Longest edge kept. 1600 stays crisp on retina product pages. */
-const MAX_EDGE = 1600;
-/** Re-encode quality. 0.82 WebP is visually indistinguishable for photos. */
-const QUALITY = 0.82;
+/**
+ * Longest edge kept.
+ *
+ * 1600 was chosen for a card in a grid, and it is not enough for the thing
+ * this catalogue actually needs: a shopper opening the zoom to decide
+ * whether a suit is pinstriped or plain. Full-screen on an ordinary retina
+ * laptop is already ~2560 device pixels, so a 1600px master was being
+ * upscaled by 60% at exactly the moment detail mattered most — which is
+ * what "distorted and low grade when zoomed" is.
+ *
+ * 2400 covers full-screen zoom on every common display without storing
+ * camera originals. A 2400px WebP of a product shot is ~250-400 KB.
+ */
+const MAX_EDGE = 2400;
+/**
+ * Re-encode quality.
+ *
+ * Raised from 0.82 because these files are re-encoded a SECOND time by
+ * next/image on the way to the browser, and 0.82-of-0.82 is where fine
+ * regular texture — pinstripes, herringbone, weave — turns into mush.
+ * Generational loss is the real enemy here, not the first pass.
+ */
+const QUALITY = 0.9;
 /** Files at or below this that are already web-sized need no work. */
 const ALREADY_SMALL_BYTES = 120 * 1024;
 
@@ -125,12 +144,43 @@ export async function compressImageFile(
   });
 }
 
-/** Compress a list, reporting how much was saved overall. */
+/**
+ * Below this on the longest edge, a photo cannot survive being zoomed.
+ *
+ * The product page magnifies its image 2×, so anything under roughly a
+ * thousand pixels is already being stretched before the shopper touches
+ * it. Nothing on the serving side can put detail back — a small file is a
+ * small file — so the only place to catch it is here, before it is stored.
+ */
+const LOW_RESOLUTION_EDGE = 1000;
+
+/** The longest edge of an image file, or 0 if it cannot be read. */
+export async function imageLongestEdge(file: File): Promise<number> {
+  const decoded = await decode(file);
+  if (!decoded) return 0;
+  const edge = Math.max(decoded.width, decoded.height);
+  if ("close" in decoded.source) (decoded.source as ImageBitmap).close();
+  return edge;
+}
+
+/**
+ * Compress a list, reporting how much was saved and which files are too
+ * small to look good zoomed.
+ */
 export async function compressImageFiles(
   files: File[],
-): Promise<{ files: File[]; savedBytes: number }> {
+): Promise<{ files: File[]; savedBytes: number; lowResolution: string[] }> {
   const before = files.reduce((sum, f) => sum + f.size, 0);
-  const compressed = await Promise.all(files.map((f) => compressImageFile(f)));
+
+  const lowResolution: string[] = [];
+  const compressed = await Promise.all(
+    files.map(async (file) => {
+      const edge = await imageLongestEdge(file);
+      if (edge > 0 && edge < LOW_RESOLUTION_EDGE) lowResolution.push(file.name);
+      return compressImageFile(file);
+    }),
+  );
+
   const after = compressed.reduce((sum, f) => sum + f.size, 0);
-  return { files: compressed, savedBytes: Math.max(0, before - after) };
+  return { files: compressed, savedBytes: Math.max(0, before - after), lowResolution };
 }

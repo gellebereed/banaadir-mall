@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "12mb" },
   },
   images: {
+    /*
+     * next/image re-encodes every photo it serves, so a product shot is
+     * compressed twice: once in the browser before upload, once here. The
+     * default 75 on top of the upload pass is where fine regular texture —
+     * pinstripe, herringbone, weave — collapses into mush. 90 is declared
+     * so the product page and its zoom can ask for it.
+     */
+    qualities: [75, 90],
     remotePatterns: [
       {
         protocol: "https",

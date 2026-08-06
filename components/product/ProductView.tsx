@@ -410,7 +410,18 @@ function ZoomableImage({
           src={src}
           alt={alt}
           fill
-          sizes="(max-width: 1024px) 100vw, 50vw"
+          /*
+           * DOUBLE the layout size, because this image is magnified 2×.
+           *
+           * `sizes` tells next/image how wide the picture will be shown, and
+           * it has no idea about the CSS transform below. Declaring the
+           * layout width (50vw) meant a ~1280px file was fetched and then
+           * blown up to fill ~2560px of screen — so the magnifier, the one
+           * control whose entire job is showing fabric detail, was the
+           * blurriest thing on the page. The 2 here is the scale(2) below.
+           */
+          sizes="(max-width: 1024px) 150vw, 75vw"
+          quality={90}
           priority
           className="object-cover transition-transform duration-200 ease-out"
           style={{
@@ -475,7 +486,16 @@ function ZoomableImage({
             onTouchEnd={onTouchEnd}
             className="relative h-full max-h-[78vh] w-full max-w-4xl"
           >
-            <Image src={src} alt={alt} fill sizes="100vw" className="object-contain" />
+            {/* The one view where the whole photo is shown at full size —
+                worth the extra bytes that quality 90 costs. */}
+            <Image
+              src={src}
+              alt={alt}
+              fill
+              sizes="100vw"
+              quality={90}
+              className="object-contain"
+            />
 
             {many && (
               <>

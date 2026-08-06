@@ -53,6 +53,14 @@ export default function PhotoPicker({
   const setPending = onPhotosChange ?? setOwn;
 
   const [compressing, setCompressing] = useState(false);
+  /*
+   * Photos too small to survive the product page magnifier. Flagged HERE,
+   * at the moment of choosing, because once a small file is stored no
+   * amount of serving quality can put the detail back — the only fix is
+   * to upload a bigger original, and that is only easy while the seller
+   * still has the folder open.
+   */
+  const [softFiles, setSoftFiles] = useState<string[]>([]);
   const [saved, setSaved] = useState<{ bytes: number; total: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -86,7 +94,9 @@ export default function PhotoPicker({
     setCompressing(true);
     setSaved(null);
     try {
-      const { files: compressedFiles, savedBytes } = await compressImageFiles(rawFiles);
+      const { files: compressedFiles, savedBytes, lowResolution } =
+        await compressImageFiles(rawFiles);
+      setSoftFiles(lowResolution);
       const added = compressedFiles.map((file) => ({
         id: nextId(),
         file,
@@ -166,6 +176,21 @@ export default function PhotoPicker({
               </span>
             )}
           </p>
+        </div>
+      )}
+
+      {softFiles.length > 0 && (
+        <div className="mt-2 rounded-xl bg-mango-50 px-3 py-2 text-xs text-mango-900">
+          <p className="font-semibold">
+            ⚠ {softFiles.length} photo{softFiles.length === 1 ? " is" : "s are"} smaller
+            than 1000px.
+          </p>
+          <p className="mt-0.5">
+            {softFiles.length === 1 ? "It" : "They"} will upload fine, but look soft
+            when a shopper zooms in. A larger original from the supplier is worth
+            it — nothing can add the detail back later.
+          </p>
+          <p className="mt-1 truncate text-mango-800/80">{softFiles.join(", ")}</p>
         </div>
       )}
     </div>
