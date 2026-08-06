@@ -93,9 +93,7 @@ html {
 }
 
 body {
-  /* Stops a scroll inside a rail or a modal from dragging the whole page
-     — the rubber-band effect that immediately gives away a web view. */
-  overscroll-behavior-y: none;
+  overscroll-behavior-y: auto;
 }
 
 /*
@@ -105,10 +103,13 @@ body {
  * That is a bug every time, so it is contained here as well as fixed at
  * the source.
  */
-html,
+html {
+  max-width: 100%;
+}
+
 body {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /*
