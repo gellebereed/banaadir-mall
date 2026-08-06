@@ -106,10 +106,20 @@ export default function ProductView({
     setTimeout(() => setAdded(false), 1800);
   }
 
+  /*
+   * `min-w-0` on both columns below.
+   *
+   * A grid item defaults to `min-width: auto`, which means it refuses to
+   * shrink below the intrinsic width of its content. The thumbnail rail is
+   * as wide as all its thumbnails laid end to end, so on a 375px phone
+   * this column measured 724px and dragged the whole page into sideways
+   * scrolling — every section then rendered about twice the screen width,
+   * which is what "stretched" was.
+   */
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       {/* ── Photos ─────────────────────────────────────────────────── */}
-      <div>
+      <div className="min-w-0">
         {images.length > 0 ? (
           <ZoomableImage
             images={images}
@@ -148,7 +158,7 @@ export default function ProductView({
       </div>
 
       {/* ── Details & buy box ──────────────────────────────────────── */}
-      <div>
+      <div className="min-w-0">
         {product.badge && (
           <span className="mb-3 inline-block rounded-full bg-mango-100 px-3 py-1 text-xs font-bold text-mango-800">
             {product.badge}

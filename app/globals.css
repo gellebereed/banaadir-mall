@@ -65,9 +65,84 @@ body {
 /* Thin, unobtrusive scrollbars for horizontal product rails */
 .rail-scroll {
   scrollbar-width: none;
+  /* Rails snap to product cards, so a flick lands on a card rather than
+     halfway between two — the single cheapest thing that makes a
+     horizontal list feel native rather than like a scrolling web page. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 .rail-scroll::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Feeling like an app rather than a web page ────────────────────────
+ *
+ * Small, boring rules. Together they remove most of what makes a site
+ * read as "a website in a browser" on a phone.
+ */
+
+/* A tap should not paint a grey box over the thing you tapped. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Landscape on iOS silently inflates body text without this. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* Stops a scroll inside a rail or a modal from dragging the whole page
+     — the rubber-band effect that immediately gives away a web view. */
+  overscroll-behavior-y: none;
+}
+
+/*
+ * ── THE PAGE MUST NEVER SCROLL SIDEWAYS ──────────────────────────────
+ * One over-wide child anywhere puts the entire document into horizontal
+ * scrolling, and every section then reads as stretched and misaligned.
+ * That is a bug every time, so it is contained here as well as fixed at
+ * the source.
+ */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/*
+ * ── NO ZOOM-ON-FOCUS ─────────────────────────────────────────────────
+ * iOS Safari zooms the whole page whenever a focused field's text is
+ * under 16px, then leaves you scrolled somewhere else — "the screen
+ * coming at you" when you start typing. The usual hack is
+ * `maximum-scale=1` in the viewport tag, which also takes pinch-zoom
+ * away from everyone who needs it. Sizing the text properly fixes the
+ * cause and costs nobody anything.
+ *
+ * Applied by media query, not utility class, so it also covers the
+ * inputs that set their own `text-sm`.
+ */
+/*
+ * The `:not([hidden])` on select and textarea is not decoration — it is
+ * there for specificity. A bare `select` is (0,0,1) and loses to
+ * Tailwind's `.text-sm` (0,1,0), so the rule silently did nothing for
+ * every dropdown and every description box on the page. The attribute
+ * selector lifts it to (0,1,1), which wins. `input` already clears the
+ * bar through its two `:not()` clauses.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select:not([hidden]),
+  textarea:not([hidden]) {
+    font-size: 16px;
+  }
+}
+
+/* Room for the home indicator on a notched phone, and for the app's own
+   bottom bar. Used by fixed elements pinned to the bottom edge. */
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
 /* ── Reusable component classes ───────────────────────────────────── */

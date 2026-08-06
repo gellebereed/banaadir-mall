@@ -28,6 +28,17 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#1f6270",
+  width: "device-width",
+  initialScale: 1,
+  /*
+   * Pinch-zoom is deliberately LEFT ON.
+   *
+   * Locking it with maximum-scale is the usual way to stop iOS zooming
+   * into a focused input, and it takes zoom away from every shopper who
+   * relies on it to read. The cause is fixed instead — form text is 16px
+   * on small screens (app/globals.css) — so there is nothing to suppress.
+   */
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({

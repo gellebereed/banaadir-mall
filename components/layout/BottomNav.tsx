@@ -18,7 +18,10 @@ export default function BottomNav() {
   const { count } = useCart();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-sand-200 bg-white/95 backdrop-blur md:hidden">
+    // pb-[env(safe-area-inset-bottom)]: on a notched phone the bottom strip
+    // of the screen belongs to the home indicator, and a bar drawn to
+    // `bottom: 0` puts its labels underneath it.
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-sand-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       <div className="grid grid-cols-5">
         {TABS.map((tab) => {
           const active =
