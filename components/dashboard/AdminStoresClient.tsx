@@ -433,8 +433,8 @@ function DeleteStoreDialog({
   const confirmed = typed.trim().toLowerCase() === store.name.trim().toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/50 p-4 sm:p-6 overflow-y-auto backdrop-blur-sm">
+      <div className="my-auto max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
         <div className="flex items-start gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-coral-100 text-xl">
             ⚠️

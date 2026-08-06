@@ -217,9 +217,9 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
 
       {/* Add / Edit Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="card w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between border-b border-sand-200 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 sm:p-6 overflow-y-auto backdrop-blur-xs">
+          <div className="card my-auto flex max-h-[85vh] w-full max-w-lg flex-col p-0 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-sand-200 px-6 py-4 shrink-0 bg-white">
               <h2 className="font-display text-xl font-extrabold text-ocean-950">
                 {editingCat ? `✏️ Edit Category: ${editingCat.name}` : "✨ Add New Category"}
               </h2>
@@ -241,120 +241,122 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
                 }
                 setShowAddModal(false);
               }}
-              className="mt-6 space-y-4"
+              className="flex flex-1 flex-col overflow-hidden"
             >
-              {editingCat && <input type="hidden" name="originalSlug" value={editingCat.slug} />}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {editingCat && <input type="hidden" name="originalSlug" value={editingCat.slug} />}
 
-              <div>
-                <label htmlFor="cat-name" className="label">Category Name</label>
-                <input
-                  id="cat-name"
-                  name="name"
-                  required
-                  defaultValue={editingCat?.name ?? ""}
-                  placeholder="e.g. Home Appliances"
-                  className="input"
-                />
+                <div>
+                  <label htmlFor="cat-name" className="label">Category Name</label>
+                  <input
+                    id="cat-name"
+                    name="name"
+                    required
+                    defaultValue={editingCat?.name ?? ""}
+                    placeholder="e.g. Home Appliances"
+                    className="input"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="cat-slug" className="label">
+                    Slug <span className="font-normal text-slate-400">(URL identifier, e.g. home-appliances)</span>
+                  </label>
+                  <input
+                    id="cat-slug"
+                    name="slug"
+                    defaultValue={editingCat?.slug ?? ""}
+                    placeholder="home-appliances"
+                    className="input font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="cat-icon" className="label">Category Emoji Icon</label>
+                  <input
+                    id="cat-icon"
+                    name="icon"
+                    maxLength={4}
+                    defaultValue={editingCat?.icon ?? "🛍️"}
+                    placeholder="🛍️"
+                    className="input text-xl"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Used in the navigation menus, and as the fallback if there
+                    is no cover photo.
+                  </p>
+                </div>
+
+                {/*
+                  The home page renders departments as photo tiles. Leaving
+                  this empty is a perfectly good choice: the storefront then
+                  borrows the best-selling product's photo from inside this
+                  department, which is usually the right picture anyway.
+                */}
+                <div>
+                  <label className="label">Cover photo</label>
+                  <PhotoPicker
+                    name="imageFile"
+                    multiple={false}
+                    label="Upload a department photo"
+                    hint="Shown on the home page · a wide, uncluttered shot works best"
+                  />
+                  <input
+                    name="image"
+                    defaultValue={editingCat?.image ?? ""}
+                    placeholder="…or paste an image URL"
+                    className="input mt-2 !py-2 font-mono text-xs"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Leave blank to use the best-selling product&apos;s photo from
+                    this department automatically.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="cat-tagline" className="label">Tagline / Description</label>
+                  <input
+                    id="cat-tagline"
+                    name="tagline"
+                    defaultValue={editingCat?.tagline ?? ""}
+                    placeholder="e.g. Kitchen, laundry & smart home electronics"
+                    className="input"
+                  />
+                </div>
+
+                {/*
+                  Odoo's product.category.parent_id. Categories are a tree, and
+                  a product filed under a child also shows on its parent's page
+                  — so "Cookware" under "Home & Living" adds depth to browsing
+                  without splitting the catalogue in two.
+                */}
+                <div>
+                  <label htmlFor="cat-parent" className="label">
+                    Parent category{" "}
+                    <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <select
+                    id="cat-parent"
+                    name="parentSlug"
+                    defaultValue={editingCat?.parentSlug ?? ""}
+                    className="input"
+                  >
+                    <option value="">— None (top-level category) —</option>
+                    {parentOptions.map((c) => (
+                      <option key={c.slug} value={c.slug}>
+                        {c.icon} {categoryPathLabel(c.slug)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Products in a subcategory also appear on the parent&apos;s
+                    page. A category cannot be placed inside itself or one of
+                    its own subcategories.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="cat-slug" className="label">
-                  Slug <span className="font-normal text-slate-400">(URL identifier, e.g. home-appliances)</span>
-                </label>
-                <input
-                  id="cat-slug"
-                  name="slug"
-                  defaultValue={editingCat?.slug ?? ""}
-                  placeholder="home-appliances"
-                  className="input font-mono"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="cat-icon" className="label">Category Emoji Icon</label>
-                <input
-                  id="cat-icon"
-                  name="icon"
-                  maxLength={4}
-                  defaultValue={editingCat?.icon ?? "🛍️"}
-                  placeholder="🛍️"
-                  className="input text-xl"
-                />
-                <p className="mt-1 text-xs text-slate-400">
-                  Used in the navigation menus, and as the fallback if there
-                  is no cover photo.
-                </p>
-              </div>
-
-              {/*
-                The home page renders departments as photo tiles. Leaving
-                this empty is a perfectly good choice: the storefront then
-                borrows the best-selling product's photo from inside this
-                department, which is usually the right picture anyway.
-              */}
-              <div>
-                <label className="label">Cover photo</label>
-                <PhotoPicker
-                  name="imageFile"
-                  multiple={false}
-                  label="Upload a department photo"
-                  hint="Shown on the home page · a wide, uncluttered shot works best"
-                />
-                <input
-                  name="image"
-                  defaultValue={editingCat?.image ?? ""}
-                  placeholder="…or paste an image URL"
-                  className="input mt-2 !py-2 font-mono text-xs"
-                />
-                <p className="mt-1 text-xs text-slate-400">
-                  Leave blank to use the best-selling product&apos;s photo from
-                  this department automatically.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="cat-tagline" className="label">Tagline / Description</label>
-                <input
-                  id="cat-tagline"
-                  name="tagline"
-                  defaultValue={editingCat?.tagline ?? ""}
-                  placeholder="e.g. Kitchen, laundry & smart home electronics"
-                  className="input"
-                />
-              </div>
-
-              {/*
-                Odoo's product.category.parent_id. Categories are a tree, and
-                a product filed under a child also shows on its parent's page
-                — so "Cookware" under "Home & Living" adds depth to browsing
-                without splitting the catalogue in two.
-              */}
-              <div>
-                <label htmlFor="cat-parent" className="label">
-                  Parent category{" "}
-                  <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <select
-                  id="cat-parent"
-                  name="parentSlug"
-                  defaultValue={editingCat?.parentSlug ?? ""}
-                  className="input"
-                >
-                  <option value="">— None (top-level category) —</option>
-                  {parentOptions.map((c) => (
-                    <option key={c.slug} value={c.slug}>
-                      {c.icon} {categoryPathLabel(c.slug)}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-400">
-                  Products in a subcategory also appear on the parent&apos;s
-                  page. A category cannot be placed inside itself or one of
-                  its own subcategories.
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-sand-200">
+              <div className="flex items-center gap-3 border-t border-sand-200 px-6 py-4 bg-sand-50/90 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}

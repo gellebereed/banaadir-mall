@@ -10,7 +10,7 @@
  * query params) and keep this component as pure UI.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { categories as seedCategories } from "@/lib/data/categories";
 import type { Category, Product, Store } from "@/lib/types";
@@ -127,6 +127,41 @@ export default function ShopClient({
     return list;
   }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
 
+  const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
+  const BATCH_SIZE = 16;
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+
+  // Reset visible count whenever filters or sort change
+  useEffect(() => {
+    setVisibleCount(BATCH_SIZE);
+  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
+
+  const displayedProducts = useMemo(() => {
+    return filtered.slice(0, visibleCount);
+  }, [filtered, visibleCount]);
+
+  const hasMore = visibleCount < filtered.length;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 12, filtered.length));
+        }
+      },
+      { rootMargin: "300px" }
+    );
+
+    const node = loadMoreRef.current;
+    if (node) observer.observe(node);
+
+    return () => {
+      if (node) observer.unobserve(node);
+    };
+  }, [hasMore, filtered.length]);
+
   const categories = liveCategories?.length ? liveCategories : seedCategories;
 
   /**
@@ -198,6 +233,13 @@ export default function ShopClient({
     setOnSaleOnly(false);
   }
 
+  const gridClass =
+    gridCols === 3
+      ? "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-3"
+      : gridCols === 5
+      ? "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+      : "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-4";
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       {/* Page heading */}
@@ -255,23 +297,52 @@ export default function ShopClient({
         </div>
       )}
 
-      {/* Toolbar: result count, mobile filter toggle, sort */}
+      {/* Toolbar: result count, mobile filter toggle, grid view switcher, sort */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
+          Showing <strong className="text-slate-800">{displayedProducts.length}</strong> of{" "}
           <strong className="text-slate-800">{filtered.length}</strong> products
         </p>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2.5">
+          {/* Grid View Columns Switcher */}
+          <div className="hidden items-center gap-1 rounded-full border border-sand-200 bg-white p-1 sm:flex shadow-2xs">
+            <span className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              View
+            </span>
+            {[
+              { cols: 3, label: "3 Grid", icon: "⊞" },
+              { cols: 4, label: "4 Grid", icon: "▦" },
+              { cols: 5, label: "5 Grid", icon: "▧" },
+            ].map((item) => (
+              <button
+                key={item.cols}
+                type="button"
+                onClick={() => setGridCols(item.cols as 3 | 4 | 5)}
+                className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
+                  gridCols === item.cols
+                    ? "bg-ocean-800 text-white shadow-xs"
+                    : "text-slate-500 hover:bg-sand-100 hover:text-slate-800"
+                }`}
+                title={`${item.label} per row`}
+              >
+                {item.icon} <span className="hidden md:inline">{item.cols}</span>
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={() => setFiltersOpen((o) => !o)}
             className="rounded-full border border-sand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 lg:hidden"
           >
             Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
           </button>
+
           <select
             aria-label="Sort products"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-full border border-sand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-ocean-500"
+            className="rounded-full border border-sand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-ocean-500 shadow-2xs"
           >
             {SORTS.map((s) => (
               <option key={s.key} value={s.key}>
@@ -283,9 +354,9 @@ export default function ShopClient({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        {/* Filter sidebar (always visible on desktop, toggled on mobile) */}
+        {/* Filter sidebar (always visible on desktop with independent scrolling) */}
         <aside className={`${filtersOpen ? "block" : "hidden"} lg:block`}>
-          <div className="card space-y-6 p-5 lg:sticky lg:top-40">
+          <div className="card space-y-6 p-5 lg:sticky lg:top-28 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:overscroll-contain rail-scroll">
             {activeFilterCount > 0 && (
               <button
                 onClick={clearFilters}
@@ -406,12 +477,31 @@ export default function ShopClient({
           </div>
         </aside>
 
-        {/* Product grid */}
+        {/* Product grid & Infinite Scroll */}
         {filtered.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
+          <div className="flex flex-col">
+            <div className={gridClass}>
+              {displayedProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+
+            {/* Infinite Scroll trigger element */}
+            {hasMore ? (
+              <div ref={loadMoreRef} className="my-8 flex flex-col items-center justify-center gap-2 py-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-ocean-800">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ocean-700 border-t-transparent" />
+                  Loading more products…
+                </div>
+                <p className="text-xs text-slate-400">
+                  Showing {displayedProducts.length} of {filtered.length} products
+                </p>
+              </div>
+            ) : (
+              <div className="my-8 text-center text-xs text-slate-400">
+                ✓ You&apos;ve reached the end of the catalogue ({filtered.length} products)
+              </div>
+            )}
           </div>
         ) : (
           <div className="card flex flex-col items-center gap-3 self-start p-12 text-center">

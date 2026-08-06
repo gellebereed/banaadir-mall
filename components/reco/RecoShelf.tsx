@@ -99,21 +99,55 @@ const REASON_ICONS: Record<string, string> = {
   "price-drop": "💸",
 };
 
+/**
+ * The badge label per reason kind.
+ *
+ * Short on purpose. The badge sits over the photo now, where there is room
+ * for two or three words and no more — and a two-word label is read at a
+ * glance while scrolling, which a truncated sentence like "Because you
+ * viewed AC&Co Linen S…" never was. The full sentence is still there, as
+ * the badge's tooltip and in the card's own footer, so nothing is lost.
+ */
+const REASON_LABELS: Record<string, string> = {
+  viewed: "You viewed",
+  saved: "You saved",
+  "in-cart": "In your cart",
+  "bought-together": "Often together",
+  similar: "Similar",
+  completes: "Goes with",
+  store: "Same shop",
+  brand: "Same brand",
+  rising: "Trending",
+  "price-fit": "Your budget",
+  new: "Just in",
+  popular: "Popular",
+  discover: "Discover",
+  "price-drop": "Price drop",
+};
+
+/*
+ * Solid, not tinted.
+ *
+ * These now sit ON the photograph rather than on the page background, and a
+ * pale wash over an unpredictable image is unreadable — a `bg-slate-100`
+ * pill on a light-grey studio shot disappears entirely. Every one of these
+ * is opaque with white text, so the label holds against any photo.
+ */
 const REASON_BADGE_STYLES: Record<string, string> = {
-  viewed: "bg-slate-100 text-slate-600",
-  saved: "bg-coral-100 text-coral-700",
-  "in-cart": "bg-ocean-50 text-ocean-700",
-  "bought-together": "bg-violet-50 text-violet-700",
-  similar: "bg-ocean-50 text-ocean-700",
-  completes: "bg-emerald-50 text-emerald-700",
-  store: "bg-amber-50 text-amber-700",
-  brand: "bg-amber-50 text-amber-700",
-  rising: "bg-orange-50 text-orange-700",
-  "price-fit": "bg-emerald-50 text-emerald-700",
-  new: "bg-mango-50 text-mango-800",
-  popular: "bg-rose-50 text-rose-700",
-  discover: "bg-indigo-50 text-indigo-700",
-  "price-drop": "bg-emerald-50 text-emerald-700",
+  viewed: "bg-slate-700/95 text-white",
+  saved: "bg-coral-600/95 text-white",
+  "in-cart": "bg-ocean-700/95 text-white",
+  "bought-together": "bg-violet-700/95 text-white",
+  similar: "bg-ocean-700/95 text-white",
+  completes: "bg-emerald-700/95 text-white",
+  store: "bg-amber-700/95 text-white",
+  brand: "bg-amber-700/95 text-white",
+  rising: "bg-orange-600/95 text-white",
+  "price-fit": "bg-emerald-700/95 text-white",
+  new: "bg-ocean-950/95 text-white",
+  popular: "bg-rose-600/95 text-white",
+  discover: "bg-indigo-700/95 text-white",
+  "price-drop": "bg-emerald-600/95 text-white",
 };
 
 export default function RecoShelf({ shelf }: { shelf: Shelf }) {
@@ -129,20 +163,14 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
 
   const tone = TONES[shelf.tone];
 
-  /**
-   * Does ANY card on this row carry an evidence chip?
-   *
-   * The chips are conditional — only products with genuinely low stock or
-   * real weekly sales get one — so on a mixed row some captions were two
-   * lines and some were one. Because the caption sits BELOW the tile, that
-   * pushed the tiles themselves to different heights and the row looked
-   * ragged.
-   *
-   * Deciding it per ROW rather than per card is what keeps both properties:
-   * every tile on a row lines up, and a row where nothing has a chip
-   * doesn't carry an empty reserved strip on every card.
+  /*
+   * There used to be an `anyProof` flag here, reserving a caption strip on
+   * every card in a row whenever ONE of them had an evidence chip — the
+   * only way to stop a mixed row going ragged when the captions lived
+   * outside the tiles. The captions are inside the cards now, and every
+   * card's footer always carries something, so the row lines up by
+   * construction and the flag has nothing left to do.
    */
-  const anyProof = items.some((item) => item.proof?.scarcity || item.proof?.momentum);
 
   function dismiss(productId: string) {
     setDismissed((current) => [...current, productId]);
@@ -237,19 +265,14 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
           {shelf.layout === "grid" ? (
             <div className="grid grid-cols-2 items-stretch gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {items.map((item) => (
-                <RecoCard
-                  key={item.product.id}
-                  item={item}
-                  reserveProof={anyProof}
-                  onDismiss={dismiss}
-                />
+                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} />
               ))}
             </div>
           ) : (
             <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
               {items.map((item) => (
                 <div key={item.product.id} className="flex w-44 shrink-0 snap-start sm:w-52">
-                  <RecoCard item={item} reserveProof={anyProof} onDismiss={dismiss} />
+                  <RecoCard item={item} onDismiss={dismiss} />
                 </div>
               ))}
             </div>
@@ -277,78 +300,95 @@ function shortReason(text: string): string {
 }
 
 /**
- * One suggestion. The tile itself is the site's standard product card — a
- * recommendation should look like the rest of the shop, not like an advert
- * bolted onto it. Everything recommendation-specific lives underneath.
+ * One suggestion — a single card, with nothing outside it.
+ *
+ * ── What changed and why ─────────────────────────────────────────────────
+ * The reason pill and the evidence chips used to be siblings of the tile,
+ * stacked underneath it on the page background. The card ended at the
+ * price and two more lines floated below, so a row read as tiles with
+ * debris under them, and the taller card in a row dragged the others out
+ * of alignment.
+ *
+ * Now the tile IS the card and both pieces live inside it:
+ *
+ *   · the reason becomes a short label over the photo — read at a glance
+ *     while scrolling, where a truncated sentence never was
+ *   · the evidence becomes the card's own footer strip, behind a rule
+ *
+ * Every card on a row is therefore the same object, and the row lines up
+ * because the cards line up, not because a caption was padded to match.
  */
 function RecoCard({
   item,
-  reserveProof,
   onDismiss,
 }: {
   item: Recommendation;
-  /** True when some card on this row has an evidence chip. See anyProof. */
-  reserveProof: boolean;
   onDismiss: (productId: string) => void;
 }) {
   const proof = item.proof;
   const icon = REASON_ICONS[item.reason.kind] ?? "✦";
-  const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-100 text-slate-600";
+  const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-700/95 text-white";
+  const label = item.exploratory
+    ? "New to you"
+    : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
 
   return (
-    /*
-     * `flex-1` on the tile is what makes a row of these line up: the
-     * caption below is a fixed-height footer, and the product tile takes
-     * whatever is left. Without it the tile sat at its natural height and
-     * every card ended somewhere different.
-     */
-    <div className="group/reco relative flex h-full w-full flex-col">
-      <div className="flex flex-1 flex-col">
-        <ProductCard product={item.product} />
-      </div>
-
-      {/* ── Evidence — only ever what is genuinely true ───────────── */}
-      {reserveProof && (
-        <div className="mt-1.5 flex min-h-[1.125rem] flex-wrap items-center gap-1">
-          {proof?.scarcity && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-coral-100 px-2 py-0.5 text-[10px] font-semibold text-coral-700 ring-1 ring-inset ring-coral-500/20">
-              🔴 {proof.scarcity}
+    <div className="group/reco h-full w-full">
+      <ProductCard
+        product={item.product}
+        cornerBadge={
+          <span
+            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm backdrop-blur-[2px] ${badgeStyle}`}
+            title={item.reason.text}
+          >
+            <span className="shrink-0" aria-hidden>
+              {icon}
             </span>
-          )}
-          {proof?.momentum && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-ocean-50 px-2 py-0.5 text-[10px] font-semibold text-ocean-700 ring-1 ring-inset ring-ocean-200/60">
-              📈 {proof.momentum}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── The reason it is here ─────────────────────────────────── */}
-      <div className="mt-1.5 flex min-h-[1.375rem] items-center gap-1">
-        <span
-          className={`inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-black/[0.04] ${badgeStyle}`}
-          title={item.reason.text}
-        >
-          <span className="shrink-0" aria-hidden>
-            {icon}
+            <span className="truncate">{label}</span>
           </span>
-          {item.exploratory && (
-            <span className="shrink-0 font-extrabold uppercase tracking-wider opacity-70">
-              New to you ·
+        }
+        footer={
+          <div className="flex min-h-[1.25rem] items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+              {/*
+                The strongest true thing about this card, in priority order:
+                scarcity, then momentum, then the reason itself. Something
+                is always shown, so the strip is never an empty band — and
+                nothing here is ever invented. See lib/reco: `proof` is only
+                set when the numbers genuinely support it.
+              */}
+              {proof?.scarcity ? (
+                <span className="font-semibold text-coral-700">
+                  <span className="mr-1" aria-hidden>
+                    ●
+                  </span>
+                  {proof.scarcity}
+                </span>
+              ) : proof?.momentum ? (
+                <span className="font-semibold text-ocean-700">
+                  <span className="mr-1" aria-hidden>
+                    ▲
+                  </span>
+                  {proof.momentum}
+                </span>
+              ) : (
+                <span className="text-slate-400" title={item.reason.text}>
+                  {shortReason(item.reason.text)}
+                </span>
+              )}
             </span>
-          )}
-          <span className="truncate">{shortReason(item.reason.text)}</span>
-        </span>
 
-        <button
-          onClick={() => onDismiss(item.product.id)}
-          aria-label={`Not interested in ${item.product.name}`}
-          title="Not interested — stop showing me this"
-          className="ml-auto shrink-0 rounded-full p-0.5 text-[10px] text-slate-300 opacity-0 transition hover:bg-white hover:text-coral-500 focus:opacity-100 group-hover/reco:opacity-100"
-        >
-          ✕
-        </button>
-      </div>
+            <button
+              onClick={() => onDismiss(item.product.id)}
+              aria-label={`Not interested in ${item.product.name}`}
+              title="Not interested — stop showing me this"
+              className="-mr-1 shrink-0 rounded-full px-1.5 py-0.5 text-[11px] leading-none text-slate-300 transition hover:bg-white hover:text-coral-500 focus-visible:opacity-100 sm:opacity-0 sm:group-hover/reco:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        }
+      />
     </div>
   );
 }

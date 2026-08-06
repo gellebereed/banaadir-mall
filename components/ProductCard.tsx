@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
 import {
@@ -34,8 +34,29 @@ const MAX_SWATCHES = 4;
  * previews that colour's photo) and a size summary, so shoppers can tell
  * at a glance what options exist without opening the product — the pattern
  * used by Karaca, Trendyol and other large retailers.
+ *
+ * ── The two slots ────────────────────────────────────────────────────────
+ * `cornerBadge` and `footer` exist so a caller can add its own content
+ * WITHOUT it ending up outside the card. Recommendation rows used to stack
+ * their reason pill and evidence chips underneath the tile, as loose text
+ * on the page background — the card stopped at the price and then two more
+ * lines floated below it, so a row read as tiles with debris under them
+ * rather than as a row of cards.
+ *
+ * Both slots default to nothing, so every existing use renders exactly as
+ * it did before.
  */
-export default function ProductCard({ product }: { product: Product }) {
+export default function ProductCard({
+  product,
+  cornerBadge,
+  footer,
+}: {
+  product: Product;
+  /** Sits top-left over the photo, above the product's own badge. */
+  cornerBadge?: ReactNode;
+  /** A strip inside the card, below the price, behind a hairline rule. */
+  footer?: ReactNode;
+}) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const wished = isWishlisted(product.id);
 
@@ -123,14 +144,28 @@ export default function ProductCard({ product }: { product: Product }) {
         )}
       </Link>
 
-      {product.badge && (
-        <span
-          className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-bold ${BADGE_STYLES[product.badge]}`}
-        >
-          {product.badge === "Sale" && product.compareAt
-            ? `-${discountPct(price, product.compareAt)}%`
-            : product.badge}
-        </span>
+      {/*
+        Badges stack in one column so a caller's badge and the product's own
+        can never land on top of each other.
+
+        When a cornerBadge IS supplied it says something specific about this
+        shopper ("Just in", "Price drop"), which outranks a generic "New" or
+        "Bestseller" — so those are stood down. A Sale badge survives,
+        because a discount percentage is money and outranks everything.
+      */}
+      {(cornerBadge || product.badge) && (
+        <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-col items-start gap-1.5">
+          {cornerBadge}
+          {product.badge && (!cornerBadge || product.badge === "Sale") && (
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${BADGE_STYLES[product.badge]}`}
+            >
+              {product.badge === "Sale" && product.compareAt
+                ? `-${discountPct(price, product.compareAt)}%`
+                : product.badge}
+            </span>
+          )}
+        </div>
       )}
 
       <button
@@ -200,7 +235,10 @@ export default function ProductCard({ product }: { product: Product }) {
           )}
         </div>
 
-        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+        {/* Hairline above the price — separates "what it is" from "what it
+            costs", and gives the row of cards a shared horizontal line to
+            settle on instead of ending at whatever height the title left. */}
+        <div className="mt-auto flex items-end justify-between gap-2 border-t border-sand-100 pt-2.5">
           <div>
             <div className="flex items-baseline gap-1.5">
               {showFrom && <span className="text-[11px] text-slate-400">from</span>}
@@ -257,6 +295,11 @@ export default function ProductCard({ product }: { product: Product }) {
           )}
         </div>
       </div>
+
+      {/* Inside the card, behind its own rule — never loose on the page. */}
+      {footer && (
+        <div className="border-t border-sand-100 bg-sand-50/50 px-3.5 py-2">{footer}</div>
+      )}
     </div>
   );
 }

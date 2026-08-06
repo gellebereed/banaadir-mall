@@ -97,8 +97,8 @@ export function BannerEditBtn({ banner }: { banner: Banner }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/60 p-4 backdrop-blur-sm animate-fade-up">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/60 p-4 sm:p-6 overflow-y-auto backdrop-blur-sm animate-fade-up">
+          <div className="my-auto max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-sand-200 pb-3">
               <h3 className="font-display font-bold text-ocean-950">Edit Banner</h3>
               <button
@@ -283,8 +283,8 @@ export function TileEditBtn({ tile }: { tile: PromoTile }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/60 p-4 backdrop-blur-sm animate-fade-up">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/60 p-4 overflow-y-auto backdrop-blur-sm animate-fade-up">
+          <div className="my-auto max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-sand-200 pb-3">
               <h3 className="font-display font-bold text-ocean-950">Edit Campaign Tile</h3>
               <button
