@@ -115,7 +115,21 @@ async function employeePermissionsPending() {
   return !probe.ok;
 }
 
+/** Does products.updated_at exist yet? */
+async function productUpdatedAtPending() {
+  const probe = await api("products?select=id,updated_at&limit=1");
+  return !probe.ok;
+}
+
 const MIGRATIONS = [
+  {
+    file: "migration-product-updated-at.sql",
+    title: "Track when each product was last edited",
+    consequence:
+      "The seller's product list cannot sort by what was edited most " +
+      "recently — it falls back to the catalogue's own order.",
+    pending: productUpdatedAtPending,
+  },
   {
     file: "migration-single-variant-codes.sql",
     title: "Let a single-variant product share its own codes with its variant",

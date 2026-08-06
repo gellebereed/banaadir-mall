@@ -63,6 +63,7 @@ import type {
   Store,
   Variant,
 } from "@/lib/types";
+import { UPLOAD_PLACEHOLDER } from "@/lib/product-utils";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
   useSupabaseMutations,
@@ -160,6 +161,26 @@ function commaList(value: FormDataEntryValue | null): string[] | undefined {
 }
 
 /** Parse the JSON the PhotoManager / VariantEditor components submit. */
+/**
+ * Slot each freshly uploaded photo into the position the seller put it in.
+ *
+ * PhotoManager submits the intended ORDER, writing `__upload__` wherever a
+ * not-yet-uploaded file sits, and posts the files in that same order. So
+ * the Nth placeholder takes the Nth upload, and a photo dragged to the
+ * front before saving arrives at the front — instead of every new photo
+ * landing at the end regardless, which is what appending did.
+ *
+ * Anything left over is appended: an older form that submits a plain list
+ * of URLs still behaves exactly as it did.
+ */
+function mergeUploads(order: string[], uploaded: string[]): string[] {
+  const queue = [...uploaded];
+  const merged = order
+    .map((entry) => (entry === UPLOAD_PLACEHOLDER ? queue.shift() : entry))
+    .filter((url): url is string => typeof url === "string" && url !== "");
+  return [...merged, ...queue];
+}
+
 function parseJsonField<T>(value: FormDataEntryValue | null, fallback: T): T {
   if (typeof value !== "string" || !value) return fallback;
   try {
@@ -320,7 +341,7 @@ export async function updateProduct(formData: FormData): Promise<void> {
   // newly picked files are appended after upload.
   const kept = parseJsonField<string[]>(formData.get("imagesJson"), product.images ?? []);
   const uploaded = await saveImages(filesFrom(formData, "photos"), "products");
-  const images = [...kept, ...uploaded];
+  const images = mergeUploads(kept, uploaded);
 
   const price = Number(formData.get("price"));
   const variants = await resolveVariants(formData, price);

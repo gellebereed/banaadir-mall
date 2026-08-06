@@ -273,6 +273,9 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       id: p.id,
       slug: p.slug,
       name: p.name,
+      // Undefined until migration-product-updated-at.sql is applied; the
+      // sort falls back to created_at, then to the catalogue's own order.
+      updatedAt: p.updated_at || p.created_at || undefined,
       store: p.store,
       category: LEGACY_CATEGORY_MAP[p.category] ?? p.category,
       subcategory: p.subcategory || undefined,

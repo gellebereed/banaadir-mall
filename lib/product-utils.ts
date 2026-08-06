@@ -9,6 +9,14 @@
 
 import type { Product, Variant } from "./types";
 
+/**
+ * Marks a slot in a submitted photo order that a not-yet-uploaded file
+ * belongs in. Lives here because both sides need it — the client component
+ * that writes the order and the server action that fills it in — and this
+ * module is safe to import from either.
+ */
+export const UPLOAD_PLACEHOLDER = "__upload__";
+
 export function hasVariants(product: Product): boolean {
   return (product.variants?.length ?? 0) > 0;
 }

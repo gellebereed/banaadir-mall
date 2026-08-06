@@ -93,14 +93,23 @@ export default function ColorPickerControl({
       </label>
 
       {/* Eyedropper & Palette Trigger Button */}
+      {/*
+        Icon only, and deliberately narrow.
+
+        This used to read "💧 Palette". Sitting in the same row as the
+        colour NAME, that word took most of the width and left the name
+        field showing about two characters — so the one thing a shopper
+        actually reads ("Brown") was the one thing the seller could not
+        see while typing it. The picker is a helper; the name is the data.
+      */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title="More color options (Eyedropper from image & presets)"
-        className="flex items-center gap-1 rounded-xl border border-sand-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-ocean-50 hover:text-ocean-900"
+        aria-label="Colour swatch options"
+        title="Swatch options — eyedropper from a photo, or a preset"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-sand-200 bg-white text-sm shadow-xs transition hover:bg-ocean-50"
       >
-        <span>💧</span>
-        <span className="hidden sm:inline">Palette</span>
+        💧
       </button>
 
       {/* Popover — Positioned ABOVE input (bottom-full) to never cover photos below */}

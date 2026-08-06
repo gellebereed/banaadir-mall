@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { money } from "@/lib/format";
 import ColorPickerControl from "@/components/dashboard/ColorPickerControl";
 import { checkBarcode } from "@/lib/barcode";
@@ -35,6 +35,9 @@ export default function VariantEditor({
   );
   /** Local object URLs for files picked but not yet uploaded, per variant. */
   const [previews, setPreviews] = useState<Record<string, string[]>>({});
+  /** Staged files per variant, so one can be dropped before uploading. */
+  const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({});
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function update(id: string, patch: Partial<Variant>) {
     setVariants((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
@@ -94,19 +97,51 @@ export default function VariantEditor({
     if (rawFiles.length === 0) return;
 
     const compressedFiles = await Promise.all(rawFiles.map((f) => compressImageFile(f)));
+    const input = e.target;
 
+    // Picking again ADDS to what is already staged, rather than silently
+    // discarding the previous selection.
+    const files = [...(pendingFiles[id] ?? []), ...compressedFiles];
+    writeFileList(input, files);
+
+    setPendingFiles((prev) => ({ ...prev, [id]: files }));
+    setPreviews((prev) => {
+      prev[id]?.forEach(URL.revokeObjectURL);
+      return { ...prev, [id]: files.map((f) => URL.createObjectURL(f)) };
+    });
+    fileInputs.current[id] = input;
+  }
+
+  /**
+   * Drop a staged photo before it is ever uploaded.
+   *
+   * The previews used to be decoration: pick the wrong file and the only
+   * way out was to save it, wait for the upload, then delete it from the
+   * saved list. The FileList on the input is rebuilt here so the removed
+   * file genuinely does not get sent.
+   */
+  function removePending(id: string, index: number) {
+    const files = (pendingFiles[id] ?? []).filter((_, i) => i !== index);
+    const input = fileInputs.current[id];
+    if (input) writeFileList(input, files);
+
+    setPendingFiles((prev) => ({ ...prev, [id]: files }));
+    setPreviews((prev) => {
+      const urls = prev[id] ?? [];
+      const dropped = urls[index];
+      if (dropped) URL.revokeObjectURL(dropped);
+      return { ...prev, [id]: urls.filter((_, i) => i !== index) };
+    });
+  }
+
+  function writeFileList(input: HTMLInputElement, files: File[]) {
     try {
       const dt = new DataTransfer();
-      compressedFiles.forEach((f) => dt.items.add(f));
-      e.target.files = dt.files;
+      files.forEach((f) => dt.items.add(f));
+      input.files = dt.files;
     } catch {
       // Fallback for browsers restricting file input updates
     }
-
-    setPreviews((prev) => {
-      prev[id]?.forEach(URL.revokeObjectURL);
-      return { ...prev, [id]: compressedFiles.map((f) => URL.createObjectURL(f)) };
-    });
   }
 
   const totalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
@@ -169,31 +204,42 @@ export default function VariantEditor({
                   </span>
                 </label>
 
-                <div className="grid gap-3 sm:grid-cols-[1fr_1fr_110px_100px_auto]">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500">Colour & Swatch</span>
+                {/*
+                  The colour column is the widest on the row.
+
+                  It holds three controls to Size's one, and the colour name
+                  is what the customer sees on the product page — so it gets
+                  the room. Sizes are "S", "42"; they never needed an equal
+                  share.
+                */}
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_110px_100px_auto]">
+                  <label className="block min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500">Colour</span>
                     <div className="flex items-center gap-2">
                       <ColorPickerControl
                         colorName={v.color}
                         colorHex={v.colorHex}
                         onChangeHex={(hex) => update(v.id, { colorHex: hex })}
                       />
+                      {/* min-w-0 so the input can actually shrink-to-fit
+                          inside the flex row instead of being squeezed to
+                          its content width by the controls beside it. */}
                       <input
                         value={v.color ?? ""}
                         onChange={(e) => update(v.id, { color: e.target.value })}
                         placeholder="e.g. Navy Blue"
-                        className="input !py-2 text-sm"
+                        className="input !py-2 min-w-0 flex-1 text-sm"
                       />
                     </div>
                   </label>
 
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-semibold text-slate-500">Size</span>
                     <input
                       value={v.size ?? ""}
                       onChange={(e) => update(v.id, { size: e.target.value })}
                       placeholder="e.g. M"
-                      className="input !py-2 text-sm"
+                      className="input !py-2 w-full text-sm"
                     />
                   </label>
 
@@ -359,14 +405,24 @@ export default function VariantEditor({
                     ))}
 
                     {/* Instant previews of files picked but not yet saved */}
-                    {(previews[v.id] ?? []).map((src) => (
+                    {(previews[v.id] ?? []).map((src, previewIndex) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={src}
-                        src={src}
-                        alt="New photo preview"
-                        className="h-20 w-20 rounded-lg border-2 border-dashed border-emerald-400 object-cover"
-                      />
+                      <span key={src} className="relative inline-block">
+                        <img
+                          src={src}
+                          alt="New photo preview"
+                          className="h-20 w-20 rounded-lg border-2 border-dashed border-emerald-400 object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePending(v.id, previewIndex)}
+                          aria-label="Remove this photo"
+                          title="Remove — it has not been uploaded yet"
+                          className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white transition hover:bg-coral-500"
+                        >
+                          ✕
+                        </button>
+                      </span>
                     ))}
 
                     <label className="cursor-pointer rounded-full border border-sand-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-ocean-400 hover:text-ocean-700">

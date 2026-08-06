@@ -121,6 +121,12 @@ export interface Product {
   id: string;
   slug: string;
   name: string;
+  /**
+   * ISO timestamp of the last change, stamped by a database trigger (see
+   * supabase/migration-product-updated-at.sql). Absent on databases where
+   * that migration has not been applied, and on the bundled seed data.
+   */
+  updatedAt?: string;
   /** Store slug this product belongs to. */
   store: string;
   /** Category slug. */

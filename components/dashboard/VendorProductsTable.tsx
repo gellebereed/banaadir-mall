@@ -25,6 +25,35 @@ const TABS: { id: string; label: string; icon: string }[] = [
 /** Rows shown at once. An imported catalogue is thousands of products. */
 const PAGE_SIZE = 50;
 
+/**
+ * When this product was last touched, as a sortable number.
+ *
+ * 0 for anything with no timestamp — a catalogue that predates the
+ * `updated_at` migration sorts to the bottom rather than jumbling itself
+ * randomly among the rows that do have one.
+ */
+function editedAt(product: Product): number {
+  const value = product.updatedAt ? Date.parse(product.updatedAt) : NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
+/** "3 minutes ago" — how recent an edit reads at a glance. */
+function timeAgo(iso?: string): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return null;
+
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(then).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 export default function VendorProductsTable({
   products,
   discounts,
@@ -121,7 +150,18 @@ export default function VendorProductsTable({
     if (sortBy === "stock_asc") return [...list].sort((a, b) => totalStock(a) - totalStock(b));
     if (sortBy === "stock_desc") return [...list].sort((a, b) => totalStock(b) - totalStock(a));
     if (sortBy === "name_asc") return [...list].sort((a, b) => a.name.localeCompare(b.name));
-    return list;
+    if (sortBy === "oldest") return [...list].sort((a, b) => editedAt(a) - editedAt(b));
+
+    /*
+     * Default: most recently edited first.
+     *
+     * The list used to arrive in whatever order the database returned,
+     * which after a 1,688-row import is effectively arbitrary. The product
+     * you just changed is the one you are most likely to want next — to
+     * check it, to fix a typo, to add its photo — and hunting for it
+     * through 34 pages is not a search anyone should have to run.
+     */
+    return [...list].sort((a, b) => editedAt(b) - editedAt(a));
   }, [products, activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
 
   /*
@@ -276,7 +316,8 @@ export default function VendorProductsTable({
             onChange={(e) => setSortBy(e.target.value)}
             className="rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none"
           >
-            <option value="default">Sort: Default</option>
+            <option value="default">Sort: Recently edited</option>
+            <option value="oldest">Least recently edited</option>
             <option value="name_asc">Name: A to Z</option>
             <option value="price_asc">Price: Low to High</option>
             <option value="price_desc">Price: High to Low</option>
@@ -491,6 +532,14 @@ export default function VendorProductsTable({
                             {(p.images?.length ?? 0) === 0 && (
                               <p className="text-[10px] font-bold text-mango-600 flex items-center gap-1">
                                 ⚠ No photos yet
+                              </p>
+                            )}
+                            {/* Makes the default sort legible — a list
+                                ordered by something invisible reads as
+                                unordered. */}
+                            {timeAgo(p.updatedAt) && (
+                              <p className="text-[10px] text-slate-400">
+                                Edited {timeAgo(p.updatedAt)}
                               </p>
                             )}
                           </div>
