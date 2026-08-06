@@ -1,12 +1,16 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { money } from "@/lib/format";
 import ColorPickerControl from "@/components/dashboard/ColorPickerControl";
 import { checkBarcode } from "@/lib/barcode";
 import { compressImageFile } from "@/lib/image-compress";
-import { colorSwatch } from "@/lib/product-utils";
+import {
+  colorSwatch,
+  isUploadPlaceholder,
+  uploadPlaceholder,
+} from "@/lib/product-utils";
 import type { Variant } from "@/lib/types";
 
 /**
@@ -33,11 +37,24 @@ export default function VariantEditor({
   const [defaultId, setDefaultId] = useState<string | undefined>(
     initialDefaultId ?? initial[0]?.id,
   );
-  /** Local object URLs for files picked but not yet uploaded, per variant. */
-  const [previews, setPreviews] = useState<Record<string, string[]>>({});
-  /** Staged files per variant, so one can be dropped before uploading. */
-  const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({});
+  /*
+   * ── Staged photos live IN the variant's image list ───────────────────
+   * They used to sit in a separate strip after the saved ones, which meant
+   * a photo you had just picked could not be moved, could not be made the
+   * variant's main image, and always uploaded to the end of the list
+   * whatever you did. The only way to set a new photo as the swatch image
+   * was save, wait, reload, drag.
+   *
+   * Now each staged file is written into `images` as a placeholder, so it
+   * flows through exactly the same ←/★/✕ controls as a saved photo, and
+   * the server slots the upload into that position. `pending` holds the
+   * File and its local preview, keyed by the placeholder.
+   */
+  const [pending, setPending] = useState<
+    Record<string, { key: string; file: File; previewUrl: string }[]>
+  >({});
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pendingId = useRef(0);
 
   function update(id: string, patch: Partial<Variant>) {
     setVariants((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
@@ -51,11 +68,12 @@ export default function VariantEditor({
 
   function removeVariant(id: string) {
     setVariants((prev) => prev.filter((v) => v.id !== id));
-    setPreviews((prev) => {
-      prev[id]?.forEach(URL.revokeObjectURL);
+    setPending((prev) => {
+      prev[id]?.forEach((p) => URL.revokeObjectURL(p.previewUrl));
       const { [id]: _removed, ...rest } = prev;
       return rest;
     });
+    delete fileInputs.current[id];
     setDefaultId((current) =>
       current === id ? variants.find((v) => v.id !== id)?.id : current,
     );
@@ -86,9 +104,20 @@ export default function VariantEditor({
     );
   }
 
-  function removeImage(id: string, url: string) {
+  /** Drop a photo — saved, or staged and not yet uploaded. */
+  function removeImage(id: string, entry: string) {
     update(id, {
-      images: (variants.find((v) => v.id === id)?.images ?? []).filter((i) => i !== url),
+      images: (variants.find((v) => v.id === id)?.images ?? []).filter((i) => i !== entry),
+    });
+
+    if (!isUploadPlaceholder(entry)) return;
+    // A staged file also has to leave the pending set and the FileList,
+    // or the photo you just deleted uploads anyway.
+    setPending((prev) => {
+      const staged = prev[id] ?? [];
+      const dropped = staged.find((p) => p.key === entry);
+      if (dropped) URL.revokeObjectURL(dropped.previewUrl);
+      return { ...prev, [id]: staged.filter((p) => p.key !== entry) };
     });
   }
 
@@ -97,52 +126,53 @@ export default function VariantEditor({
     if (rawFiles.length === 0) return;
 
     const compressedFiles = await Promise.all(rawFiles.map((f) => compressImageFile(f)));
-    const input = e.target;
+    fileInputs.current[id] = e.target;
+
+    const added = compressedFiles.map((file) => ({
+      key: uploadPlaceholder(`v${++pendingId.current}`),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
 
     // Picking again ADDS to what is already staged, rather than silently
     // discarding the previous selection.
-    const files = [...(pendingFiles[id] ?? []), ...compressedFiles];
-    writeFileList(input, files);
-
-    setPendingFiles((prev) => ({ ...prev, [id]: files }));
-    setPreviews((prev) => {
-      prev[id]?.forEach(URL.revokeObjectURL);
-      return { ...prev, [id]: files.map((f) => URL.createObjectURL(f)) };
+    setPending((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), ...added] }));
+    update(id, {
+      images: [...(variants.find((v) => v.id === id)?.images ?? []), ...added.map((a) => a.key)],
     });
-    fileInputs.current[id] = input;
+  }
+
+  /** The staged file behind a placeholder, if this entry is one. */
+  function pendingFor(variantId: string, entry: string) {
+    return isUploadPlaceholder(entry)
+      ? pending[variantId]?.find((p) => p.key === entry)
+      : undefined;
   }
 
   /**
-   * Drop a staged photo before it is ever uploaded.
+   * Keep every variant's file input in the order its placeholders appear.
    *
-   * The previews used to be decoration: pick the wrong file and the only
-   * way out was to save it, wait for the upload, then delete it from the
-   * saved list. The FileList on the input is rebuilt here so the removed
-   * file genuinely does not get sent.
+   * The server pairs the Nth posted file with the Nth placeholder, so a
+   * reorder on screen has to be mirrored in the FileList or the photos
+   * swap places on save. This runs after any change to the lists.
    */
-  function removePending(id: string, index: number) {
-    const files = (pendingFiles[id] ?? []).filter((_, i) => i !== index);
-    const input = fileInputs.current[id];
-    if (input) writeFileList(input, files);
-
-    setPendingFiles((prev) => ({ ...prev, [id]: files }));
-    setPreviews((prev) => {
-      const urls = prev[id] ?? [];
-      const dropped = urls[index];
-      if (dropped) URL.revokeObjectURL(dropped);
-      return { ...prev, [id]: urls.filter((_, i) => i !== index) };
-    });
-  }
-
-  function writeFileList(input: HTMLInputElement, files: File[]) {
-    try {
-      const dt = new DataTransfer();
-      files.forEach((f) => dt.items.add(f));
-      input.files = dt.files;
-    } catch {
-      // Fallback for browsers restricting file input updates
+  useEffect(() => {
+    for (const variant of variants) {
+      const input = fileInputs.current[variant.id];
+      if (!input) continue;
+      const staged = pending[variant.id] ?? [];
+      const ordered = (variant.images ?? [])
+        .map((entry) => staged.find((p) => p.key === entry)?.file)
+        .filter((file): file is File => !!file);
+      try {
+        const dt = new DataTransfer();
+        ordered.forEach((file) => dt.items.add(file));
+        input.files = dt.files;
+      } catch {
+        // Fallback for browsers restricting file input updates
+      }
     }
-  }
+  }, [variants, pending]);
 
   const totalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
@@ -348,20 +378,41 @@ export default function VariantEditor({
                   })()}
                 </div>
 
-                {/* Variant photos: saved ones (reorderable) + new previews */}
+                {/* Variant photos — saved and staged, one reorderable list. */}
                 <div className="mt-3 border-t border-sand-100 pt-3">
                   <div className="flex flex-wrap items-center gap-3">
-                    {(v.images ?? []).map((src, i) => (
+                    {(v.images ?? []).map((src, i) => {
+                      const staged = pendingFor(v.id, src);
+                      return (
                       <div
                         key={src}
                         className={`group relative h-20 w-20 overflow-hidden rounded-lg border-2 ${
-                          i === 0 ? "border-ocean-500" : "border-sand-200"
+                          staged
+                            ? "border-dashed border-emerald-400"
+                            : i === 0
+                              ? "border-ocean-500"
+                              : "border-sand-200"
                         }`}
                       >
-                        <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+                        {staged ? (
+                          // Local blob preview — next/image cannot optimise it.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={staged.previewUrl}
+                            alt="New photo preview"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+                        )}
                         {i === 0 && (
                           <span className="absolute left-0.5 top-0.5 rounded bg-ocean-800/90 px-1 py-0.5 text-[8px] font-bold text-white">
                             Main
+                          </span>
+                        )}
+                        {staged && (
+                          <span className="absolute bottom-5 left-0.5 rounded bg-emerald-600/90 px-1 py-0.5 text-[8px] font-bold text-white">
+                            New
                           </span>
                         )}
                         <button
@@ -402,28 +453,8 @@ export default function VariantEditor({
                           </button>
                         </div>
                       </div>
-                    ))}
-
-                    {/* Instant previews of files picked but not yet saved */}
-                    {(previews[v.id] ?? []).map((src, previewIndex) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <span key={src} className="relative inline-block">
-                        <img
-                          src={src}
-                          alt="New photo preview"
-                          className="h-20 w-20 rounded-lg border-2 border-dashed border-emerald-400 object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePending(v.id, previewIndex)}
-                          aria-label="Remove this photo"
-                          title="Remove — it has not been uploaded yet"
-                          className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white transition hover:bg-coral-500"
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
+                      );
+                    })}
 
                     <label className="cursor-pointer rounded-full border border-sand-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-ocean-400 hover:text-ocean-700">
                       📸 Add photos
@@ -438,15 +469,18 @@ export default function VariantEditor({
                     </label>
                   </div>
 
-                  {(previews[v.id]?.length ?? 0) > 0 && (
+                  {(pending[v.id]?.length ?? 0) > 0 && (
                     <p className="mt-2 text-xs font-semibold text-emerald-600">
-                      ✓ {previews[v.id].length} new photo
-                      {previews[v.id].length === 1 ? "" : "s"} ready — save to upload.
+                      ✓ {pending[v.id].length} new photo
+                      {pending[v.id].length === 1 ? "" : "s"} ready and optimised
+                      — reorder or remove {pending[v.id].length === 1 ? "it" : "them"}{" "}
+                      above, then save to upload.
                     </p>
                   )}
                   <p className="mt-1 text-xs text-slate-400">
                     Shown when a customer selects this option. Hover a photo to
-                    reorder or remove it.
+                    reorder (← →), make it this option&apos;s main image (★) or
+                    remove it (✕) — new photos included.
                   </p>
                 </div>
               </div>

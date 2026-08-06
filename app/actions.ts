@@ -63,7 +63,7 @@ import type {
   Store,
   Variant,
 } from "@/lib/types";
-import { UPLOAD_PLACEHOLDER } from "@/lib/product-utils";
+import { isUploadPlaceholder } from "@/lib/product-utils";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
   useSupabaseMutations,
@@ -176,7 +176,7 @@ function commaList(value: FormDataEntryValue | null): string[] | undefined {
 function mergeUploads(order: string[], uploaded: string[]): string[] {
   const queue = [...uploaded];
   const merged = order
-    .map((entry) => (entry === UPLOAD_PLACEHOLDER ? queue.shift() : entry))
+    .map((entry) => (isUploadPlaceholder(entry) ? queue.shift() : entry))
     .filter((url): url is string => typeof url === "string" && url !== "");
   return [...merged, ...queue];
 }
@@ -204,7 +204,9 @@ async function resolveVariants(
   return Promise.all(
     submitted.map(async (v) => {
       const uploaded = await saveImages(filesFrom(formData, `variant-photos-${v.id}`), "products");
-      const images = [...(v.images ?? []), ...uploaded];
+      // Same placeholder rule as the product's own photos: a new variant
+      // photo lands where the seller put it, not always at the end.
+      const images = mergeUploads(v.images ?? [], uploaded);
       const price =
         v.price === undefined || Number.isNaN(Number(v.price)) ? undefined : Number(v.price);
       return {

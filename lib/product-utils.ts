@@ -14,8 +14,21 @@ import type { Product, Variant } from "./types";
  * belongs in. Lives here because both sides need it — the client component
  * that writes the order and the server action that fills it in — and this
  * module is safe to import from either.
+ *
+ * A placeholder may carry a suffix (`__upload__:pending-3`). The client
+ * uses it to pair a slot with its local preview through reorders; the
+ * server ignores it and simply takes placeholders in the order they
+ * appear, which is the order the files are posted in.
  */
 export const UPLOAD_PLACEHOLDER = "__upload__";
+
+export function uploadPlaceholder(id: string): string {
+  return `${UPLOAD_PLACEHOLDER}:${id}`;
+}
+
+export function isUploadPlaceholder(entry: string): boolean {
+  return entry === UPLOAD_PLACEHOLDER || entry.startsWith(`${UPLOAD_PLACEHOLDER}:`);
+}
 
 export function hasVariants(product: Product): boolean {
   return (product.variants?.length ?? 0) > 0;
