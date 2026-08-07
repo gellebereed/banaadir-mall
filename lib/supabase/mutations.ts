@@ -30,6 +30,7 @@ import type {
   Promotion,
   RecoSettings,
   Store,
+  Variant,
 } from "../types";
 
 /** True when Supabase is available and mutations should go through it. */
@@ -232,6 +233,37 @@ function assertNotConstraintViolation(error: { code?: string; message?: string }
     throw new CatalogCodeError(
       error.message || "That code is already used by another product.",
     );
+  }
+}
+
+/**
+ * A product's photos as they are RIGHT NOW, straight from the row.
+ *
+ * Deliberately bypasses the cached catalogue read. A bulk photo upload
+ * arrives as several requests, and each one merges its new photos onto
+ * what is already there — so it has to see what the previous request
+ * wrote. Reading the cached list instead means every batch merges onto the
+ * state from before the upload started and overwrites the batch before it:
+ * fourteen photos go up, three survive, and nothing reports a failure.
+ */
+export async function fetchProductPhotoState(
+  id: string,
+): Promise<{ images: string[]; variants: Variant[] } | null> {
+  if (!useSupabaseMutations()) return null;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("products")
+      .select("images,variants")
+      .eq("id", id)
+      .single();
+    if (error || !data) return null;
+    return {
+      images: Array.isArray(data.images) ? (data.images as string[]) : [],
+      variants: Array.isArray(data.variants) ? (data.variants as Variant[]) : [],
+    };
+  } catch {
+    return null;
   }
 }
 

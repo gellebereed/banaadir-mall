@@ -68,6 +68,7 @@ import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
   useSupabaseMutations,
   upsertProduct,
+  fetchProductPhotoState,
   updateProductFields,
   deleteProductFromSupabase,
   updateStoreFields,
@@ -595,6 +596,16 @@ export interface BulkPhotoState {
   message: string;
   /** Products that gained photos. */
   matched: number;
+  /**
+   * WHICH products gained photos.
+   *
+   * The caller uploads in batches, and the same product usually appears in
+   * several of them — a suit's photos do not stop at the batch boundary.
+   * Summing `matched` across batches therefore counts it once per batch
+   * and reports "13 photos added to 3 products" when it went to one. The
+   * ids let the caller take a union instead of a sum.
+   */
+  productIds: string[];
   /** Photos actually stored. */
   uploaded: number;
   /** Filenames that matched nothing, so they can be renamed and retried. */
@@ -685,13 +696,24 @@ function matchProductByFilename(
 }
 
 /**
- * The variants a colourway filename refers to.
+ * The variants a colourway filename refers to — ONE per colour.
  *
  * `COE030252204MAV` names every size of the blue suit, so its photos
- * belong on those variants rather than dumped into one shared gallery —
- * which is what makes picking "Blue" on the product page show the blue
- * photographs. Returns nothing when the filename covers the whole product
- * (every variant, or none of them), because then it IS a product photo.
+ * belong to that colour rather than dumped into one shared gallery, which
+ * is what makes picking "Blue" on the product page show the blue
+ * photographs.
+ *
+ * ── Why only one variant per colour ──────────────────────────────────────
+ * A suit in five sizes would otherwise store the identical URL five times,
+ * and a 41-variant product could carry hundreds of duplicate references
+ * for a handful of actual photographs. It buys nothing, because the
+ * storefront already looks sideways: variantImages() falls back to a
+ * same-colour sibling's photos, and colorOptions() takes the first
+ * coloured variant that has any. Black·41, Black·43 and Black·44 all show
+ * the black photographs whether the URL is stored once or three times.
+ *
+ * Returns nothing when the filename covers the whole product (every
+ * variant, or none), because then it IS a product photo.
  */
 function colourwayVariants(product: Product, stem: string): Variant[] {
   const variants = product.variants ?? [];
@@ -702,7 +724,16 @@ function colourwayVariants(product: Product, stem: string): Variant[] {
     return sku.length > stem.length && sku.startsWith(stem);
   });
 
-  return matched.length > 0 && matched.length < variants.length ? matched : [];
+  if (matched.length === 0 || matched.length === variants.length) return [];
+
+  // One representative per colour; when a product is sized only, the first
+  // match stands for the set.
+  const perColour = new Map<string, Variant>();
+  for (const variant of matched) {
+    const key = (variant.color ?? "").trim().toLowerCase() || "__sized__";
+    if (!perColour.has(key)) perColour.set(key, variant);
+  }
+  return [...perColour.values()];
 }
 
 /**
@@ -718,15 +749,19 @@ function colourwayVariants(product: Product, stem: string): Variant[] {
  * message, no error and no photos is indistinguishable from the feature
  * being broken. Every file is now accounted for in the result.
  */
-export async function bulkImportPhotos(
-  _prev: BulkPhotoState,
-  formData: FormData,
-): Promise<BulkPhotoState> {
-  const empty = { matched: 0, uploaded: 0, skipped: [], failed: [] };
+export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoState> {
+  const empty = { matched: 0, productIds: [], uploaded: 0, skipped: [], failed: [] };
   try {
     const session = await requirePermission("photos.manage");
     const files = filesFrom(formData, "photos");
     const replace = formData.get("replace") === "on";
+    /*
+     * The caller sends photos a few at a time and tells us when it is done.
+     * Revalidating on every batch would drop the cached product list and
+     * force the next batch to re-read the whole catalogue — 1,700 rows,
+     * per batch — so the caches are cleared once, at the end.
+     */
+    const isFinalBatch = formData.get("final") === "1";
 
     if (files.length === 0) {
       return { ok: false, message: "Choose some photos first.", ...empty };
@@ -764,20 +799,51 @@ export async function bulkImportPhotos(
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
     );
 
-    for (const file of ordered) {
+    /*
+     * ── Match first, THEN upload in parallel ─────────────────────────
+     *
+     * Matching is pure string work, so doing it up front costs nothing and
+     * means a file that belongs to no product is never uploaded at all.
+     *
+     * The uploads then go out together. They used to run one after another
+     * — thirty photos, thirty sequential round trips to Supabase Storage,
+     * comfortably past the ten seconds a Netlify function is allowed
+     * before it is killed. That is the 500 this returned in production:
+     * not a rejected upload, a request that never got to finish.
+     */
+    const planned = ordered.map((file) => {
       const candidates = filenameCandidates(file.name);
       let match: Product | undefined;
       for (const candidate of candidates) {
         match = matchProductByFilename(candidate, byKey, keysLongestFirst);
         if (match) break;
       }
+      return { file, candidates, match };
+    });
 
-      if (!match) {
-        skipped.push(file.name);
-        continue;
-      }
+    for (const item of planned) {
+      if (!item.match) skipped.push(item.file.name);
+    }
 
-      const [url] = await saveImages([file], "products");
+    const matchedItems = planned.filter(
+      (item): item is typeof item & { match: Product } => Boolean(item.match),
+    );
+
+    const urls = await Promise.all(
+      matchedItems.map(async (item) => {
+        try {
+          const [url] = await saveImages([item.file], "products");
+          return url;
+        } catch (error) {
+          console.error("[Photos] upload failed:", item.file.name, error);
+          return undefined;
+        }
+      }),
+    );
+
+    for (const [index, item] of matchedItems.entries()) {
+      const { file, candidates, match } = item;
+      const url = urls[index];
       if (!url) {
         skipped.push(file.name);
         continue;
@@ -810,19 +876,22 @@ export async function bulkImportPhotos(
       }
     }
 
-    /*
+    /**
      * A product whose photos ALL went to colourways would still have an
-     * empty gallery, and the grid card would show a placeholder next to a
+     * empty gallery, and the grid card would show a placeholder beside a
      * product page full of photographs. So the first colourway's photos
-     * double as the product's own cover set when it has none.
+     * double as the cover set — but only while the gallery is genuinely
+     * empty, judged against the LIVE row at write time. Deciding it up
+     * front against the cached catalogue meant every batch believed the
+     * gallery was still empty and seeded another cover into it.
      */
-    for (const [productId, perVariant] of variantAdditions) {
-      const product = products.find((p) => p.id === productId);
-      const hasGallery = (product?.images?.length ?? 0) > 0 && !replace;
-      if (hasGallery || additions.has(productId)) continue;
-      const first = [...perVariant.values()][0];
-      if (first?.length) additions.set(productId, first);
-    }
+    const coverFor = (productId: string, currentImages: string[]): string[] | undefined => {
+      if (additions.has(productId)) return additions.get(productId);
+      if (!replace && currentImages.length > 0) return undefined;
+      const perVariant = variantAdditions.get(productId);
+      const first = perVariant ? [...perVariant.values()][0] : undefined;
+      return first?.length ? first : undefined;
+    };
 
     const failed: string[] = [];
 
@@ -830,10 +899,13 @@ export async function bulkImportPhotos(
     const touched = new Set([...additions.keys(), ...variantAdditions.keys()]);
 
     /** The product's variants with this run's colourway photos merged in. */
-    const nextVariants = (product: Product): Variant[] | undefined => {
-      const perVariant = variantAdditions.get(product.id);
+    const nextVariants = (
+      productId: string,
+      currentVariants: Variant[],
+    ): Variant[] | undefined => {
+      const perVariant = variantAdditions.get(productId);
       if (!perVariant) return undefined;
-      return (product.variants ?? []).map((variant) => {
+      return currentVariants.map((variant) => {
         const added = perVariant.get(variant.id);
         if (!added) return variant;
         const existing = replace ? [] : (variant.images ?? []);
@@ -846,15 +918,25 @@ export async function bulkImportPhotos(
         const product = products.find((p) => p.id === productId);
         if (!product) continue;
 
-        const gallery = additions.get(productId);
-        const variants = nextVariants(product);
+        /*
+         * Read the row as it stands, NOT the cached catalogue copy.
+         *
+         * This upload arrives in several requests and each merges onto
+         * what is already stored. The cached list is a snapshot from
+         * before the upload began, so merging onto it made every batch
+         * discard the batch before it.
+         */
+        const live = await fetchProductPhotoState(productId);
+        const currentImages = live?.images ?? product.images ?? [];
+        const currentVariants = live?.variants ?? product.variants ?? [];
+
+        const gallery = coverFor(productId, currentImages);
+        const variants = nextVariants(productId, currentVariants);
 
         // Checked, unlike before: a rejected write left the photo in
         // storage and the product still empty, with nobody told.
         const saved = await updateProductFields(productId, {
-          ...(gallery
-            ? { images: [...(replace ? [] : (product.images ?? [])), ...gallery] }
-            : {}),
+          ...(gallery ? { images: [...(replace ? [] : currentImages), ...gallery] } : {}),
           ...(variants ? { variants } : {}),
         });
         if (!saved) failed.push(product.name ?? productId);
@@ -865,18 +947,19 @@ export async function bulkImportPhotos(
           const product = products.find((p) => p.id === productId);
           if (!product) continue;
           const override = db.productOverrides[productId] ?? {};
-          const gallery = additions.get(productId);
-          const variants = nextVariants(product);
+          const currentImages = override.images ?? product.images ?? [];
+          const gallery = coverFor(productId, currentImages);
+          // The overlay is the live state here — an earlier batch's photos
+          // are in the override, not in the cached product.
+          const variants = nextVariants(
+            productId,
+            override.variants ?? product.variants ?? [],
+          );
 
           db.productOverrides[productId] = {
             ...override,
             ...(gallery
-              ? {
-                images: [
-                  ...(replace ? [] : (override.images ?? product.images ?? [])),
-                  ...gallery,
-                ],
-              }
+              ? { images: [...(replace ? [] : currentImages), ...gallery] }
               : {}),
             ...(variants ? { variants } : {}),
           };
@@ -884,7 +967,7 @@ export async function bulkImportPhotos(
       });
     }
 
-    refresh();
+    if (isFinalBatch) refresh();
 
     const matched = touched.size - failed.length;
     const parts: string[] = [];
@@ -911,6 +994,7 @@ export async function bulkImportPhotos(
       ok: matched > 0 && failed.length === 0,
       message: parts.join(" ") || "Nothing to do.",
       matched,
+      productIds: [...touched].filter((id) => !failed.includes(id)),
       uploaded,
       skipped,
       failed,

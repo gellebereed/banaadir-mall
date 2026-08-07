@@ -1,35 +1,131 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { bulkImportPhotos, type BulkPhotoState } from "@/app/actions";
 import PhotoPicker from "./PhotoPicker";
-import SubmitButton from "./SubmitButton";
-import useRefreshOnSuccess from "./useRefreshOnSuccess";
 
-const INITIAL: BulkPhotoState = {
+/**
+ * How many photos travel in one request.
+ *
+ * ── Why this is batched at all ───────────────────────────────────────────
+ * It used to post every selected photo in a single server action. Thirty
+ * photos meant one request carrying the lot and, inside it, thirty uploads
+ * to storage — comfortably past the ten seconds a Netlify function is
+ * given before it is killed. The result was a 500 and "an unexpected
+ * response was received from the server", which tells the seller nothing
+ * and loses the whole upload.
+ *
+ * Six per request keeps every call small and quick, and — the part that
+ * matters to whoever is sitting there — it means there is honest progress
+ * to show instead of a button that appears to have done nothing.
+ */
+const BATCH_SIZE = 6;
+
+const EMPTY: BulkPhotoState = {
   ok: false,
   message: "",
   matched: 0,
+  productIds: [],
   uploaded: 0,
   skipped: [],
   failed: [],
 };
 
-/**
- * The bulk photo upload, with an answer.
- *
- * The previous version posted to a void action: upload forty photos, watch
- * the page reload unchanged, and there is no way to tell whether nothing
- * matched, the upload failed, or the feature is broken. Every outcome is
- * now stated, and unmatched filenames are listed so they can be renamed
- * and retried rather than guessed at.
- */
 export default function BulkPhotoForm() {
-  const [state, formAction] = useActionState(bulkImportPhotos, INITIAL);
-  useRefreshOnSuccess(state);
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [state, setState] = useState<BulkPhotoState>(EMPTY);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+
+    const photos = data.getAll("photos").filter((v): v is File => v instanceof File && v.size > 0);
+    const replace = data.get("replace") === "on";
+
+    if (photos.length === 0) {
+      setState({ ...EMPTY, message: "Choose some photos first." });
+      return;
+    }
+
+    setState(EMPTY);
+    setProgress({ done: 0, total: photos.length });
+
+    startTransition(async () => {
+      // Accumulated across batches, so the summary describes the whole
+      // upload rather than whichever batch happened to finish last.
+      const totals: BulkPhotoState = { ...EMPTY, productIds: [], skipped: [], failed: [] };
+      // A product usually appears in several batches, so its identity is
+      // unioned rather than its count summed. See BulkPhotoState.productIds.
+      const productsTouched = new Set<string>();
+
+      for (let offset = 0; offset < photos.length; offset += BATCH_SIZE) {
+        const batch = photos.slice(offset, offset + BATCH_SIZE);
+        const isFinal = offset + BATCH_SIZE >= photos.length;
+
+        const payload = new FormData();
+        for (const photo of batch) payload.append("photos", photo);
+        if (replace) payload.set("replace", "on");
+        if (isFinal) payload.set("final", "1");
+
+        let result: BulkPhotoState;
+        try {
+          result = await bulkImportPhotos(payload);
+        } catch (error) {
+          // A batch that dies takes only its own photos with it; the ones
+          // already stored stay stored, and we say how far we got.
+          totals.message =
+            `Stopped after ${totals.uploaded} photo${totals.uploaded === 1 ? "" : "s"}. ` +
+            (error instanceof Error ? error.message : "The server did not respond.");
+          setState({ ...totals, ok: false });
+          setProgress(null);
+          return;
+        }
+
+        result.productIds.forEach((id) => productsTouched.add(id));
+        totals.matched = productsTouched.size;
+        totals.uploaded += result.uploaded;
+        totals.skipped.push(...result.skipped);
+        totals.failed.push(...result.failed);
+        setProgress({ done: Math.min(offset + batch.length, photos.length), total: photos.length });
+      }
+
+      const parts: string[] = [];
+      if (totals.uploaded > 0) {
+        parts.push(
+          `${totals.uploaded} photo${totals.uploaded === 1 ? "" : "s"} added to ` +
+            `${totals.matched} product${totals.matched === 1 ? "" : "s"}.`,
+        );
+      }
+      if (totals.failed.length > 0) parts.push(`${totals.failed.length} could not be saved.`);
+      if (totals.skipped.length > 0) {
+        parts.push(
+          `${totals.skipped.length} file${totals.skipped.length === 1 ? "" : "s"} matched no product.`,
+        );
+      }
+
+      setState({
+        ...totals,
+        ok: totals.uploaded > 0 && totals.failed.length === 0,
+        message: parts.join(" ") || "Nothing to do.",
+      });
+      setProgress(null);
+
+      if (totals.uploaded > 0) {
+        formRef.current?.reset();
+        router.refresh();
+      }
+    });
+  }
+
+  const percent = progress ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <form action={formAction} className="mt-4 space-y-4">
+    <form ref={formRef} onSubmit={onSubmit} className="mt-4 space-y-4">
       <PhotoPicker name="photos" label="Select many photos at once" />
 
       <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -37,21 +133,44 @@ export default function BulkPhotoForm() {
         Replace existing photos instead of adding to them
       </label>
 
-      <SubmitButton className="btn-primary">Import Photos</SubmitButton>
+      <button type="submit" disabled={pending} className="btn-primary disabled:opacity-60">
+        {pending ? "Importing…" : "Import Photos"}
+      </button>
 
-      {state.message && (
+      {/* Live progress — the whole reason the upload is batched. */}
+      {progress && (
+        <div aria-live="polite">
+          <div className="flex items-baseline justify-between text-xs font-semibold text-ocean-800">
+            <span>
+              Uploading {progress.done} of {progress.total} photos…
+            </span>
+            <span>{percent}%</span>
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-sand-100">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-ocean-600 to-emerald-500 transition-all duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            Keep this page open — photos already uploaded are saved as they go.
+          </p>
+        </div>
+      )}
+
+      {state.message && !progress && (
         <div
           className={`rounded-xl px-4 py-3 text-sm ${
             state.ok
               ? "bg-emerald-50 text-emerald-800"
-              : state.matched > 0
+              : state.uploaded > 0
                 ? "bg-mango-50 text-mango-900"
                 : "bg-coral-100 text-coral-700"
           }`}
           role="status"
         >
           <p className="font-semibold">
-            {state.ok ? "✓ " : state.matched > 0 ? "⚠ " : "✕ "}
+            {state.ok ? "✓ " : state.uploaded > 0 ? "⚠ " : "✕ "}
             {state.message}
           </p>
 
