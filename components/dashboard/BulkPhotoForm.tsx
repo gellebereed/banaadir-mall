@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { bulkImportPhotos, type BulkPhotoState } from "@/app/actions";
 import PhotoPicker from "./PhotoPicker";
@@ -35,11 +35,11 @@ const EMPTY: BulkPhotoState = {
 export default function BulkPhotoForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
   const [state, setState] = useState<BulkPhotoState>(EMPTY);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -54,8 +54,9 @@ export default function BulkPhotoForm() {
 
     setState(EMPTY);
     setProgress({ done: 0, total: photos.length });
+    setIsUploading(true);
 
-    startTransition(async () => {
+    try {
       // Accumulated across batches, so the summary describes the whole
       // upload rather than whichever batch happened to finish last.
       const totals: BulkPhotoState = { ...EMPTY, productIds: [], skipped: [], failed: [] };
@@ -82,7 +83,6 @@ export default function BulkPhotoForm() {
             `Stopped after ${totals.uploaded} photo${totals.uploaded === 1 ? "" : "s"}. ` +
             (error instanceof Error ? error.message : "The server did not respond.");
           setState({ ...totals, ok: false });
-          setProgress(null);
           return;
         }
 
@@ -113,13 +113,15 @@ export default function BulkPhotoForm() {
         ok: totals.uploaded > 0 && totals.failed.length === 0,
         message: parts.join(" ") || "Nothing to do.",
       });
-      setProgress(null);
 
       if (totals.uploaded > 0) {
         formRef.current?.reset();
         router.refresh();
       }
-    });
+    } finally {
+      setIsUploading(false);
+      setProgress(null);
+    }
   }
 
   const percent = progress ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -133,8 +135,21 @@ export default function BulkPhotoForm() {
         Replace existing photos instead of adding to them
       </label>
 
-      <button type="submit" disabled={pending} className="btn-primary disabled:opacity-60">
-        {pending ? "Importing…" : "Import Photos"}
+      <button
+        type="submit"
+        disabled={isUploading}
+        className="btn-primary disabled:opacity-60 transition-all flex items-center gap-2"
+      >
+        {isUploading ? (
+          <>
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            Importing…
+          </>
+        ) : state.ok && state.uploaded > 0 ? (
+          "✓ Upload Successful — Select More Photos"
+        ) : (
+          "Import Photos"
+        )}
       </button>
 
       {/* Live progress — the whole reason the upload is batched. */}
@@ -158,18 +173,18 @@ export default function BulkPhotoForm() {
         </div>
       )}
 
-      {state.message && !progress && (
+      {state.message && !isUploading && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm ${
+          className={`rounded-xl px-4 py-3 text-sm transition-all ${
             state.ok
-              ? "bg-emerald-50 text-emerald-800"
+              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
               : state.uploaded > 0
-                ? "bg-mango-50 text-mango-900"
-                : "bg-coral-100 text-coral-700"
+                ? "bg-mango-50 text-mango-900 border border-mango-200"
+                : "bg-coral-100 text-coral-700 border border-coral-200"
           }`}
           role="status"
         >
-          <p className="font-semibold">
+          <p className="font-semibold text-base">
             {state.ok ? "✓ " : state.uploaded > 0 ? "⚠ " : "✕ "}
             {state.message}
           </p>

@@ -87,6 +87,19 @@ export default function PhotoPicker({
     }
   }, [pending]);
 
+  useEffect(() => {
+    const form = inputRef.current?.form;
+    if (!form) return;
+    const handleReset = () => {
+      own.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      setOwn([]);
+      setSoftFiles([]);
+      setSaved(null);
+    };
+    form.addEventListener("reset", handleReset);
+    return () => form.removeEventListener("reset", handleReset);
+  }, [own]);
+
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const rawFiles = Array.from(e.target.files ?? []);
     if (rawFiles.length === 0) return;
