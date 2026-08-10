@@ -28,6 +28,13 @@
 
 import { cleanText, deturkify, displayPhrase, slugify } from "./text.ts";
 
+/** A category that already exists in the catalogue. */
+export interface ExistingCategory {
+  slug: string;
+  name: string;
+  parentSlug?: string;
+}
+
 export interface CategoryRules {
   /** Slug every imported category is filed under, e.g. "mens-fashion". */
   rootSlug: string;
@@ -35,6 +42,23 @@ export interface CategoryRules {
   mergeBasicLines: boolean;
   /** Groupings to resolve through the finer sub-group column instead. */
   mixedGroupings: string[];
+  /**
+   * The categories the catalogue already has.
+   *
+   * ── Why the importer has to know ─────────────────────────────────────
+   * Without it every run answered the question "what should this be
+   * called?" and never the question "does it already exist?" — so a file
+   * saying TOWEL produced a brand-new "Towels" beside the "Towel Sets" the
+   * shop had been selling under for a year, and the Özdilek import ended up
+   * scattered across a fresh set of near-duplicate departments instead of
+   * landing in the structure that was already there.
+   *
+   * Matching is on the NORMALISED name, not the slug, because the two
+   * spellings a duplicate arrives as — singular against plural, accented
+   * against not, "Bath Robe" against "Bathrobe" — differ in the slug and
+   * agree once flattened.
+   */
+  existing?: ExistingCategory[];
 }
 
 export const DEFAULT_MIXED_GROUPINGS = ["CEREMONY", "ACCESSORY", "ACCESSORIES", "OTHER", "MISC"];
@@ -107,6 +131,88 @@ export interface ResolvedCategory {
   parentSlug: string;
   /** True when the sub-group was used because the category was a mixed bucket. */
   usedSubGroup: boolean;
+  /**
+   * The category this was recognised as, when it already existed. Lets the
+   * wizard say "filed into your existing Towel Sets" rather than listing a
+   * near-identical department under "will be created".
+   */
+  matchedExisting?: boolean;
+}
+
+/**
+ * The comparison form of a category name: no accents, no punctuation, no
+ * plural, no case.
+ *
+ *   "Bath Robes"  "BATHROBE"  "bath-robe"  →  BATHROBE
+ *
+ * Deliberately aggressive. Two categories that flatten to the same string
+ * are the same shelf in a shop, whatever the supplier's spreadsheet called
+ * them, and the cost of over-merging here ("Suit" onto "Suits") is nil
+ * while the cost of under-merging is the duplicate departments this exists
+ * to stop.
+ */
+export function categoryKey(text: string): string {
+  const flat = deturkify(cleanText(text)).toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  return singularise(flat);
+}
+
+/** "TOWELS" → "TOWEL"; "ACCESSORIES" → "ACCESSORY"; "DRESS" → "DRESS". */
+function singularise(word: string): string {
+  if (word.length <= 3) return word;
+  if (word.endsWith("IES")) return `${word.slice(0, -3)}Y`;
+  // …SS, …US and …IS are not plurals: DRESS, STATUS, BASIS.
+  if (/(SS|US|IS)$/.test(word)) return word;
+  if (word.endsWith("ES") && /(CH|SH|X|Z|S)ES$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith("S")) return word.slice(0, -1);
+  return word;
+}
+
+/**
+ * The category the catalogue ALREADY has for this grouping, if any.
+ *
+ * ── The order is the whole design ────────────────────────────────────────
+ * A category inside the department being imported into beats an identically
+ * named one somewhere else. "Towels" under Home & Living and "Towels" under
+ * a defunct Clearance department are not interchangeable, and filing a
+ * shipment into the second one because it was found first is worse than
+ * creating a third.
+ */
+function matchExisting(
+  slug: string,
+  name: string,
+  rules: CategoryRules,
+): ExistingCategory | undefined {
+  const existing = rules.existing;
+  if (!existing?.length) return undefined;
+
+  const bySlug = existing.find((c) => c.slug === slug);
+  if (bySlug) return bySlug;
+
+  const key = categoryKey(name);
+  if (!key) return undefined;
+
+  const sameKey = existing.filter(
+    (c) => categoryKey(c.name) === key || categoryKey(c.slug) === key,
+  );
+  if (sameKey.length === 0) return undefined;
+
+  // Inside the chosen department first — directly beneath it, then anywhere
+  // in its branch, then anywhere at all.
+  const parentOf = new Map(existing.map((c) => [c.slug, c.parentSlug]));
+  const inRoot = (candidate: ExistingCategory): boolean => {
+    let current: string | undefined = candidate.slug;
+    for (let hops = 0; current && hops < 10; hops++) {
+      if (current === rules.rootSlug) return true;
+      current = parentOf.get(current);
+    }
+    return false;
+  };
+
+  return (
+    sameKey.find((c) => c.parentSlug === rules.rootSlug) ??
+    sameKey.find(inRoot) ??
+    sameKey[0]
+  );
 }
 
 /**
@@ -132,8 +238,29 @@ export function resolveCategory(
   if (rules.mergeBasicLines) chosen = stripLinePrefix(chosen);
 
   const name = CATEGORY_NAMES[chosen] ?? pluralise(displayPhrase(chosen));
+  const slug = slugify(name);
+
+  /*
+   * Reuse before create.
+   *
+   * When the shop already has this shelf, the import files into it under
+   * ITS name and ITS place in the tree — the supplier's spelling does not
+   * get to rename a department or move it. Only a genuinely new grouping
+   * becomes a new category, hanging off the department the seller chose.
+   */
+  const found = matchExisting(slug, name, rules);
+  if (found) {
+    return {
+      slug: found.slug,
+      name: found.name,
+      parentSlug: found.parentSlug ?? rules.rootSlug,
+      usedSubGroup: useSub,
+      matchedExisting: true,
+    };
+  }
+
   return {
-    slug: slugify(name),
+    slug,
     name,
     parentSlug: rules.rootSlug,
     usedSubGroup: useSub,
@@ -189,6 +316,35 @@ function pluralise(name: string): string {
   if (/(s|x|z|ch|sh)$/i.test(name)) return name;
   if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + "ies";
   return name + "s";
+}
+
+/**
+ * The subcategory to file a product under, preferring one the catalogue is
+ * already using.
+ *
+ * ── Why this is not just "trust the file" ────────────────────────────────
+ * A subcategory is created by a seller typing it on a product (see
+ * getSubcategories in lib/api.ts) — there is no table, so there is nothing
+ * to enforce that "Duvet Cover Set", "DUVET COVER SETS" and "Duvet cover
+ * sets" are one thing. An import writes whatever the supplier's column
+ * says, so a second shipment from the same brand with the column tidied up
+ * silently splits the shelf in two, and the filter on the products page
+ * grows a near-duplicate for every variation of spelling.
+ *
+ * So a name that flattens to something already in use is stored in the
+ * EXISTING spelling. A genuinely new one is kept exactly as written.
+ */
+export function resolveSubcategory(
+  productType: string | undefined,
+  existing: string[] = [],
+): string | undefined {
+  const name = displayPhrase(productType ?? "");
+  if (!name) return undefined;
+
+  const key = categoryKey(name);
+  if (!key) return name;
+
+  return existing.find((candidate) => categoryKey(candidate) === key) ?? name;
 }
 
 /**

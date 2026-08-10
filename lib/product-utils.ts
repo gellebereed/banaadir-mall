@@ -47,6 +47,53 @@ export function variantSizes(product: Product): string[] {
 }
 
 /**
+ * The sizes that exist IN ONE COLOUR — which is the only size list a
+ * shopper should ever be shown.
+ *
+ * ── Why the flat list was wrong ──────────────────────────────────────────
+ * A suit stocked Navy in 48/50/52 and Black in 48/50/52/54 offered all four
+ * sizes whichever colour was picked, because the options came from every
+ * variant at once. Choosing Navy · 54 then matched no variant at all, and
+ * everything downstream degraded quietly rather than loudly: the price fell
+ * back to the template's, the stock read 0 so the page said "Out of stock in
+ * this option" about a suit with plenty on the shelf, and — because photos
+ * are resolved from the variant too — the gallery emptied and the product
+ * page showed a placeholder.
+ *
+ * One missing filter, three separate bug reports.
+ *
+ * Sizes keep their order of appearance in `variants`, which the importer
+ * already sorts by colour then size, so 48 comes before 50 without this
+ * having to know what a size means. Passing no colour returns every size,
+ * which is what a product with no colours at all wants.
+ */
+export function sizesForColor(product: Product, color?: string): string[] {
+  if (!hasVariants(product)) return product.sizes ?? [];
+  const variants = product.variants!;
+  const inColour = color ? variants.filter((v) => v.color === color) : variants;
+  // A colour the catalogue no longer has must not empty the size picker.
+  const source = inColour.length > 0 ? inColour : variants;
+  return [...new Set(source.map((v) => v.size).filter(Boolean) as string[])];
+}
+
+/**
+ * Sizes for one colour, each carrying whether it can actually be bought.
+ * Sold-out sizes are shown and disabled rather than hidden: a shopper who
+ * cannot find their size at all assumes the shop never stocked it.
+ */
+export function sizeOptions(
+  product: Product,
+  color?: string,
+): { size: string; inStock: boolean }[] {
+  return sizesForColor(product, color).map((size) => ({
+    size,
+    inStock: (product.variants ?? []).some(
+      (v) => v.size === size && (!color || v.color === color) && v.stock > 0,
+    ),
+  }));
+}
+
+/**
  * The variant a customer sees first: the seller's chosen default, else the
  * first one that is actually in stock, else the first.
  */
@@ -63,9 +110,21 @@ export function defaultVariant(product: Product): Variant | undefined {
 /**
  * The image representing this product in listings — the default variant's
  * main photo when it has one, otherwise the product's own main photo.
+ *
+ * ── The last fallback matters more than it looks ─────────────────────────
+ * A bulk photo import files photos on the colourway they were shot for, so
+ * a product can finish with seven photographs and nothing on either the
+ * default variant or the template. Both earlier branches then miss, and the
+ * card renders the generated gradient beside a product page full of
+ * photos — "I uploaded them and they don't show". Any variant's photo is a
+ * better answer than none.
  */
 export function primaryImage(product: Product): string | undefined {
-  return defaultVariant(product)?.images?.[0] ?? product.images?.[0];
+  return (
+    defaultVariant(product)?.images?.[0] ??
+    product.images?.[0] ??
+    product.variants?.find((v) => v.images?.length)?.images?.[0]
+  );
 }
 
 /**
@@ -77,6 +136,9 @@ export function colorOptions(
 ): { color: string; image?: string; swatch?: string; inStock: boolean }[] {
   if (hasVariants(product)) {
     const seen = new Map<string, { color: string; image?: string; swatch?: string; inStock: boolean }>();
+    /** Colours whose swatch came from a seller-chosen hex, not a guess. */
+    const explicit = new Set<string>();
+
     for (const v of product.variants!) {
       if (!v.color) continue;
       const existing = seen.get(v.color);
@@ -84,8 +146,23 @@ export function colorOptions(
         // Any in-stock size makes the colour available.
         existing.inStock = existing.inStock || v.stock > 0;
         existing.image = existing.image ?? v.images?.[0];
+        /*
+         * A picked colour anywhere in the group wins.
+         *
+         * The hex is set per variant, but a colour is one thing to a
+         * shopper: "Navy" is Navy in every size. Only the FIRST variant of
+         * the group used to be consulted, so a seller who set the colour on
+         * the row they happened to have open — say Navy · 52 — watched the
+         * storefront keep showing the dictionary's guess for the word
+         * "Navy" and reasonably concluded the picker did nothing.
+         */
+        if (v.colorHex?.trim() && !explicit.has(v.color)) {
+          existing.swatch = colorSwatch(v.color, v.colorHex);
+          explicit.add(v.color);
+        }
         continue;
       }
+      if (v.colorHex?.trim()) explicit.add(v.color);
       seen.set(v.color, {
         color: v.color,
         image: v.images?.[0],
@@ -163,7 +240,18 @@ export function variantImages(product: Product, variant?: Variant): string[] {
     if (sibling?.images?.length) return sibling.images;
   }
 
-  return product.images ?? [];
+  if (product.images?.length) return product.images;
+
+  /*
+   * Step 4: any variant's photos.
+   *
+   * Reached when every photograph on a product lives on a colourway — the
+   * normal outcome of a bulk photo import — and the colour being viewed is
+   * not one of the ones that were shot. Returning an empty list there means
+   * the page falls back to the generated gradient, so a product with a
+   * dozen photographs renders as if it had none.
+   */
+  return product.variants?.find((v) => v.images?.length)?.images ?? [];
 }
 
 /** True when this variant is borrowing another same-colour variant's photos. */

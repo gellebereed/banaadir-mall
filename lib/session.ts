@@ -47,18 +47,54 @@ export async function requireVendor(): Promise<{ session: Session; storeSlug: st
   const { getStore, getStores } = await import("./api");
 
   if (session.role === "admin") {
-    // Admins preview the first real active store, if there is one.
-    const [first] = await getStores();
-    if (!first) redirect("/admin/stores");
-    return { session, storeSlug: first.slug };
+    // An admin who has picked a store through the switcher stays in it;
+    // otherwise they preview the first real active store, if there is one.
+    const stores = await getStores();
+    const chosen = session.store
+      ? stores.find((s) => s.slug === session.store)
+      : undefined;
+    const target = chosen ?? stores[0];
+    if (!target) redirect("/admin/stores");
+    return { session, storeSlug: target.slug };
   }
 
   if (!session.store) redirect("/sell");
 
   const store = await getStore(session.store);
-  // Deleted, or never approved: there is no dashboard to show.
-  if (!store) redirect("/sell?status=missing");
-  if (store.status !== "active") redirect(`/sell?status=${store.status}`);
+
+  /*
+   * A multi-store account does not lose everything with one store.
+   *
+   * Someone on two teams whose ACTIVE shop is suspended used to be bounced
+   * to /sell — correct about that shop and wrong about them, because the
+   * other one is still open and still theirs to run. So before giving up,
+   * fall through to another store they hold. Only when none of them is
+   * usable is there genuinely no dashboard to show, and then the message is
+   * about the store they were actually in.
+   */
+  if (!store || store.status !== "active") {
+    const others = (session.stores ?? []).filter((slug) => slug !== session.store);
+    if (others.length > 0) {
+      const open = (await getStores()).find((s) => others.includes(s.slug));
+      if (open) {
+        // Their grants are per store, so arriving in a different one means
+        // arriving with THAT store's access — never with the access they
+        // held at the shop that just closed.
+        let next: Session = { ...session, store: open.slug };
+        if (session.access) {
+          const { getEmployeeMemberships } = await import("./api");
+          const { sessionForEmployee } = await import("./employees");
+          const memberships = await getEmployeeMemberships(session.email);
+          const row = memberships.find((m) => m.store === open.slug);
+          if (row) next = sessionForEmployee(row, memberships);
+        }
+        return { session: next, storeSlug: open.slug };
+      }
+    }
+    // Deleted, or never approved: there is no dashboard to show.
+    if (!store) redirect("/sell?status=missing");
+    redirect(`/sell?status=${store.status}`);
+  }
 
   return { session, storeSlug: store.slug };
 }

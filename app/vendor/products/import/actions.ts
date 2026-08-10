@@ -147,7 +147,10 @@ export async function scanFileCategories(formData: FormData): Promise<CategorySc
     const { storeSlug } = await requireProductAccess();
     const { bytes, filename } = await readUpload(formData);
     const settings = readSettings(formData, storeSlug);
-    return { ok: true, categories: scanCategories(bytes, filename, settings) };
+    // Passed the catalogue's categories so this panel names the shelves the
+    // import will actually use, rather than the ones it would have invented.
+    const existing = await getCategories(true);
+    return { ok: true, categories: scanCategories(bytes, filename, settings, existing) };
   } catch (error) {
     return { ok: false, error: message(error) };
   }
@@ -212,7 +215,7 @@ export async function previewImport(formData: FormData): Promise<PreviewResponse
     const [catalogue, categories] = await Promise.all([getBaseProducts(), getCategories(true)]);
     const existingSlugs = categories.map((c) => c.slug);
 
-    const analysis = analyse(bytes, filename, settings, catalogue, existingSlugs);
+    const analysis = analyse(bytes, filename, settings, catalogue, categories);
     const known = new Set(existingSlugs);
 
     const products: PreviewProduct[] = analysis.plan.products.map((planned) => {
@@ -317,13 +320,9 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
     const offset = Math.max(0, Number(formData.get("offset") ?? 0));
 
     const [catalogue, categories] = await Promise.all([getBaseProducts(), getCategories(true)]);
-    const analysis = analyse(
-      bytes,
-      filename,
-      settings,
-      catalogue,
-      categories.map((c) => c.slug),
-    );
+    // The whole categories, not their slugs: recognising a grouping as one
+    // the shop already has needs the name and the tree (see CategoryRules).
+    const analysis = analyse(bytes, filename, settings, catalogue, categories);
 
     const importedAt = new Date().toISOString();
     const categoriesCreated: string[] = [];

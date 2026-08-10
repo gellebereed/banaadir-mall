@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { addEmployee } from "@/app/actions";
 import PermissionPicker from "@/components/dashboard/PermissionPicker";
+import SafeForm from "@/components/dashboard/SafeForm";
 import TeamMember from "@/components/dashboard/TeamMember";
 import { getEmployees } from "@/lib/api";
 import { can, EMPLOYEE_PASSWORD } from "@/lib/auth";
@@ -38,7 +39,13 @@ export default async function VendorTeamPage() {
       {/* Add employee */}
       <div className="card mt-5 p-5 sm:p-6">
         <h2 className="font-display font-bold text-ocean-950">👥 Invite someone</h2>
-        <form action={addEmployee} className="mt-4 space-y-4">
+        {/*
+          SafeForm, not <form>: addEmployee refuses an invitation it cannot
+          honour (already on this team, migration not run) by throwing, and
+          a throw out of a plain form action renders Next.js's "Application
+          error" page. The owner needs the sentence, not a crash.
+        */}
+        <SafeForm action={addEmployee} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="emp-name" className="label">Full name</label>
@@ -60,7 +67,7 @@ export default async function VendorTeamPage() {
           <button type="submit" className="btn-primary w-full">
             Create invitation
           </button>
-        </form>
+        </SafeForm>
         <p className="mt-3 rounded-lg bg-sand-100 px-3 py-2 text-xs text-slate-500">
           🔗 You will get a link to send them yourself — on WhatsApp, or however
           you normally reach them. Nothing is emailed automatically. They can

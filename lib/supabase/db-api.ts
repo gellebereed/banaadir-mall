@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { cache as perRequest } from "react";
 import { categoryIcon } from "../category-icons";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type {
@@ -475,8 +476,35 @@ export const fetchStoresFromSupabase = cached(
 export const fetchCategoriesFromSupabase = cached(
   fetchCategoriesFromSupabaseRaw, "categories", CACHE_TAGS.categories);
 
-export const fetchProductsFromSupabase = cached(
-  fetchProductsFromSupabaseRaw, "products", CACHE_TAGS.products);
+/**
+ * Products are memoised PER REQUEST, not in the data cache.
+ *
+ * ── Why this one is different ────────────────────────────────────────────
+ * Next's data cache refuses any entry over 2 MB. This catalogue passed that
+ * the day the supplier files landed — 1,700 products with their variants
+ * serialise to about 2.2 MB — and what happens then is not a quiet miss:
+ * `unstable_cache` REJECTS while trying to store the result, which arrives
+ * as an unhandled rejection on every single product page render.
+ *
+ *   Failed to set Next.js data cache … items over 2MB can not be cached
+ *
+ * So the cache was doing neither of its jobs. Nothing was ever stored, so
+ * every request re-read the whole table exactly as it had before the cache
+ * was added — and each one now also threw. It could not be tuned back into
+ * range either: the table only grows.
+ *
+ * React's `cache()` is the right tool for what this actually needed. The
+ * problem it was introduced to solve was the home page reading the product
+ * table five times in ONE render, and a per-request memo solves that
+ * completely, with no size limit and nothing to serialise. What is given up
+ * is cross-request reuse, which had never once worked here.
+ *
+ * The smaller tables below keep the data cache; they are nowhere near the
+ * limit. `revalidateTag(CACHE_TAGS.products)` stays harmless — it is a
+ * no-op against a tag nothing stores under, and it keeps the refresh path
+ * uniform for whenever this table is read a page at a time instead.
+ */
+export const fetchProductsFromSupabase = perRequest(fetchProductsFromSupabaseRaw);
 
 export const fetchOrdersFromSupabase = cached(
   fetchOrdersFromSupabaseRaw, "orders", CACHE_TAGS.orders);

@@ -34,12 +34,39 @@ import type { Employee } from "./types";
  * Re-reading the employee row per request is the right answer for a real
  * deployment, and this is the function to change when the cookie goes.
  */
-export function sessionForEmployee(employee: Employee): Session {
+export function sessionForEmployee(
+  employee: Employee,
+  /**
+   * Every team this person is on, so the dashboard can offer a switcher.
+   * Defaults to just this one, which is what a single-store account has and
+   * what every caller written before multi-store access passed.
+   */
+  memberships: Employee[] = [employee],
+): Session {
+  /*
+   * The stores they may open — this row's included, and platform excluded
+   * because that is the admin panel rather than a shop.
+   *
+   * Only the ACTIVE row's grants go into the session. A person can be a
+   * manager at one shop and a viewer at another, and switching re-resolves
+   * them against the row for the store being switched to (switchStore in
+   * app/auth-actions.ts). Carrying one set across both would quietly hand
+   * someone the higher of their two accesses everywhere.
+   */
+  const stores = [
+    ...new Set(
+      memberships
+        .map((m) => m.store)
+        .filter((slug) => slug && slug !== "platform"),
+    ),
+  ];
+
   const shared = {
     name: employee.name,
     email: employee.email,
     access: employee.role,
     permissions: permissionsFor(employee),
+    ...(stores.length > 1 ? { stores } : {}),
   };
 
   return employee.store === "platform"

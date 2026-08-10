@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import OrderNotifications from "@/components/dashboard/OrderNotifications";
-import { getOrdersByStore, getStore } from "@/lib/api";
+import StoreSwitcher, { type SwitchableStore } from "@/components/dashboard/StoreSwitcher";
+import { getAllStores, getEmployeeMemberships, getOrdersByStore, getStore } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
@@ -21,10 +22,33 @@ export default async function VendorLayout({
   children: React.ReactNode;
 }) {
   const { session, storeSlug } = await requireVendor();
-  const [store, orders] = await Promise.all([
+  const [store, orders, allStores, memberships] = await Promise.all([
     getStore(storeSlug),
     getOrdersByStore(storeSlug),
+    getAllStores(),
+    // Read live rather than from the cookie: someone invited to a second
+    // shop this morning should see it in the switcher this afternoon,
+    // without being told to sign out and back in first. switchStore
+    // re-checks membership anyway, so this only decides what is OFFERED.
+    session.access ? getEmployeeMemberships(session.email) : Promise.resolve([]),
   ]);
+
+  /*
+   * The stores this account can move between.
+   *
+   * An employee sees the teams they are on; an admin previewing the
+   * dashboard sees every active shop, which is the same control doing the
+   * same job. A store owner has exactly one and gets no switcher at all —
+   * see StoreSwitcher on why a single-choice dropdown is worse than none.
+   */
+  const myStores = new Set(memberships.map((m) => m.store));
+  const switchable: SwitchableStore[] = allStores
+    .filter(
+      (s) =>
+        s.status === "active" &&
+        (session.role === "admin" || myStores.has(s.slug) || s.slug === storeSlug),
+    )
+    .map((s) => ({ slug: s.slug, name: s.name, icon: s.icon, logo: s.logo }));
 
   // Rendered on the server so the badge is already correct before any
   // JavaScript runs — the bell then keeps it live.
@@ -118,11 +142,26 @@ export default async function VendorLayout({
               <span className="hidden text-xl lg:inline">{store?.icon ?? "🏪"}</span>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-sm font-extrabold text-white">
-                {store?.name ?? "My Store"}
-              </p>
+              {switchable.length > 1 ? (
+                <StoreSwitcher
+                  current={
+                    store
+                      ? { slug: store.slug, name: store.name, icon: store.icon, logo: store.logo }
+                      : undefined
+                  }
+                  stores={switchable}
+                />
+              ) : (
+                <p className="truncate font-display text-sm font-extrabold text-white">
+                  {store?.name ?? "My Store"}
+                </p>
+              )}
               <p className="hidden truncate text-[10px] text-ocean-300 lg:block">
-                {session.access ? `Employee · ${session.access}` : "Store owner"}
+                {session.access
+                  ? `Employee · ${session.access}${switchable.length > 1 ? ` · ${switchable.length} stores` : ""}`
+                  : session.role === "admin"
+                    ? "Admin preview"
+                    : "Store owner"}
               </p>
             </div>
             <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />

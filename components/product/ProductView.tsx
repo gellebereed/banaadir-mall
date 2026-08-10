@@ -9,14 +9,14 @@ import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
 import {
+  colorOptions,
   colorSwatch,
   defaultVariant,
   findVariant,
   hasVariants,
-  variantColors,
+  sizeOptions,
   variantImages,
   variantPrice,
-  variantSizes,
   variantStock,
 } from "@/lib/product-utils";
 import type { Product } from "@/lib/types";
@@ -37,17 +37,55 @@ export default function ProductView({
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
 
-  const colors = variantColors(product);
-  const sizes = variantSizes(product);
   const withVariants = hasVariants(product);
+
+  /*
+   * Colours carry their own swatch, because the seller may have picked the
+   * exact hex on the variant (Variant.colorHex). Deriving the swatch from
+   * the colour NAME here — which is what this did — threw that away, so
+   * "Navy" always rendered as the dictionary's navy however carefully the
+   * shade had been set in the dashboard.
+   */
+  const colours = useMemo(() => colorOptions(product), [product]);
+  const colors = useMemo(() => colours.map((c) => c.color), [colours]);
+  const swatchByColor = useMemo(
+    () => new Map(colours.map((c) => [c.color, c.swatch])),
+    [colours],
+  );
 
   // Open on the seller's chosen default variant (falls back to the first
   // in-stock one) so the page matches the catalogue image.
   const preset = defaultVariant(product);
   const [color, setColor] = useState<string | undefined>(preset?.color ?? colors[0]);
+
+  /*
+   * Sizes belong to the SELECTED colour, not to the product. See
+   * sizesForColor() for what showing all of them broke.
+   */
+  const sizeChoices = useMemo(
+    () => (withVariants ? sizeOptions(product, color) : (product.sizes ?? []).map((size) => ({ size, inStock: product.stock > 0 }))),
+    [product, color, withVariants],
+  );
+  const sizes = useMemo(() => sizeChoices.map((s) => s.size), [sizeChoices]);
+
   const [size, setSize] = useState<string | undefined>(preset?.size ?? sizes[0]);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+
+  /*
+   * Keep the chosen size inside the chosen colour.
+   *
+   * Switching from a colour that comes in 54 to one that does not has to
+   * land somewhere real — otherwise no variant matches and the page reports
+   * a stocked product as out of stock. It prefers a size that is actually
+   * buyable in the new colour, and only falls back to the first listed one
+   * when the whole colour is sold out.
+   */
+  useEffect(() => {
+    if (!withVariants || sizes.length === 0) return;
+    if (size && sizes.includes(size)) return;
+    setSize(sizeChoices.find((s) => s.inStock)?.size ?? sizes[0]);
+  }, [sizes, sizeChoices, size, withVariants]);
 
   const variant = withVariants ? findVariant(product, color, size) : undefined;
   const images = useMemo(() => variantImages(product, variant), [product, variant]);
@@ -208,14 +246,19 @@ export default function ProductView({
           {colors.length > 0 && (
             <OptionPicker
               label="Colour"
-              options={colors}
+              options={colours.map((c) => ({ value: c.color, inStock: c.inStock }))}
               value={color}
               onChange={setColor}
-              swatches
+              swatchFor={(name) => swatchByColor.get(name) ?? colorSwatch(name)}
             />
           )}
           {sizes.length > 0 && (
-            <OptionPicker label="Size" options={sizes} value={size} onChange={setSize} />
+            <OptionPicker
+              label="Size"
+              options={sizeChoices.map((s) => ({ value: s.size, inStock: s.inStock }))}
+              value={size}
+              onChange={setSize}
+            />
           )}
 
           {/* Quantity + stock */}
@@ -575,18 +618,31 @@ function GalleryArrow({
 
 /* ── Option picker ──────────────────────────────────────────────────── */
 
+/**
+ * One row of choices.
+ *
+ * Every option here EXISTS — the caller has already filtered sizes down to
+ * the ones the selected colour is made in. What varies is whether an option
+ * can be bought today, and a sold-out one is shown struck through rather
+ * than removed: a shopper who cannot find their size at all concludes the
+ * shop never stocked it, which is a different and worse message than "not
+ * right now".
+ *
+ * `swatchFor` rather than a boolean, so the seller's own hex reaches the
+ * dot instead of the colour name being guessed at a second time.
+ */
 function OptionPicker({
   label,
   options,
   value,
   onChange,
-  swatches = false,
+  swatchFor,
 }: {
   label: string;
-  options: string[];
+  options: { value: string; inStock: boolean }[];
   value?: string;
   onChange: (v: string) => void;
-  swatches?: boolean;
+  swatchFor?: (option: string) => string;
 }) {
   return (
     <div>
@@ -595,26 +651,32 @@ function OptionPicker({
       </p>
       <div className="flex flex-wrap gap-2">
         {options.map((opt) => {
-          const swatch = swatches ? colorSwatch(opt) : undefined;
+          const swatch = swatchFor?.(opt.value);
+          const selected = value === opt.value;
           return (
             <button
-              key={opt}
-              onClick={() => onChange(opt)}
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              aria-pressed={selected}
+              title={opt.inStock ? undefined : `${opt.value} — out of stock`}
               className={`flex items-center gap-2 rounded-full border-2 px-4 py-1.5 text-sm font-medium transition ${
-                value === opt
+                selected
                   ? "border-ocean-700 bg-ocean-700 text-white"
-                  : "border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
+                  : opt.inStock
+                    ? "border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
+                    : "border-sand-200 bg-sand-50 text-slate-400 line-through decoration-slate-300"
               }`}
             >
               {swatch && (
                 <span
                   className={`h-4 w-4 rounded-full shrink-0 border border-black/10 shadow-xs ${
-                    value === opt ? "ring-2 ring-white/50" : ""
+                    selected ? "ring-2 ring-white/50" : ""
                   }`}
                   style={{ background: swatch }}
                 />
               )}
-              {opt}
+              {opt.value}
             </button>
           );
         })}

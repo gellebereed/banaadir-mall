@@ -131,10 +131,19 @@ export async function signIn(
    * row, and still hand out an account nobody can sign in to.
    */
   if (!session && password === EMPLOYEE_PASSWORD) {
-    const { getEmployeeByEmail } = await import("@/lib/api");
-    const employee = await getEmployeeByEmail(email);
+    const { getEmployeeMemberships } = await import("@/lib/api");
+    /*
+     * Every team, not the first one found.
+     *
+     * Someone invited to two shops has two rows, and reading only one of
+     * them meant the other store simply did not exist as far as their
+     * account was concerned. The list goes into the session so the
+     * dashboard can offer a switcher; they still LAND in the first.
+     */
+    const memberships = await getEmployeeMemberships(email);
+    const employee = memberships[0];
     if (employee) {
-      session = sessionForEmployee(employee);
+      session = sessionForEmployee(employee, memberships);
       await markInviteAccepted(employee);
     }
   }
@@ -362,6 +371,55 @@ export async function signUpSeller(
     success: true,
     message: "🎉 Your store application has been submitted! It is currently awaiting admin review.",
   };
+}
+
+/**
+ * Move this account to another of its stores.
+ *
+ * ── The check is the point ───────────────────────────────────────────────
+ * The slug arrives from the browser, so it is a request and not a fact.
+ * Membership is re-read from the employee table and the grants are rebuilt
+ * from the row for THAT store — a manager at one shop who is a viewer at
+ * the other must arrive as a viewer. Trusting the cookie's existing
+ * `permissions`, or the `stores` list inside it, would let anyone who can
+ * edit a cookie walk into any store on the marketplace with full access.
+ */
+export async function switchStore(storeSlug: string): Promise<void> {
+  const slug = String(storeSlug ?? "").trim();
+  const { getSession } = await import("@/lib/session");
+  const session = await getSession();
+  if (!session || session.role === "customer") redirect("/login");
+  if (!slug || slug === session.store) redirect("/vendor");
+
+  const { getStore, getEmployeeForStore, getEmployeeMemberships } = await import("@/lib/api");
+  const store = await getStore(slug);
+  if (!store || store.status !== "active") {
+    throw new Error("That store is not available.");
+  }
+
+  let next: Session = { ...session, store: slug };
+
+  // An owner login has no employee row and owns exactly one store, so
+  // there is nothing here for it to switch to. Admins may preview any
+  // store; employees may only reach the ones they are actually on.
+  if (session.access) {
+    const [membership, memberships] = await Promise.all([
+      getEmployeeForStore(session.email, slug),
+      getEmployeeMemberships(session.email),
+    ]);
+    if (!membership) throw new Error("You are not on that store's team.");
+    next = { ...sessionForEmployee(membership, memberships) };
+  } else if (session.role !== "admin") {
+    throw new Error("You can only manage your own store.");
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, JSON.stringify(next), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7,
+    sameSite: "lax",
+  });
+  redirect("/vendor");
 }
 
 export async function signOut(): Promise<void> {

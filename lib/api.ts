@@ -441,8 +441,19 @@ export async function getAllEmployees(): Promise<Employee[]> {
 
   if (!remote) return local;
 
-  const seen = new Set(remote.map((e) => e.email.toLowerCase()));
-  return [...remote, ...local.filter((e) => !seen.has(e.email.toLowerCase()))];
+  /*
+   * De-duplicated per EMAIL AND STORE, not per email.
+   *
+   * Keying on the email alone made "already known" mean "known anywhere",
+   * so a person on two teams — one row in Supabase, one that fell back to
+   * the overlay — lost the overlay row entirely and with it their access to
+   * that second shop. The pair is what identifies a membership.
+   */
+  const seen = new Set(remote.map((e) => `${e.email.toLowerCase()}@${e.store}`));
+  return [
+    ...remote,
+    ...local.filter((e) => !seen.has(`${e.email.toLowerCase()}@${e.store}`)),
+  ];
 }
 
 /** Employees of a store, or of the platform when storeSlug === "platform". */
@@ -450,11 +461,34 @@ export async function getEmployees(storeSlug: string): Promise<Employee[]> {
   return (await getAllEmployees()).filter((e) => e.store === storeSlug);
 }
 
+/**
+ * Every team this email belongs to.
+ *
+ * One person can be on several — see Session.stores. The order is the
+ * order the rows are read in, so the first is stable rather than random,
+ * and that is the one they land in at sign-in.
+ */
+export async function getEmployeeMemberships(email: string): Promise<Employee[]> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return [];
+  return (await getAllEmployees()).filter(
+    (e) => e.email.trim().toLowerCase() === clean,
+  );
+}
+
 /** The employee this email signs in as, from either store. */
 export async function getEmployeeByEmail(email: string): Promise<Employee | null> {
-  const clean = email.trim().toLowerCase();
-  const all = await getAllEmployees();
-  return all.find((e) => e.email.trim().toLowerCase() === clean) ?? null;
+  return (await getEmployeeMemberships(email))[0] ?? null;
+}
+
+/** This person's row on ONE store's team, if they are on it. */
+export async function getEmployeeForStore(
+  email: string,
+  storeSlug: string,
+): Promise<Employee | null> {
+  return (
+    (await getEmployeeMemberships(email)).find((e) => e.store === storeSlug) ?? null
+  );
 }
 
 /**

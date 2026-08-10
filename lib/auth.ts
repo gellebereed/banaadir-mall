@@ -24,8 +24,27 @@ export interface Session {
   name: string;
   email: string;
   role: "admin" | "seller" | "customer";
-  /** Store slug — only present for sellers. */
+  /** Store slug — only present for sellers. The one being worked in now. */
   store?: string;
+  /**
+   * Every store this account may open, `store` included.
+   *
+   * ── Why a list ───────────────────────────────────────────────────────
+   * One person works for more than one shop — a bookkeeper doing the
+   * accounts for two brands in the same building is the ordinary case here,
+   * not the exotic one. The session used to hold a single slug, so a second
+   * invitation had nowhere to go: whichever employee row happened to be
+   * read first decided which dashboard they landed in, and the other shop
+   * was unreachable. Hence the switcher (components/dashboard/StoreSwitcher).
+   *
+   * Absent on owner and admin logins, and on cookies written before this
+   * existed — both of which correctly mean "just `store`".
+   *
+   * PERMISSIONS ARE PER STORE and are not carried here. Switching re-reads
+   * the employee row for the store being switched to; a manager at one shop
+   * does not become a manager at the other.
+   */
+  stores?: string[];
   /**
    * Access level for employee accounts. Absent for owner/admin logins,
    * which have full access. See can() below.

@@ -29,6 +29,7 @@ const EMPTY: BulkPhotoState = {
   productIds: [],
   uploaded: 0,
   skipped: [],
+  ambiguous: [],
   failed: [],
 };
 
@@ -44,7 +45,22 @@ export default function BulkPhotoForm() {
     const form = event.currentTarget;
     const data = new FormData(form);
 
-    const photos = data.getAll("photos").filter((v): v is File => v instanceof File && v.size > 0);
+    /*
+     * Sorted HERE, across the whole selection, before it is cut into
+     * batches.
+     *
+     * The server also sorts, but it only ever sees six files at a time, so
+     * it can order a batch against itself and nothing more. A product whose
+     * photos straddle a boundary — which is most of them, at six per
+     * request — then got them in whatever order the file picker handed
+     * them over, and the "main" photo was decided by that accident.
+     */
+    const photos = data
+      .getAll("photos")
+      .filter((v): v is File => v instanceof File && v.size > 0)
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+      );
     const replace = data.get("replace") === "on";
 
     if (photos.length === 0) {
@@ -59,7 +75,13 @@ export default function BulkPhotoForm() {
     try {
       // Accumulated across batches, so the summary describes the whole
       // upload rather than whichever batch happened to finish last.
-      const totals: BulkPhotoState = { ...EMPTY, productIds: [], skipped: [], failed: [] };
+      const totals: BulkPhotoState = {
+        ...EMPTY,
+        productIds: [],
+        skipped: [],
+        ambiguous: [],
+        failed: [],
+      };
       // A product usually appears in several batches, so its identity is
       // unioned rather than its count summed. See BulkPhotoState.productIds.
       const productsTouched = new Set<string>();
@@ -70,7 +92,19 @@ export default function BulkPhotoForm() {
 
         const payload = new FormData();
         for (const photo of batch) payload.append("photos", photo);
-        if (replace) payload.set("replace", "on");
+        if (replace) {
+          payload.set("replace", "on");
+          /*
+           * Which products this run has already cleared.
+           *
+           * "Replace" is one act per product, but the upload is many
+           * requests — so without this every batch cleared the gallery
+           * again and the batch before it was thrown away. Thirty photos
+           * uploaded, six survived. The server clears a product the first
+           * time it appears here and appends from then on.
+           */
+          payload.set("replacedIds", [...productsTouched].join(","));
+        }
         if (isFinal) payload.set("final", "1");
 
         let result: BulkPhotoState;
@@ -90,6 +124,7 @@ export default function BulkPhotoForm() {
         totals.matched = productsTouched.size;
         totals.uploaded += result.uploaded;
         totals.skipped.push(...result.skipped);
+        totals.ambiguous.push(...(result.ambiguous ?? []));
         totals.failed.push(...result.failed);
         setProgress({ done: Math.min(offset + batch.length, photos.length), total: photos.length });
       }
@@ -105,6 +140,11 @@ export default function BulkPhotoForm() {
       if (totals.skipped.length > 0) {
         parts.push(
           `${totals.skipped.length} file${totals.skipped.length === 1 ? "" : "s"} matched no product.`,
+        );
+      }
+      if (totals.ambiguous.length > 0) {
+        parts.push(
+          `${totals.ambiguous.length} file${totals.ambiguous.length === 1 ? "" : "s"} could belong to more than one product.`,
         );
       }
 
@@ -191,13 +231,38 @@ export default function BulkPhotoForm() {
 
           {state.failed.length > 0 && (
             <div className="mt-2 text-xs">
-              <p className="font-semibold">Uploaded but not saved:</p>
+              {/* Both an upload that never landed and a product row that
+                  refused the write end up here — the seller's next step is
+                  the same either way: try these again. */}
+              <p className="font-semibold">Could not be saved:</p>
               <ul className="mt-1 list-disc pl-5">
                 {state.failed.slice(0, 10).map((name) => (
                   <li key={name}>{name}</li>
                 ))}
               </ul>
             </div>
+          )}
+
+          {state.ambiguous.length > 0 && (
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer font-semibold">
+                Show the {state.ambiguous.length} file
+                {state.ambiguous.length === 1 ? "" : "s"} that matched more than
+                one product
+              </summary>
+              <p className="mt-1">
+                The code in each name is the beginning of several products&apos;
+                codes, so there is no way to tell which one it belongs to.
+                Rename each after the FULL barcode or product code and import
+                again — a wrong guess would file the photo on someone
+                else&apos;s listing.
+              </p>
+              <ul className="mt-1 max-h-48 list-disc overflow-y-auto pl-5">
+                {state.ambiguous.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </details>
           )}
 
           {state.skipped.length > 0 && (

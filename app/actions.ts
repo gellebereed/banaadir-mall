@@ -199,8 +199,22 @@ async function resolveVariants(
   formData: FormData,
   basePrice: number,
 ): Promise<Variant[] | undefined> {
-  const submitted = parseJsonField<Variant[]>(formData.get("variantsJson"), []);
-  if (submitted.length === 0) return undefined;
+  /*
+   * `undefined` and `[]` are different answers and used to be the same one.
+   *
+   * `undefined` means "this form has no variant editor, leave the variants
+   * alone". `[]` means "the seller removed every variant". Collapsing the
+   * second into the first is how photos went missing from live product
+   * pages: removing the last variant left its images out of `stillUsed`, so
+   * the files were DELETED from storage — while the variants column, being
+   * skipped as undefined, went on referencing them. The product row still
+   * listed seven photographs; storage had none of them.
+   */
+  const raw = formData.get("variantsJson");
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+
+  const submitted = parseJsonField<Variant[]>(raw, []);
+  if (submitted.length === 0) return [];
 
   return Promise.all(
     submitted.map(async (v) => {
@@ -260,6 +274,45 @@ async function resolveCategory(submitted: string): Promise<string> {
   throw new Error(
     `"${slug || "(empty)"}" is not a valid category, so the product would not ` +
       `appear anywhere on the site. Pick one of: ${categories.map((c) => c.slug).join(", ")}.`,
+  );
+}
+
+/**
+ * File a product under the subcategory the shop is ALREADY using, when the
+ * one typed is the same thing spelled differently.
+ *
+ * Subcategories have no table — one exists because a product carries it
+ * (getSubcategories). Nothing therefore stops "Duvet Cover Set", "Duvet
+ * Cover Sets" and "DUVET COVER SETS" becoming three shelves holding a third
+ * of the range each, with three entries in the products filter and three
+ * different answers to "where do the duvet covers live". Typing a variant
+ * of an existing name now lands on the existing one; a genuinely new name
+ * is kept exactly as written.
+ *
+ * Matched within the product's own category first — two departments are
+ * allowed their own "Accessories" and they are not the same shelf.
+ */
+async function resolveSubcategoryName(
+  submitted: string,
+  categorySlug: string,
+): Promise<string | undefined> {
+  const typed = submitted.trim();
+  if (!typed) return undefined;
+
+  const { getSubcategories } = await import("@/lib/api");
+  const { categoryKey } = await import("@/lib/import/categories");
+  const key = categoryKey(typed);
+  if (!key) return typed;
+
+  const [inCategory, everywhere] = await Promise.all([
+    getSubcategories(categorySlug),
+    getSubcategories(),
+  ]);
+
+  return (
+    inCategory.find((name) => categoryKey(name) === key) ??
+    everywhere.find((name) => categoryKey(name) === key) ??
+    typed
   );
 }
 
@@ -350,27 +403,52 @@ export async function updateProduct(formData: FormData): Promise<void> {
   const variants = await resolveVariants(formData, price);
   const defaultVariantId = pickDefaultVariantId(formData, variants);
 
-  // Delete files that are no longer referenced anywhere on this product.
-  const stillUsed = new Set([...images, ...(variants ?? []).flatMap((v) => v.images ?? [])]);
+  /*
+   * Files no longer referenced anywhere on this product — worked out now,
+   * DELETED only once the save has actually landed (see below).
+   *
+   * They used to be unlinked here, before the codes were validated and
+   * before the write was attempted. So a save rejected for a duplicate
+   * barcode — the single most common rejection there is — had already
+   * erased the photos the seller had reordered away, while the stored row
+   * went on listing them. The dashboard showed thumbnails, the live product
+   * page showed gaps, and nothing in the error mentioned photos at all.
+   *
+   * When variants are left untouched (`undefined`) their photos count as
+   * still used: a form that says nothing about variants must not be read as
+   * a form that removed them.
+   */
+  const stillUsed = new Set([
+    ...images,
+    ...(variants ?? product.variants ?? []).flatMap((v) => v.images ?? []),
+  ]);
   const orphaned = [
     ...(product.images ?? []),
     ...(product.variants ?? []).flatMap((v) => v.images ?? []),
   ].filter((url) => !stillUsed.has(url));
-  await Promise.all(orphaned.map(deleteUpload));
 
   const compareAtRaw = String(formData.get("compareAt") ?? "").trim();
   const badgeRaw = String(formData.get("badge") ?? "");
   const codes = readProductCodes(formData);
 
+  const category = await resolveCategory(String(formData.get("category")));
+  const subcategory = await resolveSubcategoryName(
+    String(formData.get("subcategory") ?? ""),
+    category,
+  );
+
   const updatedFields: Partial<Product> = {
     name: String(formData.get("name")),
     price,
     compareAt: compareAtRaw ? Number(compareAtRaw) : undefined,
-    stock: variants
+    // `variants?.length`, not `variants` — an empty array means the seller
+    // removed the last variant, and the product falls back to its own
+    // stock/colour/size fields rather than to a total of nothing.
+    stock: variants?.length
       ? variants.reduce((sum, v) => sum + v.stock, 0)
       : Number(formData.get("stock")),
-    category: await resolveCategory(String(formData.get("category"))),
-    subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
+    category,
+    subcategory,
     internalReference: codes.internalReference,
     barcode: codes.barcode,
     uom: codes.uom,
@@ -378,8 +456,8 @@ export async function updateProduct(formData: FormData): Promise<void> {
     badge: (badgeRaw || undefined) as Product["badge"],
     description: String(formData.get("description")),
     features: lines(formData.get("features")),
-    colors: variants ? undefined : commaList(formData.get("colors")),
-    sizes: variants ? undefined : commaList(formData.get("sizes")),
+    colors: variants?.length ? undefined : commaList(formData.get("colors")),
+    sizes: variants?.length ? undefined : commaList(formData.get("sizes")),
     images,
     variants,
     defaultVariantId,
@@ -422,6 +500,12 @@ export async function updateProduct(formData: FormData): Promise<void> {
       };
     });
   }
+
+  // Only now: the new photo list is stored, so nothing still points at
+  // these. A failure above threw, and the files are still there to be
+  // shown — which is the whole reason this moved down here.
+  await Promise.all(orphaned.map(deleteUpload));
+
   refresh();
   redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
 }
@@ -549,13 +633,21 @@ export async function createProduct(formData: FormData): Promise<void> {
   const variants = await resolveVariants(formData, price);
   const codes = readProductCodes(formData);
 
+  const category = await resolveCategory(String(formData.get("category")));
+  // Same rule as the edit form: a new spelling of an existing shelf goes on
+  // the existing shelf. See resolveSubcategoryName.
+  const subcategory = await resolveSubcategoryName(
+    String(formData.get("subcategory") ?? ""),
+    category,
+  );
+
   const product: Product = {
     id: slug,
     slug,
     name,
     store: storeSlug,
-    category: await resolveCategory(String(formData.get("category"))),
-    subcategory: String(formData.get("subcategory") ?? "").trim() || undefined,
+    category,
+    subcategory,
     internalReference: codes.internalReference,
     barcode: codes.barcode,
     uom: codes.uom,
@@ -570,8 +662,8 @@ export async function createProduct(formData: FormData): Promise<void> {
       ? variants.reduce((sum, v) => sum + v.stock, 0)
       : Math.max(0, Number(formData.get("stock") || 0)),
     badge: "New",
-    colors: variants ? undefined : commaList(formData.get("colors")),
-    sizes: variants ? undefined : commaList(formData.get("sizes")),
+    colors: variants?.length ? undefined : commaList(formData.get("colors")),
+    sizes: variants?.length ? undefined : commaList(formData.get("sizes")),
     description: String(formData.get("description")),
     features: features.length > 0 ? features : ["Ships within 24 hours", "7-day easy returns"],
     images,
@@ -610,6 +702,15 @@ export interface BulkPhotoState {
   uploaded: number;
   /** Filenames that matched nothing, so they can be renamed and retried. */
   skipped: string[];
+  /**
+   * Filenames whose code could belong to more than one product.
+   *
+   * Kept apart from `skipped` because the fix is the opposite one: a
+   * skipped file needs a code in its name, an ambiguous one needs a
+   * LONGER code. Guessing between two products is worse than not
+   * matching — the photo lands on the wrong listing and nobody is told.
+   */
+  ambiguous: string[];
   /** Products whose write failed after the upload succeeded. */
   failed: string[];
 }
@@ -674,25 +775,47 @@ const MIN_CODE_LENGTH = 5;
  *   2. a code is the START of the filename          (style+colour packs)
  *   3. the filename is the START of a code          (a code typed short)
  *
- * Longest key wins in the prefix rules, so a file that could belong to
- * both a style and one of its variants goes to the more specific one.
+ * Longest key wins in rule 2, so a file that could belong to both a style
+ * and one of its variants goes to the more specific one.
+ *
+ * ── Rule 3 has to prove itself ───────────────────────────────────────────
+ * It used to take the longest code beginning with the filename and stop
+ * there. But a short stem is short precisely because it is under-specified:
+ * "COE0302" is the opening of every colourway of that style AND of the
+ * three styles beside it, and picking the longest match is picking one of
+ * them at random. The photo then lands on a product it has nothing to do
+ * with, permanently, and the upload reports success. So the rule now only
+ * fires when every code starting with the stem belongs to ONE product;
+ * otherwise the file comes back ambiguous and the seller is told to use a
+ * fuller code.
  */
 function matchProductByFilename(
   stem: string,
   byKey: Map<string, Product>,
   keysLongestFirst: string[],
-): Product | undefined {
+): { product: Product } | { ambiguous: true } | undefined {
   const exact = byKey.get(stem);
-  if (exact) return exact;
+  if (exact) return { product: exact };
   if (stem.length < MIN_CODE_LENGTH) return undefined;
 
   const startsWithCode = keysLongestFirst.find(
     (key) => key.length >= MIN_CODE_LENGTH && stem.startsWith(key),
   );
-  if (startsWithCode) return byKey.get(startsWithCode);
+  if (startsWithCode) {
+    const product = byKey.get(startsWithCode);
+    return product ? { product } : undefined;
+  }
 
-  const codeStartsWithStem = keysLongestFirst.find((key) => key.startsWith(stem));
-  return codeStartsWithStem ? byKey.get(codeStartsWithStem) : undefined;
+  const candidates = new Map<string, Product>();
+  for (const key of keysLongestFirst) {
+    if (!key.startsWith(stem)) continue;
+    const product = byKey.get(key);
+    if (product) candidates.set(product.id, product);
+    // Two owners is already an answer — no need to scan the rest.
+    if (candidates.size > 1) return { ambiguous: true };
+  }
+  const [only] = [...candidates.values()];
+  return only ? { product: only } : undefined;
 }
 
 /**
@@ -750,7 +873,14 @@ function colourwayVariants(product: Product, stem: string): Variant[] {
  * being broken. Every file is now accounted for in the result.
  */
 export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoState> {
-  const empty = { matched: 0, productIds: [], uploaded: 0, skipped: [], failed: [] };
+  const empty = {
+    matched: 0,
+    productIds: [],
+    uploaded: 0,
+    skipped: [],
+    ambiguous: [],
+    failed: [],
+  };
   try {
     const session = await requirePermission("photos.manage");
     const files = filesFrom(formData, "photos");
@@ -762,6 +892,29 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
      * per batch — so the caches are cleared once, at the end.
      */
     const isFinalBatch = formData.get("final") === "1";
+
+    /*
+     * ── "Replace" means once per product, not once per REQUEST ───────────
+     *
+     * An upload of thirty photos arrives as five requests, and each one
+     * merged onto what was stored — except with Replace ticked, where each
+     * one instead CLEARED what was stored and wrote its own six. Twenty-four
+     * photos went up, were charged for, and were thrown away by the batch
+     * behind them; the seller saw the last six and reported that bulk photos
+     * "doesn't use all the photos".
+     *
+     * The caller therefore tells us which products this run has already
+     * cleared (it gets the ids back from every batch). Replace applies to a
+     * product the first time it is touched and never again — which is what
+     * "replace the existing photos" meant all along.
+     */
+    const alreadyReplaced = new Set(
+      String(formData.get("replacedIds") ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    const replaceFor = (productId: string) => replace && !alreadyReplaced.has(productId);
 
     if (files.length === 0) {
       return { ok: false, message: "Choose some photos first.", ...empty };
@@ -787,6 +940,8 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
     /** productId → variantId → photos for that colourway. */
     const variantAdditions = new Map<string, Map<string, string[]>>();
     const skipped: string[] = [];
+    const ambiguous: string[] = [];
+    const failed: string[] = [];
     let uploaded = 0;
     let colourways = 0;
 
@@ -794,6 +949,11 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
      * Natural sort, so "_10" comes after "_9" rather than after "_1".
      * Plain string comparison put a ten-photo set in the order 1, 10, 11,
      * 2, 3 … which silently made photo 10 the cover shot.
+     *
+     * The caller sorts the WHOLE selection the same way before splitting it
+     * into batches — sorting here alone only orders each batch of six
+     * against itself, which is no order at all once a product's photos
+     * straddle a boundary.
      */
     const ordered = [...files].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
@@ -814,15 +974,22 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
     const planned = ordered.map((file) => {
       const candidates = filenameCandidates(file.name);
       let match: Product | undefined;
+      let wasAmbiguous = false;
       for (const candidate of candidates) {
-        match = matchProductByFilename(candidate, byKey, keysLongestFirst);
-        if (match) break;
+        const result = matchProductByFilename(candidate, byKey, keysLongestFirst);
+        if (result && "product" in result) {
+          match = result.product;
+          break;
+        }
+        if (result) wasAmbiguous = true;
       }
-      return { file, candidates, match };
+      return { file, candidates, match, wasAmbiguous };
     });
 
     for (const item of planned) {
-      if (!item.match) skipped.push(item.file.name);
+      if (item.match) continue;
+      if (item.wasAmbiguous) ambiguous.push(item.file.name);
+      else skipped.push(item.file.name);
     }
 
     const matchedItems = planned.filter(
@@ -845,7 +1012,10 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
       const { file, candidates, match } = item;
       const url = urls[index];
       if (!url) {
-        skipped.push(file.name);
+        // It matched a product and still did not land — that is a FAILURE,
+        // not an unmatched file. Reporting it as "matched no product" sent
+        // the seller off renaming a file whose name was already right.
+        failed.push(file.name);
         continue;
       }
       uploaded++;
@@ -887,13 +1057,14 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
      */
     const coverFor = (productId: string, currentImages: string[]): string[] | undefined => {
       if (additions.has(productId)) return additions.get(productId);
-      if (!replace && currentImages.length > 0) return undefined;
+      if (!replaceFor(productId) && currentImages.length > 0) return undefined;
       const perVariant = variantAdditions.get(productId);
       const first = perVariant ? [...perVariant.values()][0] : undefined;
       return first?.length ? first : undefined;
     };
 
-    const failed: string[] = [];
+    /** Products whose write failed — ids, so the caller can exclude them. */
+    const failedIds = new Set<string>();
 
     /** Every product that gained photos, at either level. */
     const touched = new Set([...additions.keys(), ...variantAdditions.keys()]);
@@ -905,10 +1076,11 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
     ): Variant[] | undefined => {
       const perVariant = variantAdditions.get(productId);
       if (!perVariant) return undefined;
+      const wipe = replaceFor(productId);
       return currentVariants.map((variant) => {
         const added = perVariant.get(variant.id);
         if (!added) return variant;
-        const existing = replace ? [] : (variant.images ?? []);
+        const existing = wipe ? [] : (variant.images ?? []);
         return { ...variant, images: [...existing, ...added] };
       });
     };
@@ -936,10 +1108,15 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
         // Checked, unlike before: a rejected write left the photo in
         // storage and the product still empty, with nobody told.
         const saved = await updateProductFields(productId, {
-          ...(gallery ? { images: [...(replace ? [] : currentImages), ...gallery] } : {}),
+          ...(gallery
+            ? { images: [...(replaceFor(productId) ? [] : currentImages), ...gallery] }
+            : {}),
           ...(variants ? { variants } : {}),
         });
-        if (!saved) failed.push(product.name ?? productId);
+        if (!saved) {
+          failed.push(product.name ?? productId);
+          failedIds.add(productId);
+        }
       }
     } else {
       await mutateDB((db) => {
@@ -959,7 +1136,7 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
           db.productOverrides[productId] = {
             ...override,
             ...(gallery
-              ? { images: [...(replace ? [] : currentImages), ...gallery] }
+              ? { images: [...(replaceFor(productId) ? [] : currentImages), ...gallery] }
               : {}),
             ...(variants ? { variants } : {}),
           };
@@ -969,7 +1146,7 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
 
     if (isFinalBatch) refresh();
 
-    const matched = touched.size - failed.length;
+    const matched = touched.size - failedIds.size;
     const parts: string[] = [];
     if (matched > 0) {
       parts.push(
@@ -989,14 +1166,23 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
         `${skipped.length} file${skipped.length === 1 ? "" : "s"} matched no product.`,
       );
     }
+    if (ambiguous.length > 0) {
+      parts.push(
+        `${ambiguous.length} file${ambiguous.length === 1 ? "" : "s"} could belong to more than one product.`,
+      );
+    }
 
     return {
       ok: matched > 0 && failed.length === 0,
       message: parts.join(" ") || "Nothing to do.",
       matched,
-      productIds: [...touched].filter((id) => !failed.includes(id)),
+      // Compared by ID, not by name. It used to filter these ids against
+      // `failed`, which holds product NAMES — so a product whose write
+      // failed was still reported to the caller as one that gained photos.
+      productIds: [...touched].filter((id) => !failedIds.has(id)),
       uploaded,
       skipped,
+      ambiguous,
       failed,
     };
   } catch (error) {
@@ -1385,11 +1571,23 @@ export async function addEmployee(formData: FormData): Promise<void> {
 
   const email = String(formData.get("email")).trim().toLowerCase();
 
-  // One account per person. Without this the second invite wins some reads
-  // and loses others, and which store they land in becomes a coin toss.
-  const { getEmployeeByEmail } = await import("@/lib/api");
-  if (await getEmployeeByEmail(email)) {
-    throw new Error(`${email} is already on a team. Remove them there first.`);
+  /*
+   * One row per person PER STORE — not one row per person.
+   *
+   * This used to reject any email already on any team anywhere, which made
+   * the perfectly ordinary case — the same bookkeeper working for two shops
+   * in the same building — impossible, and did so by THROWING from a plain
+   * form action, so the owner got "Application error: a server-side
+   * exception has occurred" rather than a sentence. Both halves are fixed:
+   * a second store is allowed, and the same store twice is refused in
+   * words (the team pages now render errors inline — see SafeForm).
+   */
+  const { getEmployeeMemberships } = await import("@/lib/api");
+  const memberships = await getEmployeeMemberships(email);
+  if (memberships.some((m) => m.store === storeSlug)) {
+    throw new Error(
+      `${email} is already on this team. Change their access below instead of inviting them again.`,
+    );
   }
 
   const emp = {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { addEmployee } from "@/app/actions";
 import PermissionPicker from "@/components/dashboard/PermissionPicker";
+import SafeForm from "@/components/dashboard/SafeForm";
 import TeamMember from "@/components/dashboard/TeamMember";
 import { getEmployees } from "@/lib/api";
 import { EMPLOYEE_PASSWORD } from "@/lib/auth";
@@ -24,7 +25,9 @@ export default async function AdminTeamPage() {
 
       <div className="card mt-5 p-5 sm:p-6">
         <h2 className="font-display font-bold text-ocean-950">👥 Invite a staff member</h2>
-        <form action={addEmployee} className="mt-4 space-y-4">
+        {/* SafeForm so a refused invitation reads as a sentence rather than
+            as Next.js's "Application error" page — see the vendor Team page. */}
+        <SafeForm action={addEmployee} className="mt-4 space-y-4">
           <input type="hidden" name="store" value="platform" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -47,7 +50,7 @@ export default async function AdminTeamPage() {
           <button type="submit" className="btn-primary w-full">
             Create invitation
           </button>
-        </form>
+        </SafeForm>
         <p className="mt-3 rounded-lg bg-sand-100 px-3 py-2 text-xs text-slate-500">
           🔗 An invitation link is created for you to send. Staff can also sign
           in with their email and the password{" "}

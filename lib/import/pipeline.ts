@@ -17,7 +17,13 @@
 
 import type { Product } from "../types.ts";
 import { aggregate, type AggregateResult, type ImportIssue } from "./aggregate.ts";
-import { DEFAULT_MIXED_GROUPINGS, resolveCategory, rootForGender } from "./categories.ts";
+import {
+  DEFAULT_MIXED_GROUPINGS,
+  resolveCategory,
+  rootForGender,
+  type CategoryRules,
+  type ExistingCategory,
+} from "./categories.ts";
 import { DEFAULT_PRICING, type PricingRules } from "./pricing.ts";
 import { buildPlan, type ImportPlan, type StockMode } from "./plan.ts";
 import {
@@ -169,15 +175,18 @@ export function scanCategories(
   bytes: Buffer,
   filename: string,
   settings: Pick<ImportSettings, "sheetIndex" | "mapping" | "rootSlug" | "mergeBasicLines">,
+  /** The catalogue's categories, so this lists what will really be used. */
+  existing: ExistingCategory[] = [],
 ): CategoryScan[] {
   const tables = readTables(bytes, filename);
   const table = tables[settings.sheetIndex] ?? tables[0];
   if (!table) return [];
 
-  const rules = {
+  const rules: CategoryRules = {
     rootSlug: settings.rootSlug,
     mergeBasicLines: settings.mergeBasicLines,
     mixedGroupings: DEFAULT_MIXED_GROUPINGS,
+    existing,
   };
 
   const categoryColumn = settings.mapping.category;
@@ -215,7 +224,12 @@ export function analyse(
   filename: string,
   settings: ImportSettings,
   catalogue: Product[],
-  existingCategorySlugs: string[],
+  /**
+   * The categories the catalogue already has. Passed whole rather than as
+   * slugs alone, because recognising "Towels" as the shop's existing "Towel
+   * Sets" needs the NAME and its place in the tree — see CategoryRules.
+   */
+  existingCategories: ExistingCategory[],
 ): AnalysisResult {
   const tables = readTables(bytes, filename);
   const table = tables[settings.sheetIndex] ?? tables[0];
@@ -241,8 +255,18 @@ export function analyse(
         rootSlug: settings.rootSlug,
         mergeBasicLines: settings.mergeBasicLines,
         mixedGroupings: DEFAULT_MIXED_GROUPINGS,
+        existing: existingCategories,
       },
       pricing: settings.pricing,
+      // Derived from the catalogue rather than stored anywhere — a
+      // subcategory only exists because a product carries it.
+      existingSubcategories: [
+        ...new Set(
+          catalogue
+            .map((p) => p.subcategory?.trim())
+            .filter((s): s is string => Boolean(s)),
+        ),
+      ],
     },
     table.headerRow + 1,
   );
@@ -250,7 +274,7 @@ export function analyse(
   const plan = buildPlan(aggregated.products, catalogue, {
     storeSlug: settings.storeSlug,
     stockMode: settings.stockMode,
-    existingCategorySlugs,
+    existingCategorySlugs: existingCategories.map((c) => c.slug),
   });
 
   return {

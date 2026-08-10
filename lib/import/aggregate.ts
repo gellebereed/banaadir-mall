@@ -28,6 +28,7 @@ import { resolveColor } from "./colors.ts";
 import {
   collectCategories,
   resolveCategory,
+  resolveSubcategory,
   type CategoryRules,
   type ResolvedCategory,
 } from "./categories.ts";
@@ -107,6 +108,11 @@ export interface DraftProduct {
 export interface AggregateOptions {
   category: CategoryRules;
   pricing: PricingRules;
+  /**
+   * Subcategory names the catalogue is already using, so a shipment lands
+   * on the existing shelf rather than beside it. See resolveSubcategory.
+   */
+  existingSubcategories?: string[];
 }
 
 export interface AggregateResult {
@@ -330,7 +336,9 @@ export function aggregate(
     const category = resolveCategory(head.category, head.family, options.category);
     const brand = brandName(head.brand ?? "");
     const productType = displayPhrase(head.productType ?? "");
-    const subcategory = productType || undefined;
+    // Filed under the spelling the shop already uses when there is one, so
+    // a second shipment does not split the shelf. See resolveSubcategory.
+    const subcategory = resolveSubcategory(head.productType, options.existingSubcategories);
 
     const name =
       cleanText(head.name) ||
