@@ -15,6 +15,7 @@ import {
   type TabDef,
 } from "@/components/dashboard/DashboardUI";
 import {
+  inPeriod,
   LOW_STOCK_THRESHOLD,
   lowStockProducts,
   parseRange,
@@ -23,7 +24,14 @@ import {
   summariseCatalogue,
   summariseSales,
 } from "@/lib/analytics";
-import { getAllProductsByStore, getCategories, getOrdersByStore, getStore } from "@/lib/api";
+import { summariseCommission } from "@/lib/commission";
+import {
+  getAllProductsByStore,
+  getCategories,
+  getCommissionSettings,
+  getOrdersByStore,
+  getStore,
+} from "@/lib/api";
 import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
 import { totalStock } from "@/lib/product-utils";
@@ -66,14 +74,34 @@ export default async function VendorDashboardPage({
 
   const { session, storeSlug } = await requireVendor();
   const seesCosts = may(session, "costs.view");
-  const [store, orders, products, categories] = await Promise.all([
+  const [store, orders, products, categories, commission] = await Promise.all([
     getStore(storeSlug),
     getOrdersByStore(storeSlug),
     getAllProductsByStore(storeSlug),
     getCategories(true),
+    getCommissionSettings(),
   ]);
 
   const sales = summariseSales({ orders, products, period });
+
+  /*
+   * The marketplace fee and what is left after it.
+   *
+   * Shown only when a commission is actually being charged AND the admin
+   * has chosen to show it (CommissionSettings.showToSellers). It is
+   * ADDITIONAL to the revenue tile rather than a change to it: "Revenue"
+   * means what customers paid, here and on every other screen, and a
+   * seller comparing this dashboard with their orders list has to find the
+   * same number in both.
+   */
+  const payout =
+    commission.enabled && commission.showToSellers
+      ? summariseCommission(
+          period.unbounded ? orders : inPeriod(orders, period.start, period.end),
+          products,
+          commission,
+        )
+      : null;
   const health = summariseCatalogue(products, soldProductIds(orders));
   const lowStock = lowStockProducts(products, 8);
 
@@ -145,6 +173,28 @@ export default async function VendorDashboardPage({
         <KpiCard icon="📦" label="Units sold" value={String(sales.units)} delta={sales.unitsDelta} />
         <KpiCard icon="💳" label="Average order" value={money(sales.aov)} delta={sales.aovDelta} />
       </div>
+
+      {/* ── What you actually take home ──────────────────────────── */}
+      {payout && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <MiniStat
+            label="Your payout"
+            value={money(payout.payout)}
+            tone="good"
+            note={`after the marketplace fee, ${periodLabel}`}
+          />
+          <MiniStat
+            label="Marketplace fee"
+            value={money(payout.commission)}
+            note={`${payout.effectivePct.toFixed(1)}% of what customers paid`}
+          />
+          <MiniStat
+            label="Fee on an average order"
+            value={money(payout.orders > 0 ? payout.commission / payout.orders : 0)}
+            note={`across ${payout.orders} order${payout.orders === 1 ? "" : "s"}`}
+          />
+        </div>
+      )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[2fr_1fr]">
         <TrendChart

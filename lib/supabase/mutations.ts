@@ -17,6 +17,7 @@
 import { createClient } from "./server";
 import { isSupabaseConfigured } from "./storage";
 import type {
+  CommissionSettings,
   Employee,
   EmployeeRole,
   EmployeeStatus,
@@ -930,6 +931,51 @@ export async function updateMarketingInSupabase(
   } catch (err) {
     console.error("[Supabase Mutations] updateMarketing exception:", err);
     return false;
+  }
+}
+
+/**
+ * Save the commission settings, and ONLY those.
+ *
+ * ── Why this is not part of updateMarketingInSupabase ────────────────────
+ * Two reasons, both about not losing someone's work.
+ *
+ * The marketing writer sends the whole record, so an admin saving the home
+ * page carousel would also write back whatever commission they last read —
+ * clobbering a rate someone changed in the meantime. Writing one column
+ * makes the two screens independent.
+ *
+ * And it can say what happened. `marketing_settings.commission` does not
+ * exist until supabase/migration-commission.sql has been run, and the
+ * marketing writer's response to an unknown column is to retry without it —
+ * which for commission would mean reporting a successful save of settings
+ * that went nowhere. Money settings do not get to fail quietly.
+ */
+export async function updateCommissionInSupabase(
+  commission: CommissionSettings,
+): Promise<{ ok: boolean; migrationRequired: boolean }> {
+  if (!useSupabaseMutations()) return { ok: false, migrationRequired: false };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("marketing_settings")
+      .upsert({ id: 1, commission }, { onConflict: "id" });
+
+    if (!error) return { ok: true, migrationRequired: false };
+
+    if (isMissingColumnError(error)) {
+      console.warn(
+        "[Supabase] marketing_settings has no `commission` column — " +
+          "run supabase/migration-commission.sql.",
+      );
+      return { ok: false, migrationRequired: true };
+    }
+
+    console.error("[Supabase Mutations] updateCommission error:", error.message);
+    return { ok: false, migrationRequired: false };
+  } catch (err) {
+    console.error("[Supabase Mutations] updateCommission exception:", err);
+    return { ok: false, migrationRequired: false };
   }
 }
 

@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { cache as perRequest } from "react";
+import { DEFAULT_COMMISSION } from "../commission";
 import { categoryIcon } from "../category-icons";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type {
@@ -443,6 +444,13 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
         estimate: "Same-day in Mogadishu · 2–4 days nationwide",
       },
       promo: data.promo || { code: "BANAADIR10", pct: 10 },
+      /*
+       * Absent until supabase/migration-commission.sql has been run, and
+       * absent must mean "charging nothing" rather than "charging the
+       * default 10%". A marketplace does not start taking a cut because a
+       * column is missing.
+       */
+      commission: { ...DEFAULT_COMMISSION, ...(data.commission ?? {}) },
     };
   } catch {
     return null;

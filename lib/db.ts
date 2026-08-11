@@ -18,6 +18,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { DEFAULT_COMMISSION } from "./commission";
 import { isSupabaseConfigured } from "./supabase/storage";
 import type {
   Category,
@@ -133,6 +134,10 @@ const DEFAULT_DB: DB = {
     campaign: { active: false, name: "Eid Mega Sale", pct: 10 },
     delivery: { fee: 3, freeThreshold: 25, estimate: "Same-day in Mogadishu · 2–4 days nationwide" },
     promo: { code: "BANAADIR10", pct: 10 },
+    // Off until an admin sets it up. A marketplace that starts charging a
+    // commission the day it is upgraded, without anyone deciding to, would
+    // be taking money from sellers by release note.
+    commission: DEFAULT_COMMISSION,
   },
   flash: {
     active: true,
@@ -192,6 +197,13 @@ export async function getDB(): Promise<DB> {
         promo: {
           ...structuredClone(DEFAULT_DB.marketing.promo),
           ...raw.marketing?.promo,
+        },
+        commission: {
+          ...structuredClone(DEFAULT_DB.marketing.commission),
+          ...raw.marketing?.commission,
+          // Rules are a list, not a record — spreading defaults over them
+          // would leave a stale rule behind after the last one is deleted.
+          rules: raw.marketing?.commission?.rules ?? [],
         },
         // Sections gained keys over time — keep any the saved order misses.
         sections: mergeSections(raw.marketing?.sections),

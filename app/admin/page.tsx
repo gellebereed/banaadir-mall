@@ -15,6 +15,7 @@ import {
   type TabDef,
 } from "@/components/dashboard/DashboardUI";
 import {
+  inPeriod,
   LOW_STOCK_THRESHOLD,
   parseRange,
   resolvePeriod,
@@ -22,10 +23,12 @@ import {
   summariseCatalogue,
   summariseSales,
 } from "@/lib/analytics";
+import { summariseCommission } from "@/lib/commission";
 import {
   getAllProducts,
   getAllStores,
   getCategories,
+  getCommissionSettings,
   getFlashRequests,
   getOrders,
 } from "@/lib/api";
@@ -64,15 +67,32 @@ export default async function AdminDashboardPage({
   const tab = TABS.some((t) => t.key === params.tab) ? params.tab! : "sales";
   const period = resolvePeriod(range);
 
-  const [orders, stores, products, flashRequests, categories] = await Promise.all([
+  const [orders, stores, products, flashRequests, categories, commission] = await Promise.all([
     getOrders(),
     getAllStores(),
     getAllProducts(),
     getFlashRequests(),
     getCategories(true),
+    getCommissionSettings(),
   ]);
 
   const sales = summariseSales({ orders, products, stores, period });
+
+  /*
+   * What the marketplace itself earned, alongside what it turned over.
+   *
+   * Deliberately a SEPARATE figure rather than a change to "Marketplace
+   * revenue" above: that number is what customers paid, it is what every
+   * other page means by revenue, and quietly redefining it to mean the
+   * platform's cut would make this dashboard disagree with all of them.
+   */
+  const earnings = commission.enabled
+    ? summariseCommission(
+        period.unbounded ? orders : inPeriod(orders, period.start, period.end),
+        products,
+        commission,
+      )
+    : null;
   const health = summariseCatalogue(products, soldProductIds(orders));
 
   const categoryNames = new Map(categories.map((category) => [category.slug, category.name]));
@@ -145,9 +165,39 @@ export default async function AdminDashboardPage({
           label="Buyers"
           value={String(sales.customers)}
           note="distinct customers in this period"
+          href="/admin/analytics"
         />
-        <KpiCard icon="💳" label="Average order" value={money(sales.aov)} delta={sales.aovDelta} />
+        {earnings ? (
+          <KpiCard
+            icon="🏦"
+            label="Commission earned"
+            value={money(earnings.commission)}
+            note={`${earnings.effectivePct.toFixed(1)}% of sales · ${money(earnings.payout)} to sellers`}
+            href="/admin/commissions"
+          />
+        ) : (
+          <KpiCard icon="💳" label="Average order" value={money(sales.aov)} delta={sales.aovDelta} />
+        )}
       </div>
+
+      {/* The average order keeps its place when commission has taken the
+          fourth tile — it is not worth losing to a feature that is on. */}
+      {earnings && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          <MiniStat label="Average order" value={money(sales.aov)} />
+          <MiniStat label="Paid out to sellers" value={money(earnings.payout)} tone="good" />
+          <MiniStat
+            label="Effective commission"
+            value={`${earnings.effectivePct.toFixed(1)}%`}
+            note={`base rate ${commission.defaultPct}%`}
+          />
+          <MiniStat
+            label="Of which fixed fees"
+            value={money(earnings.fees)}
+            note={commission.orderFee > 0 ? `${money(commission.orderFee)} per order` : "none set"}
+          />
+        </div>
+      )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[2fr_1fr]">
         <TrendChart

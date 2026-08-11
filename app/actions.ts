@@ -22,6 +22,7 @@ import {
   getStore,
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
+import { normalisePct, ruleProblem } from "@/lib/commission";
 import { sellableUnits, validateProductCodes } from "@/lib/odoo/mapping";
 import {
   baseOrderId,
@@ -49,6 +50,8 @@ import {
 import { getSession } from "@/lib/session";
 import type {
   Banner,
+  CommissionRule,
+  CommissionSettings,
   Courier,
   EmployeeRole,
   HomeSection,
@@ -82,6 +85,7 @@ import {
   insertEmployee,
   deleteEmployeeFromSupabase,
   updateMarketingInSupabase,
+  updateCommissionInSupabase,
   upsertCategoryInSupabase,
   deleteCategoryFromSupabase,
   toggleCategoryVisibilityInSupabase,
@@ -1683,6 +1687,110 @@ export async function removeEmployee(id: string): Promise<void> {
   });
 
   refresh();
+}
+
+// ── Commission (admin only) ────────────────────────────────────────────
+
+/**
+ * Save what the marketplace keeps from each sale.
+ *
+ * ── Guarded by settings.manage, not marketing.manage ─────────────────────
+ * The person who writes the home-page banner is not thereby the person who
+ * sets everybody's commission rate. It is the one screen in the panel that
+ * changes what sellers are paid, so it takes the permission that means
+ * "may change how this business runs".
+ *
+ * ── It refuses to save half of itself ────────────────────────────────────
+ * A rate that reports "Saved" and did not persist is the worst possible
+ * failure here, because the next thing that happens is a payout computed
+ * from a number nobody has. So a database missing the commission column
+ * comes back as an error naming the migration, not as a success.
+ */
+export async function updateCommissionSettings(
+  _prev: SaveState,
+  formData: FormData,
+): Promise<SaveState> {
+  const session = await getSession();
+  if (session?.role !== "admin") redirect("/login");
+  if (!may(session, "settings.manage")) {
+    return { ok: false, message: "Your account is not allowed to change platform settings." };
+  }
+
+  const submitted = parseJsonField<CommissionRule[]>(formData.get("rulesJson"), []);
+
+  // Normalised before validation, so what is checked is exactly what is
+  // stored — and so a rule cannot be saved with a rate of "12abc".
+  const rules: CommissionRule[] = submitted.map((rule, index) => ({
+    id: rule.id || `rule-${Date.now().toString(36)}-${index}`,
+    store: rule.store?.trim() || undefined,
+    category: rule.category?.trim() || undefined,
+    pct: normalisePct(Number(rule.pct)),
+    active: rule.active !== false,
+    note: rule.note?.trim() || undefined,
+  }));
+
+  for (const rule of rules) {
+    const problem = ruleProblem(rule);
+    if (problem) return { ok: false, message: problem };
+  }
+
+  /*
+   * Two rules describing the same thing is not a preference, it is a bug
+   * the admin cannot see: rateFor() takes the first active match, so the
+   * second one is dead and its rate is a lie on the screen.
+   */
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    if (!rule.active) continue;
+    const key = `${rule.store ?? "*"}|${rule.category ?? "*"}`;
+    if (seen.has(key)) {
+      return {
+        ok: false,
+        message:
+          "Two active rules cover exactly the same store and category, so only " +
+          "the first would ever apply. Remove one, or switch it off.",
+      };
+    }
+    seen.add(key);
+  }
+
+  const commission: CommissionSettings = {
+    enabled: formData.get("enabled") === "on",
+    defaultPct: normalisePct(Number(formData.get("defaultPct"))),
+    orderFee: Math.max(0, Number(formData.get("orderFee")) || 0),
+    chargeOnDelivery: formData.get("chargeOnDelivery") === "on",
+    showToSellers: formData.get("showToSellers") === "on",
+    rules,
+  };
+
+  if (useSupabaseMutations()) {
+    const result = await updateCommissionInSupabase(commission);
+    if (!result.ok) {
+      return {
+        ok: false,
+        message: result.migrationRequired
+          ? "This database has not had the commission migration applied, so nothing " +
+            "was saved. Run supabase/migration-commission.sql, then save again."
+          : "Could not save the commission settings. Check the server log.",
+      };
+    }
+  } else {
+    await mutateDB((db) => {
+      db.marketing = { ...db.marketing, commission };
+    });
+  }
+
+  refresh();
+
+  return {
+    ok: true,
+    message: commission.enabled
+      ? `Saved. The marketplace keeps ${commission.defaultPct}% by default` +
+        (rules.length > 0
+          ? `, with ${rules.length} override${rules.length === 1 ? "" : "s"}.`
+          : ".")
+      : "Saved. Commission is switched off — sellers keep the full sale value.",
+  };
 }
 
 // ── Marketing (admin only) ─────────────────────────────────────────────

@@ -23,7 +23,11 @@ export interface TabDef {
 }
 
 function hrefFor(basePath: string, params: Record<string, string>): string {
-  const search = new URLSearchParams(params).toString();
+  // Empty values are dropped, so a page with no tabs (e.g. Commission)
+  // does not carry a bare `?tab=` around in its URL.
+  const search = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== ""),
+  ).toString();
   return search ? `${basePath}?${search}` : basePath;
 }
 

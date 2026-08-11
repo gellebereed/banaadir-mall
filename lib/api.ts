@@ -28,6 +28,7 @@ import {
 } from "./supabase/db-api";
 import { DEFAULT_RECO } from "./db";
 import { resolvePeriod, summariseSales } from "./analytics";
+import { DEFAULT_COMMISSION } from "./commission";
 import { matchesCode, sellableUnits, type SellableUnit } from "./odoo/mapping";
 import { normalizeBarcode, normalizeReference } from "./barcode";
 import {
@@ -40,6 +41,7 @@ import {
 import type {
   Category,
   CategoryNode,
+  CommissionSettings,
   Employee,
   FlashDeal,
   FlashRequest,
@@ -524,6 +526,20 @@ export async function getMarketingSettings(): Promise<MarketingSettings> {
     return supabaseMarketing;
   }
   return (await getDB()).marketing;
+}
+
+/**
+ * What the marketplace keeps from each sale.
+ *
+ * Its own accessor rather than `getMarketingSettings().commission`, so no
+ * page has to know that this is stored on the marketing record — and so
+ * that moving it to its own table later is a change to this function and
+ * nothing else. Falls back to charging NOTHING when the settings have never
+ * been saved (see DEFAULT_COMMISSION).
+ */
+export async function getCommissionSettings(): Promise<CommissionSettings> {
+  const marketing = await getMarketingSettings();
+  return { ...DEFAULT_COMMISSION, ...(marketing.commission ?? {}) };
 }
 
 // ── Flash deals ────────────────────────────────────────────────────────

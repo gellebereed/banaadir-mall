@@ -215,13 +215,25 @@ function labelFor(iso: string, bucket: Bucket): string {
 }
 
 /**
- * Revenue over time, bucketed to suit the range.
+ * The buckets a range is drawn in, and how to put a date into one.
  *
- * Every bucket in the window is emitted, including empty ones — a gap in
- * trading is information, and a chart that silently omits quiet days
- * compresses time and makes a slump look like steady sales.
+ * Extracted so revenue over time and CUSTOMERS over time are bucketed by
+ * one rule rather than two. Two charts on the same screen, drawn from the
+ * same range, whose bars do not line up is the kind of detail that makes
+ * people stop believing a dashboard — and it is exactly what happens when
+ * a second chart reimplements "widen the bucket as the range grows".
  */
-export function buildSeries(orders: Order[], period: Period, today = new Date()): SeriesPoint[] {
+export interface Buckets {
+  /** First day of the window — the earliest order date when unbounded. */
+  start: string;
+  size: Bucket;
+  /** Every bucket in the window, in order, including empty ones. */
+  keys: { key: string; label: string }[];
+  /** The bucket an ISO date falls in. */
+  keyOf: (iso: string) => string;
+}
+
+export function bucketsFor(orders: Order[], period: Period, today = new Date()): Buckets {
   const start = period.unbounded ? earliestDate(orders, today) : period.start;
   const end = period.end;
 
@@ -229,45 +241,61 @@ export function buildSeries(orders: Order[], period: Period, today = new Date())
     1,
     Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY) + 1,
   );
-  const bucket = bucketFor(period.unbounded ? spanDays : period.days);
+  const size = bucketFor(period.unbounded ? spanDays : period.days);
 
-  const totals = new Map<string, { value: number; orders: number }>();
   const keyOf = (iso: string) => {
-    if (bucket === "day") return iso;
-    if (bucket === "month") return `${iso.slice(0, 7)}-01`;
+    const day = (iso ?? "").slice(0, 10);
+    if (size === "day") return day;
+    if (size === "month") return `${day.slice(0, 7)}-01`;
     // Week buckets are anchored to the window start so the last bar is
     // always the current partial week rather than an arbitrary Monday.
     const offset = Math.floor(
-      (Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY,
+      (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY,
     );
     return shiftDays(start, Math.floor(offset / 7) * 7);
   };
 
-  for (const order of orders) {
-    const key = keyOf(order.date.slice(0, 10));
-    const entry = totals.get(key) ?? { value: 0, orders: 0 };
-    entry.value += order.total;
-    entry.orders += 1;
-    totals.set(key, entry);
-  }
-
-  const points: SeriesPoint[] = [];
-  let cursor = bucket === "month" ? `${start.slice(0, 7)}-01` : start;
+  const keys: { key: string; label: string }[] = [];
+  let cursor = size === "month" ? `${start.slice(0, 7)}-01` : start;
   let guard = 0;
 
   while (cursor <= end && guard++ < 400) {
-    const entry = totals.get(cursor) ?? { value: 0, orders: 0 };
-    points.push({ date: cursor, label: labelFor(cursor, bucket), ...entry });
-
-    if (bucket === "day") cursor = shiftDays(cursor, 1);
-    else if (bucket === "week") cursor = shiftDays(cursor, 7);
+    keys.push({ key: cursor, label: labelFor(cursor, size) });
+    if (size === "day") cursor = shiftDays(cursor, 1);
+    else if (size === "week") cursor = shiftDays(cursor, 7);
     else {
       const date = new Date(`${cursor}T00:00:00Z`);
       cursor = isoDate(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)));
     }
   }
 
-  return points;
+  return { start, size, keys, keyOf };
+}
+
+/**
+ * Revenue over time, bucketed to suit the range.
+ *
+ * Every bucket in the window is emitted, including empty ones — a gap in
+ * trading is information, and a chart that silently omits quiet days
+ * compresses time and makes a slump look like steady sales.
+ */
+export function buildSeries(orders: Order[], period: Period, today = new Date()): SeriesPoint[] {
+  const buckets = bucketsFor(orders, period, today);
+
+  const totals = new Map<string, { value: number; orders: number }>();
+  for (const order of orders) {
+    const key = buckets.keyOf(order.date);
+    const entry = totals.get(key) ?? { value: 0, orders: 0 };
+    entry.value += order.total;
+    entry.orders += 1;
+    totals.set(key, entry);
+  }
+
+  return buckets.keys.map(({ key, label }) => ({
+    date: key,
+    label,
+    ...(totals.get(key) ?? { value: 0, orders: 0 }),
+  }));
 }
 
 function earliestDate(orders: Order[], today: Date): string {

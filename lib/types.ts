@@ -592,6 +592,19 @@ export interface MarketingSettings {
   };
   /** Single promo code accepted at checkout. Empty disables the field. */
   promo: { code: string; pct: number };
+  /**
+   * What the marketplace keeps from each sale.
+   *
+   * ── Why it lives on this record ──────────────────────────────────────
+   * `marketing_settings` is, despite its name, the platform-settings row:
+   * it already holds the delivery charge and the checkout promo code,
+   * neither of which is marketing either. Giving commission its own table
+   * would mean a second single-row table, a second cache tag and a second
+   * migration for one object — so it joins the row it belongs to, and is
+   * read through getCommissionSettings() rather than through this type, so
+   * nothing has to know where it is stored.
+   */
+  commission: CommissionSettings;
 }
 
 export interface Review {
@@ -599,6 +612,67 @@ export interface Review {
   rating: number;
   date: string;
   text: string;
+}
+
+// ── Commission: what the marketplace keeps from each sale ──────────────
+
+/**
+ * One override in the commission stack.
+ *
+ * A single flat rate across a marketplace never survives contact with it:
+ * electronics run on thin margins and cannot carry the rate that fashion
+ * can, and the brand you spent six months signing will have negotiated
+ * their own. So the rate is a stack of rules, and the DEFAULT is what
+ * applies when none of them match.
+ *
+ * A rule with neither a store nor a category is meaningless — that is what
+ * `defaultPct` is — and is rejected on save.
+ */
+export interface CommissionRule {
+  id: string;
+  /** Store slug this applies to. Absent means every store. */
+  store?: string;
+  /** Category slug this applies to. Absent means every category. */
+  category?: string;
+  /** Percentage of the line value the marketplace keeps, 0–100. */
+  pct: number;
+  /** Off keeps the rule for later without applying it. */
+  active: boolean;
+  /** Free text for whoever reads this in six months. */
+  note?: string;
+}
+
+/** Everything the admin controls about what the marketplace earns. */
+export interface CommissionSettings {
+  /** Master switch. Off means every payout is the full sale value. */
+  enabled: boolean;
+  /** Rate applied to a line no rule matches, 0–100. */
+  defaultPct: number;
+  /**
+   * Fixed amount taken once per order, on top of the percentage.
+   *
+   * This is where payment-processing costs live. They are charged per
+   * transaction rather than per dollar, so a marketplace of $4 orders
+   * loses money on a pure percentage no matter how the percentage is set.
+   */
+  orderFee: number;
+  /**
+   * Whether the delivery the customer paid is commissionable.
+   *
+   * Off by default, and that is the honest default: the seller collected
+   * that money to hand to a driver, so taking a cut of it is taking a cut
+   * of someone else's wage.
+   */
+  chargeOnDelivery: boolean;
+  /**
+   * Show sellers the fee and their resulting payout in their dashboard.
+   *
+   * On by default. A commission a seller cannot see is one they find out
+   * about when the money arrives short, and that conversation costs more
+   * than the transparency does.
+   */
+  showToSellers: boolean;
+  rules: CommissionRule[];
 }
 
 // ── Discovery: admin control over recommendations & product stories ────

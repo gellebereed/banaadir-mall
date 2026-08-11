@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import { getAllStores, getFlashRequests } from "@/lib/api";
+import { may } from "@/lib/auth";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -41,6 +42,7 @@ export default async function AdminLayout({
           <DashboardSidebar
             items={[
               { href: "/admin", icon: "📊", label: "Dashboard", exact: true },
+              { href: "/admin/analytics", icon: "📈", label: "Analytics" },
               { href: "/admin/stores", icon: "🏪", label: "Stores", badge: pendingStores },
               { href: "/admin/products", icon: "📦", label: "Products" },
               { href: "/admin/orders", icon: "🧾", label: "Orders" },
@@ -48,6 +50,11 @@ export default async function AdminLayout({
               { href: "/admin/marketing", icon: "📣", label: "Marketing" },
               { href: "/admin/discovery", icon: "🧭", label: "Discovery" },
               { href: "/admin/flash", icon: "⚡", label: "Flash Deals", badge: pendingFlash },
+              // Behind settings.manage, like the page itself — a staff member
+              // who cannot change the commission is not shown the door to it.
+              ...(may(session, "settings.manage")
+                ? [{ href: "/admin/commissions", icon: "🏦", label: "Commission" }]
+                : []),
               { href: "/admin/team", icon: "👥", label: "Team" },
             ]}
           />
