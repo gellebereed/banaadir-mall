@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import BannerCarousel from "@/components/home/BannerCarousel";
+import HeroCarousel, { type HeroSlide } from "@/components/home/HeroCarousel";
+import QuickNav from "@/components/home/QuickNav";
 import FlashDealsRail from "@/components/home/FlashDealsRail";
 import CountdownTimer from "@/components/CountdownTimer";
 import ProductCard from "@/components/ProductCard";
@@ -75,9 +76,60 @@ export default async function HomePage() {
     }
   }
 
+  /*
+   * ── The hero's slides ────────────────────────────────────────────────
+   *
+   * Slide one is the marketplace's own pitch, built from the copy the
+   * admin writes in /admin/marketing. The rest are their banners. They
+   * share one frame — see the note at the top of HeroCarousel for why the
+   * storefront no longer opens with two heroes in a row.
+   *
+   * The banners only join when the admin has the "banners" section switched
+   * ON, so that toggle still means what it always meant.
+   */
+  const bannersVisible = marketing.sections.some(
+    (section) => section.key === "banners" && section.visible,
+  );
+
+  const heroSlides: HeroSlide[] = [
+    {
+      id: "__brand__",
+      href: "/products",
+      eyebrow: marketing.heroBadge,
+      // The headline is written as two lines in the admin form; the hero
+      // wraps it itself, so they are joined with a space rather than a
+      // <br> that would break awkwardly on a narrow phone.
+      title: [marketing.heroTitleTop, marketing.heroTitleHighlight]
+        .filter(Boolean)
+        .join(" "),
+      subtitle: marketing.heroSubtitle,
+      cta: "Start Shopping",
+      secondaryCta: { label: "Open Your Store", href: "/sell" },
+      from: "#0c2b34",
+      to: "#217987",
+      brand: true,
+    },
+    ...(bannersVisible
+      ? activeBanners.map((banner) => ({
+          id: banner.id,
+          href: banner.link,
+          title: banner.title,
+          subtitle: banner.subtitle,
+          cta: banner.cta,
+          image: banner.image,
+          mobileImage: banner.mobileImage,
+          from: banner.from,
+          to: banner.to,
+          fit: banner.fit,
+        }))
+      : []),
+  ];
+
   /** Every section the admin can place, keyed by its section id. */
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
-    banners: () => (activeBanners.length > 0 ? <BannerCarousel banners={activeBanners} /> : null),
+    // Banners are slides in the hero now, so this section renders nothing
+    // of its own. Its visibility switch still governs whether they appear.
+    banners: () => null,
     promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} /> : null),
     categories: () => (
       <CategoryRail categories={categories} products={allProducts} covers={covers} />
@@ -142,8 +194,16 @@ export default async function HomePage() {
 
   return (
     <div>
-      <Hero marketing={marketing} heroProducts={heroProducts} />
+      <HeroCarousel
+        slides={heroSlides}
+        brandDecoration={<HeroProductCards products={heroProducts} />}
+      />
       {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
+
+      {/* The launcher. Directly under the hero, above everything else —
+          it is the fastest route to the four or five things a returning
+          shopper opens the app for. */}
+      <QuickNav categories={categories} />
 
       {/*
         The unfinished-business strip, immediately under the hero. For a
@@ -212,13 +272,16 @@ function shortStoreName(store: string): string {
   return store.replace(/-/g, " ").toUpperCase();
 }
 
-function Hero({
-  marketing,
-  heroProducts,
-}: {
-  marketing: MarketingSettings;
-  heroProducts: Product[];
-}) {
+/**
+ * The floating product cards on the hero's brand slide.
+ *
+ * All that survives of the old standalone hero, and deliberately so: they
+ * are real products at real prices, drifting over the gradient, which does
+ * more for a marketplace's credibility than any stock photograph. They stay
+ * `lg` and up — on a phone they would sit on top of the headline, which is
+ * exactly why the reference app shows a photograph there instead.
+ */
+function HeroProductCards({ products }: { products: Product[] }) {
   const cardPositions = [
     { cls: "left-0 top-1", delay: "0s" },
     { cls: "right-0 top-16", delay: "0.8s" },
@@ -227,84 +290,37 @@ function Hero({
   ];
 
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-ocean-950 via-ocean-800 to-ocean-600">
-      <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-mango-500/20 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-ocean-400/20 blur-3xl" />
+    <>
+      {products.map((p, idx) => {
+        const pos = cardPositions[idx % cardPositions.length];
 
-      <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:py-20 lg:grid-cols-2">
-        <div className="animate-fade-up">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-mango-300 ring-1 ring-white/20">
-            {marketing.heroBadge}
-          </span>
-          <h1 className="mt-5 font-display text-4xl font-extrabold leading-tight text-white sm:text-5xl lg:text-6xl">
-            {marketing.heroTitleTop}
-            <br />
-            <span className="bg-gradient-to-r from-mango-300 to-mango-500 bg-clip-text text-transparent">
-              {marketing.heroTitleHighlight}
-            </span>
-          </h1>
-          <p className="mt-4 max-w-md text-ocean-100 sm:text-lg">{marketing.heroSubtitle}</p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link href="/products" className="btn-primary">
-              Start Shopping
-            </Link>
-            <Link
-              href="/sell"
-              className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-white/30 px-6 py-3 font-semibold text-white transition hover:bg-white hover:text-ocean-900"
-            >
-              Open Your Store
-            </Link>
-          </div>
-          <dl className="mt-9 flex gap-8">
-            {[
-              ["65+", "Products"],
-              ["12", "Stores"],
-              ["4", "Global brands"],
-            ].map(([value, label]) => (
-              <div key={label}>
-                <dt className="sr-only">{label}</dt>
-                <dd className="font-display text-2xl font-extrabold text-white">{value}</dd>
-                <dd className="text-xs text-ocean-200">{label}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <div className="relative mx-auto hidden h-[440px] w-full max-w-lg lg:block">
-          {heroProducts.map((p, idx) => {
-            const pos = cardPositions[idx % cardPositions.length];
-            const storeLabel = shortStoreName(p.store);
-            const title = shortHeroTitle(p.name);
-
-            return (
-              <Link
-                key={p.id}
-                href={`/product/${p.slug}`}
-                className={`animate-float absolute ${pos.cls} group flex w-52 items-center gap-3 rounded-2xl bg-white/95 p-2.5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80 z-10`}
-                style={{ animationDelay: pos.delay }}
-              >
-                <ProductImage
-                  product={p}
-                  className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
-                />
-                <div className="min-w-0 flex-1">
-                  <span className="inline-block rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900 truncate">
-                    {storeLabel}
-                  </span>
-                  <p className="truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
-                    {title}
-                  </p>
-                  <p className="font-display font-extrabold text-xs text-ocean-950">
-                    {money(p.price)}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-          <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
-        </div>
-      </div>
-    </section>
+        return (
+          <Link
+            key={p.id}
+            href={`/product/${p.slug}`}
+            className={`animate-float absolute ${pos.cls} group z-10 flex w-52 items-center gap-3 rounded-2xl bg-white/95 p-2.5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80`}
+            style={{ animationDelay: pos.delay }}
+          >
+            <ProductImage
+              product={p}
+              className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
+            />
+            <div className="min-w-0 flex-1">
+              <span className="inline-block truncate rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900">
+                {shortStoreName(p.store)}
+              </span>
+              <p className="truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
+                {shortHeroTitle(p.name)}
+              </p>
+              <p className="font-display text-xs font-extrabold text-ocean-950">
+                {money(p.price)}
+              </p>
+            </div>
+          </Link>
+        );
+      })}
+      <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
+    </>
   );
 }
 
