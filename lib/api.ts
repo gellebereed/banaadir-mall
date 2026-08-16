@@ -17,6 +17,10 @@ import { getDB } from "./db";
 import {
   fetchCategoriesFromSupabase,
   fetchEmployeesFromSupabase,
+  fetchProductionRunsFromSupabase,
+  fetchRecipesFromSupabase,
+  fetchSuppliesFromSupabase,
+  fetchSupplyPurchasesFromSupabase,
   fetchMarketingFromSupabase,
   fetchOrdersFromSupabase,
   fetchProductsFromSupabase,
@@ -29,6 +33,7 @@ import {
 import { DEFAULT_RECO } from "./db";
 import { resolvePeriod, summariseSales } from "./analytics";
 import { DEFAULT_COMMISSION } from "./commission";
+import { DEFAULT_POS } from "./pos";
 import { matchesCode, sellableUnits, type SellableUnit } from "./odoo/mapping";
 import { normalizeBarcode, normalizeReference } from "./barcode";
 import {
@@ -47,13 +52,18 @@ import type {
   FlashRequest,
   MarketingSettings,
   Order,
+  PosSettings,
   Product,
+  ProductionRun,
   ProductReview,
   ProductStory,
   Promotion,
+  Recipe,
   RecoSettings,
   Review,
   Store,
+  Supply,
+  SupplyPurchase,
 } from "./types";
 
 // ── Categories ─────────────────────────────────────────────────────────
@@ -540,6 +550,63 @@ export async function getMarketingSettings(): Promise<MarketingSettings> {
 export async function getCommissionSettings(): Promise<CommissionSettings> {
   const marketing = await getMarketingSettings();
   return { ...DEFAULT_COMMISSION, ...(marketing.commission ?? {}) };
+}
+
+// ── Point of sale ──────────────────────────────────────────────────────
+//
+// Everything here is scoped to ONE store, always. A pantry is a physical
+// shelf in a physical kitchen — there is no marketplace-wide view of it
+// that would mean anything, and an accessor that could return every shop's
+// flour is one that will eventually be called by mistake.
+
+/** Whether this store runs its counter, and how it prices. */
+export async function getPosSettings(storeSlug: string): Promise<PosSettings> {
+  const store = await getStore(storeSlug);
+  return { ...DEFAULT_POS, ...(store?.pos ?? {}) };
+}
+
+export async function getSupplies(storeSlug: string): Promise<Supply[]> {
+  const remote = await fetchSuppliesFromSupabase();
+  const list = remote ?? (await getDB()).supplies ?? [];
+  return list
+    .filter((supply) => supply.store === storeSlug)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getSupplyPurchases(storeSlug: string): Promise<SupplyPurchase[]> {
+  const remote = await fetchSupplyPurchasesFromSupabase();
+  const list = remote ?? (await getDB()).supplyPurchases ?? [];
+  // Newest first — the last delivery is the one somebody is checking.
+  return list
+    .filter((purchase) => purchase.store === storeSlug)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+
+export async function getRecipes(storeSlug: string): Promise<Recipe[]> {
+  const remote = await fetchRecipesFromSupabase();
+  const list = remote ?? (await getDB()).recipes ?? [];
+  return list
+    .filter((recipe) => recipe.store === storeSlug)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getRecipe(id: string): Promise<Recipe | undefined> {
+  const remote = await fetchRecipesFromSupabase();
+  const list = remote ?? (await getDB()).recipes ?? [];
+  return list.find((recipe) => recipe.id === id);
+}
+
+export async function getProductionRuns(storeSlug: string): Promise<ProductionRun[]> {
+  const remote = await fetchProductionRunsFromSupabase();
+  const list = remote ?? (await getDB()).productionRuns ?? [];
+  return list
+    .filter((run) => run.store === storeSlug)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+
+/** Supplies keyed by id — what the costing functions in lib/pos.ts take. */
+export async function getSupplyMap(storeSlug: string): Promise<Map<string, Supply>> {
+  return new Map((await getSupplies(storeSlug)).map((supply) => [supply.id, supply]));
 }
 
 // ── Flash deals ────────────────────────────────────────────────────────

@@ -52,6 +52,8 @@ export const CACHE_TAGS = {
   reco: "bm:reco",
   stories: "bm:stories",
   reviews: "bm:reviews",
+  /** Pantry, recipes and batches. One tag: they are always read together. */
+  pos: "bm:pos",
 } as const;
 
 /** Every tag, for the blanket invalidation a dashboard save performs. */

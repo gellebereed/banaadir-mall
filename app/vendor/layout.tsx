@@ -184,6 +184,11 @@ export default async function VendorLayout({
               ...(may(session, "photos.manage")
                 ? [{ href: "/vendor/photos", icon: "📸", label: "Bulk Photos" }]
                 : []),
+              // Only for shops that have switched the counter on. Everyone
+              // else never learns it exists, which is the point of a toggle.
+              ...(store?.pos?.enabled && may(session, "products.edit")
+                ? [{ href: "/vendor/pos", icon: "🧾", label: "Counter" }]
+                : []),
               ...(may(session, "orders.view")
                 ? [
                   {

@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { cache as perRequest } from "react";
 import { DEFAULT_COMMISSION } from "../commission";
+import { DEFAULT_POS } from "../pos";
 import { categoryIcon } from "../category-icons";
 import { CACHE_TAGS, getPublicClient } from "./public-client";
 import type {
@@ -10,10 +11,14 @@ import type {
   Order,
   Product,
   ProductReview,
+  ProductionRun,
   ProductStory,
   Promotion,
+  Recipe,
   RecoSettings,
   Store,
+  Supply,
+  SupplyPurchase,
 } from "../types";
 import { isSupabaseConfigured } from "./storage";
 
@@ -153,6 +158,10 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // order notifications without the seller re-typing it.
       whatsapp: s.whatsapp || s.phone || undefined,
       couriers: Array.isArray(s.couriers) ? s.couriers : [],
+      // Absent until supabase/migration-pos.sql is applied, and absent
+      // means OFF — a marketplace does not switch a till on for every
+      // shop in it because a column is missing.
+      pos: { ...DEFAULT_POS, ...(s.pos ?? {}) },
     }));
   } catch {
     return null;
@@ -355,6 +364,10 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
       //     database without the migration shows no badge rather than
       //     claiming every order is new.
       seenAt: "seen_at" in o ? (o.seen_at ?? undefined) : EPOCH,
+      // Added by supabase/migration-pos.sql. Absent means the website,
+      // which is what every order placed before the till existed was.
+      channel: (o.channel as Order["channel"]) || undefined,
+      payment: (o.payment as Order["payment"]) || undefined,
     }));
   } catch {
     return null;
@@ -618,6 +631,121 @@ async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
     return null;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  POINT OF SALE — the pantry, the recipes and the batches made
+// ═══════════════════════════════════════════════════════════════════════
+// Every one of these returns null when the table is missing, so an install
+// that has not run supabase/migration-pos.sql keeps working exactly as it
+// did — the till simply never appears.
+
+async function fetchSuppliesFromSupabaseRaw(): Promise<Supply[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("supplies").select("*").range(from, to),
+    );
+    if (!data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      store: row.store,
+      name: row.name,
+      unit: row.unit as Supply["unit"],
+      stock: Number(row.stock ?? 0),
+      unitCost: Number(row.unit_cost ?? 0),
+      lowAt: row.low_at !== null && row.low_at !== undefined ? Number(row.low_at) : undefined,
+      icon: row.icon || undefined,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSupplyPurchasesFromSupabaseRaw(): Promise<SupplyPurchase[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("supply_purchases").select("*").range(from, to),
+    );
+    if (!data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      store: row.store,
+      supplyId: row.supply_id,
+      qty: Number(row.qty ?? 0),
+      totalCost: Number(row.total_cost ?? 0),
+      date: (row.date ?? "").slice(0, 10),
+      note: row.note || undefined,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRecipesFromSupabaseRaw(): Promise<Recipe[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("recipes").select("*").range(from, to),
+    );
+    if (!data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      store: row.store,
+      productId: row.product_id,
+      name: row.name,
+      items: Array.isArray(row.items) ? row.items : [],
+      // `yield` is spelled out in the column name because it reads as a
+      // keyword everywhere else it appears.
+      yield: Number(row.yield_qty ?? 0),
+      overhead: Number(row.overhead ?? 0),
+      updatedAt: row.updated_at || undefined,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchProductionRunsFromSupabaseRaw(): Promise<ProductionRun[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getPublicClient();
+    const data = await fetchAllRows((from, to) =>
+      supabase
+        .from("production_runs")
+        .select("*")
+        .order("date", { ascending: false })
+        .range(from, to),
+    );
+    if (!data) return null;
+    return data.map((row) => ({
+      id: row.id,
+      store: row.store,
+      recipeId: row.recipe_id,
+      batches: Number(row.batches ?? 0),
+      madeQty: Number(row.made_qty ?? 0),
+      unitCost: Number(row.unit_cost ?? 0),
+      date: (row.date ?? "").slice(0, 10),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export const fetchSuppliesFromSupabase = cached(
+  fetchSuppliesFromSupabaseRaw, "supplies", CACHE_TAGS.pos);
+
+export const fetchSupplyPurchasesFromSupabase = cached(
+  fetchSupplyPurchasesFromSupabaseRaw, "supply-purchases", CACHE_TAGS.pos);
+
+export const fetchRecipesFromSupabase = cached(
+  fetchRecipesFromSupabaseRaw, "recipes", CACHE_TAGS.pos);
+
+export const fetchProductionRunsFromSupabase = cached(
+  fetchProductionRunsFromSupabaseRaw, "production-runs", CACHE_TAGS.pos);
 
 export const fetchRecoSettingsFromSupabase = cached(
   fetchRecoSettingsFromSupabaseRaw, "reco", CACHE_TAGS.reco);

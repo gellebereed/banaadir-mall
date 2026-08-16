@@ -25,12 +25,17 @@ import type {
   Permission,
   Order,
   OrderStatus,
+  PosSettings,
   Product,
+  ProductionRun,
   ProductReview,
   ProductStory,
   Promotion,
+  Recipe,
   RecoSettings,
   Store,
+  Supply,
+  SupplyPurchase,
   Variant,
 } from "../types";
 
@@ -478,19 +483,27 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
       ],
     };
 
+    // Only sent when they mean something, so an online order does not carry
+    // a null `payment` column on a database that has never seen a till.
+    if (order.channel) row.channel = order.channel;
+    if (order.payment) row.payment = order.payment;
+
     let { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
 
-    // `timeline` arrived with migration-order-delivery.sql. On a database
-    // without it the whole insert would fail — and a failed insert here
-    // means the customer's order is silently lost at checkout. Retry
-    // without it so the order always lands.
+    // `timeline` arrived with migration-order-delivery.sql, `channel` and
+    // `payment` with migration-pos.sql. On a database without them the
+    // whole insert would fail — and a failed insert here means the
+    // customer's order is silently lost at checkout. Retry without the
+    // optional columns so the order always lands.
     if (error && isMissingColumnError(error)) {
       console.warn(
-        "[Supabase] orders is missing `timeline` — run " +
-          "supabase/migration-order-delivery.sql. Saving the order without " +
-          "its placed-at stamp.",
+        "[Supabase] orders is missing `timeline`, `channel` or `payment` — run " +
+          "supabase/migration-order-delivery.sql and supabase/migration-pos.sql. " +
+          "Saving the order without them.",
       );
       delete row.timeline;
+      delete row.channel;
+      delete row.payment;
       ({ error } = await supabase.from("orders").upsert(row, { onConflict: "id" }));
     }
 
@@ -976,6 +989,215 @@ export async function updateCommissionInSupabase(
   } catch (err) {
     console.error("[Supabase Mutations] updateCommission exception:", err);
     return { ok: false, migrationRequired: false };
+  }
+}
+
+// ── Point of sale ──────────────────────────────────────────────────────
+//
+// Every writer here returns a plain boolean and logs the reason, matching
+// the rest of this module. The one thing they must never do is report
+// success for a write that did not land — a pantry that says it has 25 kg
+// of flour it does not have is worse than no pantry at all.
+
+/** Turn the counter on or off, and save its pricing preferences. */
+export async function updatePosSettingsInSupabase(
+  storeSlug: string,
+  pos: PosSettings,
+): Promise<{ ok: boolean; migrationRequired: boolean }> {
+  if (!useSupabaseMutations()) return { ok: false, migrationRequired: false };
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("stores")
+      .update({ pos })
+      .eq("slug", storeSlug)
+      .select("slug");
+
+    if (error) {
+      if (isMissingColumnError(error)) {
+        console.warn("[Supabase] stores has no `pos` column — run supabase/migration-pos.sql.");
+        return { ok: false, migrationRequired: true };
+      }
+      console.error("[Supabase Mutations] updatePosSettings error:", error.message);
+      return { ok: false, migrationRequired: false };
+    }
+    return { ok: (data?.length ?? 0) > 0, migrationRequired: false };
+  } catch (err) {
+    console.error("[Supabase Mutations] updatePosSettings exception:", err);
+    return { ok: false, migrationRequired: false };
+  }
+}
+
+export async function upsertSupplyInSupabase(supply: Supply): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("supplies").upsert(
+      {
+        id: supply.id,
+        store: supply.store,
+        name: supply.name,
+        unit: supply.unit,
+        stock: supply.stock,
+        unit_cost: supply.unitCost,
+        low_at: supply.lowAt ?? null,
+        icon: supply.icon ?? null,
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      console.error("[Supabase Mutations] upsertSupply error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertSupply exception:", err);
+    return false;
+  }
+}
+
+export async function deleteSupplyFromSupabase(id: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("supplies").delete().eq("id", id);
+    if (error) {
+      console.error("[Supabase Mutations] deleteSupply error:", error.message);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function insertSupplyPurchaseInSupabase(
+  purchase: SupplyPurchase,
+): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("supply_purchases").insert({
+      id: purchase.id,
+      store: purchase.store,
+      supply_id: purchase.supplyId,
+      qty: purchase.qty,
+      total_cost: purchase.totalCost,
+      date: purchase.date,
+      note: purchase.note ?? null,
+    });
+    if (error) {
+      console.error("[Supabase Mutations] insertSupplyPurchase error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] insertSupplyPurchase exception:", err);
+    return false;
+  }
+}
+
+export async function upsertRecipeInSupabase(recipe: Recipe): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("recipes").upsert(
+      {
+        id: recipe.id,
+        store: recipe.store,
+        product_id: recipe.productId,
+        name: recipe.name,
+        items: recipe.items,
+        yield_qty: recipe.yield,
+        overhead: recipe.overhead ?? 0,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
+    if (error) {
+      console.error("[Supabase Mutations] upsertRecipe error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertRecipe exception:", err);
+    return false;
+  }
+}
+
+export async function deleteRecipeFromSupabase(id: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("recipes").delete().eq("id", id);
+    if (error) {
+      console.error("[Supabase Mutations] deleteRecipe error:", error.message);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function insertProductionRunInSupabase(run: ProductionRun): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("production_runs").insert({
+      id: run.id,
+      store: run.store,
+      recipe_id: run.recipeId,
+      batches: run.batches,
+      made_qty: run.madeQty,
+      unit_cost: run.unitCost,
+      date: run.date,
+    });
+    if (error) {
+      console.error("[Supabase Mutations] insertProductionRun error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] insertProductionRun exception:", err);
+    return false;
+  }
+}
+
+/**
+ * Move several supplies' stock at once, after a batch is made.
+ *
+ * ── Not a transaction, and what that costs ───────────────────────────────
+ * PostgREST has no multi-statement transaction, so five ingredients are
+ * five UPDATEs. If the third fails, the first two have already moved. The
+ * failure is REPORTED with the names that did not land rather than
+ * swallowed, so the owner can correct the pantry by hand — which is
+ * recoverable, unlike a silent partial write they never hear about.
+ *
+ * The proper fix is a Postgres function called over RPC, and that is the
+ * thing to do the day this stops being a single kitchen per shop.
+ */
+export async function applyStockMovesInSupabase(
+  moves: { supplyId: string; stock: number }[],
+): Promise<{ ok: boolean; failed: string[] }> {
+  if (!useSupabaseMutations()) return { ok: false, failed: [] };
+  const failed: string[] = [];
+  try {
+    const supabase = await createClient();
+    for (const move of moves) {
+      const { error } = await supabase
+        .from("supplies")
+        .update({ stock: move.stock })
+        .eq("id", move.supplyId);
+      if (error) {
+        console.error("[Supabase Mutations] stock move failed:", move.supplyId, error.message);
+        failed.push(move.supplyId);
+      }
+    }
+    return { ok: failed.length === 0, failed };
+  } catch (err) {
+    console.error("[Supabase Mutations] applyStockMoves exception:", err);
+    return { ok: false, failed: moves.map((m) => m.supplyId) };
   }
 }
 

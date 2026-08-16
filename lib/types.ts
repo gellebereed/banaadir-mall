@@ -115,6 +115,11 @@ export interface Store {
    * a contact is one the customer cannot chase.
    */
   couriers?: Courier[];
+  /**
+   * The counter. Absent or disabled for every store that already has a
+   * till of its own — see PosSettings.
+   */
+  pos?: PosSettings;
 }
 
 export interface Product {
@@ -361,6 +366,19 @@ export interface Order {
    * the same "new" order twice.
    */
   seenAt?: string;
+  /**
+   * Where the sale happened. Absent means the website, which is what every
+   * order placed before the till existed was.
+   *
+   * A counter sale is a real order and is stored as one, deliberately: it
+   * then flows through the same analytics, the same commission and the same
+   * seller dashboard as everything else. A parallel table of "POS sales"
+   * would mean every figure in the app had to remember to add them up, and
+   * one of them always forgets.
+   */
+  channel?: "online" | "pos";
+  /** How a counter sale was paid. Only set when `channel` is "pos". */
+  payment?: PaymentMethod;
 }
 
 /** A line in the client-side shopping cart (persisted to localStorage). */
@@ -612,6 +630,130 @@ export interface Review {
   rating: number;
   date: string;
   text: string;
+}
+
+// ── Point of sale: the counter, the pantry and what is made from it ────
+//
+// Built for the shop that has no till at all — a bakery selling cinnamon
+// rolls, a café, a corner kitchen. The vocabulary below is deliberately the
+// vocabulary its owner already uses: things you BOUGHT, a RECIPE, a BATCH
+// you made, and a SALE. There is no "bill of materials" and no "stock
+// keeping unit" anywhere in it, because the moment those words appear the
+// person this is for stops reading.
+
+/**
+ * How a supply is counted.
+ *
+ * Three families, and conversion only ever happens INSIDE a family. Flour
+ * bought by the sack and used by the gram is the normal case and has to
+ * work; flour bought by the kilo and used by the litre is a mistake, and
+ * silently converting it would hide the mistake rather than catch it.
+ */
+export type SupplyUnit = "g" | "kg" | "ml" | "l" | "piece" | "dozen";
+
+/** Something the kitchen buys and uses up. Flour, eggs, sugar, cups. */
+export interface Supply {
+  id: string;
+  store: string;
+  name: string;
+  /** The unit its stock is counted in — how the owner thinks of it. */
+  unit: SupplyUnit;
+  /** How much is on the shelf right now, in `unit`. */
+  stock: number;
+  /**
+   * What one `unit` costs, averaged across everything ever bought.
+   *
+   * Derived from the purchases, never typed. A shop buys the same flour at
+   * three prices in a month, and asking someone to keep a "current cost"
+   * field up to date by hand is asking for a number that is wrong by the
+   * second week — which then quietly poisons every price the app suggests.
+   */
+  unitCost: number;
+  /** Warn below this. Absent means never warn. */
+  lowAt?: number;
+  /** Emoji shown on the chip in the recipe illustration. */
+  icon?: string;
+}
+
+/** One delivery: "25 kg of flour, KES 2,500". */
+export interface SupplyPurchase {
+  id: string;
+  store: string;
+  supplyId: string;
+  /** Quantity received, in the supply's unit. */
+  qty: number;
+  /** What was paid IN TOTAL, not per unit — nobody has the per-unit figure
+   *  on the receipt in their hand, and making them divide it is where the
+   *  typos come from. */
+  totalCost: number;
+  /** ISO date. */
+  date: string;
+  note?: string;
+}
+
+/** One line of a recipe: how much of a supply one batch uses. */
+export interface RecipeItem {
+  supplyId: string;
+  qty: number;
+  /**
+   * The unit this line is measured in. May differ from the supply's own
+   * unit as long as it is in the same family — 500 g out of a sack
+   * counted in kg.
+   */
+  unit: SupplyUnit;
+}
+
+/** What one batch is made of, and how much of it comes out. */
+export interface Recipe {
+  id: string;
+  store: string;
+  /** The product this makes, which is what actually gets sold. */
+  productId: string;
+  name: string;
+  items: RecipeItem[];
+  /** How many sellable units one batch yields. */
+  yield: number;
+  /**
+   * Per-batch cost that is not an ingredient — gas, boxes, the hour it
+   * takes. Optional, and worth having: a price built from flour and sugar
+   * alone is the reason small kitchens work all day for nothing.
+   */
+  overhead?: number;
+  updatedAt?: string;
+}
+
+/** A batch actually made. Moves supplies off the shelf and stock onto it. */
+export interface ProductionRun {
+  id: string;
+  store: string;
+  recipeId: string;
+  /** How many batches were made. */
+  batches: number;
+  /** Units produced — `batches × recipe.yield`, stored as it was at the time. */
+  madeQty: number;
+  /** What each unit cost to make, stamped at the time it was made. */
+  unitCost: number;
+  date: string;
+}
+
+/** How a counter sale was paid for. */
+export type PaymentMethod = "cash" | "evc" | "edahab" | "card";
+
+/** Everything the owner controls about their till. */
+export interface PosSettings {
+  /** Off by default. A shop with a till of its own never sees any of this. */
+  enabled: boolean;
+  /**
+   * Target margin used to SUGGEST a price, as a percentage of the selling
+   * price. A suggestion only — every screen that shows one lets the owner
+   * type their own over it, because they know their street and this does
+   * not.
+   */
+  targetMarginPct: number;
+  /** Round suggested prices to this, e.g. 5 → KES 45, 50, 55. */
+  roundTo: number;
+  /** Payment methods offered at the counter. */
+  methods: PaymentMethod[];
 }
 
 // ── Commission: what the marketplace keeps from each sale ──────────────

@@ -29,11 +29,15 @@ import type {
   Order,
   OrderStatus,
   Product,
+  ProductionRun,
   ProductReview,
   ProductStory,
   Promotion,
+  Recipe,
   RecoSettings,
   Store,
+  Supply,
+  SupplyPurchase,
 } from "./types";
 
 export interface DB {
@@ -67,6 +71,15 @@ export interface DB {
   stores?: Store[];
   /** Admin control over the recommender (see /admin/discovery). */
   reco?: RecoSettings;
+  /**
+   * The counter, for the local-dev path where Supabase isn't configured.
+   * All four are optional so a db.json written before the till existed
+   * still loads.
+   */
+  supplies?: Supply[];
+  supplyPurchases?: SupplyPurchase[];
+  recipes?: Recipe[];
+  productionRuns?: ProductionRun[];
   /** "How to use this" episodes attached to products. */
   stories?: ProductStory[];
   /** Reviews left by real customers, newest last. */
@@ -219,6 +232,10 @@ export async function getDB(): Promise<DB> {
       },
       stories: raw.stories ?? [],
       reviews: raw.reviews ?? [],
+      supplies: raw.supplies ?? [],
+      supplyPurchases: raw.supplyPurchases ?? [],
+      recipes: raw.recipes ?? [],
+      productionRuns: raw.productionRuns ?? [],
     };
     cache = { data, mtimeMs: stat.mtimeMs };
     return data;
