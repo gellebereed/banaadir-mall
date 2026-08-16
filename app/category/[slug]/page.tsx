@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ShopClient from "@/components/shop/ShopClient";
-import { getCategories, getCategory, getProductsByCategory, getStores } from "@/lib/api";
+import { getCategories, getCategory, getProductsByCategory, getListedStores } from "@/lib/api";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -22,7 +22,7 @@ export default async function CategoryPage({ params }: Props) {
 
   const [products, stores, categories] = await Promise.all([
     getProductsByCategory(slug),
-    getStores(),
+    getListedStores(),
     getCategories(true),
   ]);
 

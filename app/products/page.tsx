@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import ShopClient from "@/components/shop/ShopClient";
-import { getCategories, getProducts, getStores } from "@/lib/api";
+import { getCategories, getListedStores, getMarketplaceProducts } from "@/lib/api";
 
 export const metadata: Metadata = { title: "All Products" };
 
@@ -12,8 +12,10 @@ export default async function ProductsPage({
 }) {
   const { sort } = await searchParams;
   const [products, stores, categories] = await Promise.all([
-    getProducts(),
-    getStores(),
+    // Browsing the whole catalogue is a discovery surface, so stores that
+    // opted out of the marketplace are not part of it.
+    getMarketplaceProducts(),
+    getListedStores(),
     getCategories(true),
   ]);
 

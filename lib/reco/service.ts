@@ -26,11 +26,11 @@
 
 import {
   getCategories,
+  getListedStores,
   getMarketingSettings,
+  getMarketplaceProducts,
   getOrders,
-  getProducts,
   getRecoSettings,
-  getStores,
 } from "../api";
 import type {
   Category,
@@ -123,9 +123,11 @@ export async function recommend(
   const now = Date.now();
 
   const [products, orders, storeList, categoryList, marketing, settings] = await Promise.all([
-    getProducts(),
+    // A recommendation is the definition of being shown something you did
+    // not ask for, so an unlisted store never appears in one.
+    getMarketplaceProducts(),
     getOrders(),
-    getStores(),
+    getListedStores(),
     getCategories(true),
     getMarketingSettings(),
     getRecoSettings(),

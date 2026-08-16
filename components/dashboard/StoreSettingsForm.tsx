@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { updateStoreSettings, type SaveState } from "@/app/actions";
 import PhotoPicker from "./PhotoPicker";
 import SubmitButton from "./SubmitButton";
@@ -26,6 +26,10 @@ export default function StoreSettingsForm({
 }) {
   const [state, formAction] = useActionState(updateStoreSettings, INITIAL);
   useRefreshOnSuccess(state);
+
+  const [listing, setListing] = useState<NonNullable<Store["listing"]>>(
+    store.listing ?? "marketplace",
+  );
 
   return (
     <form action={formAction} className="grid gap-5 sm:grid-cols-2">
@@ -141,6 +145,83 @@ export default function StoreSettingsForm({
           </p>
         )}
       </div>
+
+      {/* ── Where this store appears ───────────────────────────────
+          Two radio cards rather than a checkbox, because "unticked" is a
+          terrible way to express a real, deliberate choice — and this one
+          decides whether a shop is part of a marketplace or just using it
+          to run itself. Both options are spelled out so neither reads as
+          the punishment option. */}
+      <fieldset className="sm:col-span-2">
+        <legend className="label">Where your products appear</legend>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label
+            className={`cursor-pointer rounded-2xl border-2 p-4 transition ${
+              listing === "marketplace"
+                ? "border-ocean-600 bg-ocean-50/50"
+                : "border-sand-200 bg-white hover:border-ocean-300"
+            }`}
+          >
+            <input
+              type="radio"
+              name="listing"
+              value="marketplace"
+              checked={listing === "marketplace"}
+              onChange={() => setListing("marketplace")}
+              className="sr-only"
+            />
+            <span className="flex items-center gap-2">
+              <span className="text-xl">🏬</span>
+              <span className="font-display font-bold text-ocean-950">
+                On Banaadir Mall
+              </span>
+            </span>
+            <span className="mt-1.5 block text-xs text-slate-600">
+              Your products show up in search, categories, the home page and as
+              suggestions beside other shops. The most people see you.
+            </span>
+          </label>
+
+          <label
+            className={`cursor-pointer rounded-2xl border-2 p-4 transition ${
+              listing === "own-store-only"
+                ? "border-ocean-600 bg-ocean-50/50"
+                : "border-sand-200 bg-white hover:border-ocean-300"
+            }`}
+          >
+            <input
+              type="radio"
+              name="listing"
+              value="own-store-only"
+              checked={listing === "own-store-only"}
+              onChange={() => setListing("own-store-only")}
+              className="sr-only"
+            />
+            <span className="flex items-center gap-2">
+              <span className="text-xl">🔗</span>
+              <span className="font-display font-bold text-ocean-950">
+                My own page only
+              </span>
+            </span>
+            <span className="mt-1.5 block text-xs text-slate-600">
+              Your shop page and your link work exactly as now, and the counter
+              still sells — but you stay out of marketplace search, categories
+              and suggestions.
+            </span>
+          </label>
+        </div>
+
+        {listing === "own-store-only" && (
+          <p className="mt-3 rounded-xl bg-mango-50 px-4 py-3 text-xs text-mango-900">
+            Customers can still reach you — nothing is hidden or switched off.
+            Your link is{" "}
+            <span className="font-mono font-bold">/store/{store.slug}</span>, and
+            orders, checkout and delivery all work the same. You just will not
+            be suggested to people browsing the mall.
+          </p>
+        )}
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
         <SubmitButton>Save Store Settings</SubmitButton>

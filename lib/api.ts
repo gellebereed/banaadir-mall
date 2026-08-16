@@ -130,9 +130,31 @@ export async function getAllStores(): Promise<Store[]> {
   });
 }
 
-/** Storefront view: only active stores. */
+/**
+ * Storefront view: only active stores.
+ *
+ * Deliberately INCLUDES stores that have opted out of the marketplace —
+ * this is the list checkout, the session guard and the dashboards resolve
+ * a store against, and an unlisted shop still takes orders. Use
+ * getListedStores() for anywhere a shopper is being shown shops to browse.
+ */
 export async function getStores(): Promise<Store[]> {
   return (await getAllStores()).filter((s) => s.status === "active");
+}
+
+/** True unless the store has asked to be left out of the marketplace. */
+export function isListedOnMarketplace(store: Pick<Store, "listing">): boolean {
+  return (store.listing ?? "marketplace") === "marketplace";
+}
+
+/**
+ * The stores the MARKETPLACE offers up: active, and happy to be found.
+ *
+ * This is the directory, the home page brand rows and the store spotlight
+ * — everywhere a shopper is browsing shops rather than visiting one.
+ */
+export async function getListedStores(): Promise<Store[]> {
+  return (await getStores()).filter(isListedOnMarketplace);
 }
 
 export async function getStore(slug: string): Promise<Store | undefined> {
@@ -285,9 +307,43 @@ export async function getAllProducts(): Promise<Product[]> {
   });
 }
 
-/** Storefront view: hidden products excluded. */
+/**
+ * Storefront view: hidden products excluded.
+ *
+ * ── This is DIRECT ACCESS, not discovery ─────────────────────────────────
+ * It deliberately still includes the products of stores that have opted out
+ * of the marketplace, because this is what resolves a product page and a
+ * store's own catalogue. A shop that shares its link has to have that link
+ * work — filtering here would 404 the very page they printed on their
+ * packaging.
+ *
+ * Anywhere a shopper is being SHOWN products they did not ask for — browse,
+ * search, categories, recommendations, the home page rails — uses
+ * getMarketplaceProducts() instead.
+ */
 export async function getProducts(): Promise<Product[]> {
   return (await getAllProducts()).filter((p) => !p.hidden);
+}
+
+/**
+ * The catalogue the MARKETPLACE puts in front of people.
+ *
+ * Everything in getProducts(), minus the stores that asked to be left out
+ * of it. One function rather than a filter repeated at ten call sites: the
+ * whole value of the setting is that it holds everywhere, and a discovery
+ * surface that forgets to apply it is the one that embarrasses the seller
+ * who turned it on.
+ */
+export async function getMarketplaceProducts(): Promise<Product[]> {
+  const [products, stores] = await Promise.all([getProducts(), getAllStores()]);
+
+  const unlisted = new Set(
+    stores.filter((store) => !isListedOnMarketplace(store)).map((store) => store.slug),
+  );
+  // The common case is that nobody has opted out; skip the walk entirely.
+  if (unlisted.size === 0) return products;
+
+  return products.filter((product) => !unlisted.has(product.store));
 }
 
 export async function getProduct(slug: string): Promise<Product | undefined> {
@@ -306,14 +362,20 @@ export async function getAnyProduct(id: string): Promise<Product | undefined> {
  */
 export async function getProductsByCategory(slug: string): Promise<Product[]> {
   const [products, slugs] = await Promise.all([
-    getProducts(),
+    getMarketplaceProducts(),
     getCategoryWithDescendants(slug),
   ]);
   const inBranch = new Set(slugs);
   return products.filter((p) => inBranch.has(p.category));
 }
 
-/** Storefront listing for a store page. */
+/**
+ * A store's own shopfront.
+ *
+ * getProducts, NOT getMarketplaceProducts: a shop that has opted out of the
+ * marketplace still has to be able to sell from its own page. Filtering
+ * here would empty the shopfront of the very sellers the setting exists for.
+ */
 export async function getProductsByStore(slug: string): Promise<Product[]> {
   return (await getProducts()).filter((p) => p.store === slug);
 }
@@ -335,7 +397,7 @@ export async function searchProducts(query: string): Promise<Product[]> {
   const q = query.trim().toLowerCase();
   if (!q) return [];
 
-  const products = await getProducts();
+  const products = await getMarketplaceProducts();
 
   const exact = products.filter((p) => matchesCode(p, query));
   if (exact.length > 0) return exact;
@@ -410,21 +472,24 @@ export async function getSellableUnitsByStore(slug: string): Promise<SellableUni
   return (await getBaseProductsByStore(slug)).flatMap(sellableUnits);
 }
 
+// Every rail below is the marketplace showing a shopper something they did
+// not ask for, so every one of them runs on getMarketplaceProducts().
+
 /** Products currently on sale — powers the "Flash Deals" rail. */
 export async function getFlashDeals(): Promise<Product[]> {
-  return (await getProducts()).filter((p) => p.compareAt).slice(0, 8);
+  return (await getMarketplaceProducts()).filter((p) => p.compareAt).slice(0, 8);
 }
 
 export async function getBestsellers(limit = 8): Promise<Product[]> {
-  return (await getProducts()).sort((a, b) => b.sold - a.sold).slice(0, limit);
+  return (await getMarketplaceProducts()).sort((a, b) => b.sold - a.sold).slice(0, limit);
 }
 
 export async function getNewArrivals(limit = 8): Promise<Product[]> {
-  return (await getProducts()).filter((p) => p.badge === "New").slice(0, limit);
+  return (await getMarketplaceProducts()).filter((p) => p.badge === "New").slice(0, limit);
 }
 
 export async function getRelatedProducts(product: Product, limit = 4): Promise<Product[]> {
-  return (await getProducts())
+  return (await getMarketplaceProducts())
     .filter((p) => p.category === product.category && p.id !== product.id)
     .slice(0, limit);
 }
@@ -620,7 +685,10 @@ export async function getFlashDeal(): Promise<FlashDeal> {
  * list yet, fall back to whatever is on sale so the rail is never empty.
  */
 export async function getFlashProducts(): Promise<Product[]> {
-  const [flash, products] = await Promise.all([getFlashDeal(), getProducts()]);
+  const [flash, products] = await Promise.all([
+    getFlashDeal(),
+    getMarketplaceProducts(),
+  ]);
   if (!flash.active) return [];
   if (flash.productIds.length > 0) {
     return products.filter((p) => flash.productIds.includes(p.id));

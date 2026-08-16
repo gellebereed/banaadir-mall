@@ -203,6 +203,8 @@ const EXTENDED_STORE_COLUMNS = [
   "whatsapp",
   // Added by supabase/migration-order-delivery.sql.
   "couriers",
+  // Added by supabase/migration-pos.sql.
+  "listing",
 ] as const;
 
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
@@ -414,6 +416,8 @@ export async function updateStoreFields(
       row.phone = fields.whatsapp || null;
     }
     if (fields.couriers !== undefined) row.couriers = fields.couriers ?? [];
+    // Added by supabase/migration-pos.sql.
+    if (fields.listing !== undefined) row.listing = fields.listing;
 
     if (Object.keys(row).length === 0) return true;
 

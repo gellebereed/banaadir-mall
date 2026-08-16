@@ -17,10 +17,10 @@ import {
   getCategories,
   getFlashDeal,
   getFlashProducts,
+  getListedStores,
   getMarketingSettings,
+  getMarketplaceProducts,
   getNewArrivals,
-  getStores,
-  getBaseProducts,
 } from "@/lib/api";
 import type { Category, MarketingSettings, Product, SectionKey, Store } from "@/lib/types";
 
@@ -39,9 +39,9 @@ export default async function HomePage() {
       getFlashDeal(),
       getBestsellers(),
       getNewArrivals(4),
-      getStores(),
+      getListedStores(),
       getMarketingSettings(),
-      getBaseProducts(),
+      getMarketplaceProducts(),
     ]);
 
   // Department artwork: the admin's chosen cover, or the best-selling

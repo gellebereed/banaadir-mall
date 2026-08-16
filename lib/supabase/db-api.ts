@@ -162,6 +162,10 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // means OFF — a marketplace does not switch a till on for every
       // shop in it because a column is missing.
       pos: { ...DEFAULT_POS, ...(s.pos ?? {}) },
+      // Absent until migration-pos.sql runs, and absent means listed —
+      // no store quietly disappears from the marketplace because a column
+      // is missing.
+      listing: (s.listing as Store["listing"]) || "marketplace",
     }));
   } catch {
     return null;

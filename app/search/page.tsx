@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import RecoStack from "@/components/reco/RecoStack";
 import TrackSearch from "@/components/reco/TrackSearch";
 import ShopClient from "@/components/shop/ShopClient";
-import { getCategories, getStores, searchProducts } from "@/lib/api";
+import { getCategories, getListedStores, searchProducts } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Search" };
 
@@ -14,7 +14,7 @@ export default async function SearchPage({
   const { q = "" } = await searchParams;
   const [results, stores, categories] = await Promise.all([
     searchProducts(q),
-    getStores(),
+    getListedStores(),
     getCategories(true),
   ]);
 

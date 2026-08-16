@@ -1244,6 +1244,21 @@ export async function updateStoreSettings(
     };
   }
 
+  /*
+   * Where the shop's products are allowed to appear.
+   *
+   * Read only when the form actually asked — an older form, or one rendered
+   * before this control existed, must leave the setting exactly as it is
+   * rather than quietly re-listing a shop that chose to opt out.
+   */
+  const listingRaw = formData.get("listing");
+  const listing: Store["listing"] | undefined =
+    listingRaw === "own-store-only"
+      ? "own-store-only"
+      : listingRaw === "marketplace"
+        ? "marketplace"
+        : undefined;
+
   const updatedFields: Partial<Store> = {
     name: String(formData.get("name")).trim() || store.name,
     tagline: String(formData.get("tagline")).trim(),
@@ -1252,6 +1267,7 @@ export async function updateStoreSettings(
     logo: removeLogo ? undefined : (logo ?? store.logo),
     banner: removeBanner ? undefined : (banner ?? store.banner),
     whatsapp: whatsapp || undefined,
+    ...(listing ? { listing } : {}),
   };
 
   const supabaseOk = await updateStoreFields(storeSlug, updatedFields);
@@ -1264,7 +1280,14 @@ export async function updateStoreSettings(
     });
   }
   refresh();
-  return { ok: true, message: "Store settings saved." };
+
+  return {
+    ok: true,
+    message:
+      listing === "own-store-only"
+        ? "Saved. Your shop is off the marketplace — your own link still works."
+        : "Store settings saved.",
+  };
 }
 
 // ── Promotions (store discounts) ───────────────────────────────────────

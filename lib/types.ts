@@ -120,6 +120,26 @@ export interface Store {
    * till of its own — see PosSettings.
    */
   pos?: PosSettings;
+  /**
+   * Where this store's products are allowed to appear.
+   *
+   * ── "own-store-only" is not the same as hidden ───────────────────────
+   * The store stays fully open for business: its page works, its product
+   * pages work, its link can be shared, its till rings up sales, and
+   * checkout behaves exactly as it does for anybody else. What changes is
+   * DISCOVERY — it stops appearing in marketplace browse, search, category
+   * pages, recommendations, the home page rails and the store directory.
+   *
+   * That distinction is the whole point. A bakery that wants a shopfront
+   * of its own and a till, without its cinnamon rolls turning up as a
+   * suggestion beside somebody else's, is a real and reasonable shape of
+   * business — and "hidden" would break the link they just printed on
+   * their packaging.
+   *
+   * Absent means "marketplace", so every store that existed before this
+   * setting keeps behaving exactly as it did.
+   */
+  listing?: "marketplace" | "own-store-only";
 }
 
 export interface Product {

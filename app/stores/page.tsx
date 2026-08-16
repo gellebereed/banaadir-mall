@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import PublicStoresClient from "@/components/PublicStoresClient";
-import { getStores } from "@/lib/api";
+import { getListedStores } from "@/lib/api";
 
 export const metadata: Metadata = {
   title: "All Stores & Official Brands | Banaadir Mall",
@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function StoresPage() {
-  const stores = await getStores();
+  // The directory: active stores that want to be found here. A shop that
+  // opted out still works at its own link — it just isn't advertised.
+  const stores = await getListedStores();
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">

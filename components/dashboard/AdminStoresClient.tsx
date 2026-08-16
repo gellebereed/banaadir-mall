@@ -287,9 +287,22 @@ export default function AdminStoresClient({
                           className="h-11 w-11 shrink-0 rounded-2xl border border-sand-200 shadow-xs"
                         />
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900 hover:text-ocean-700 truncate">
-                            {store.name}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-slate-900 hover:text-ocean-700 truncate">
+                              {store.name}
+                            </p>
+                            {/* Flagged here so "why is this shop not in
+                                search?" has an answer on the page where it
+                                gets asked, rather than looking like a bug. */}
+                            {store.listing === "own-store-only" && (
+                              <span
+                                title="This store chose to stay off marketplace search, categories and suggestions. Its own page still works."
+                                className="shrink-0 rounded-full bg-sand-200 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                              >
+                                🔗 Own page only
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-400 truncate max-w-xs">{store.tagline}</p>
                         </div>
                       </div>

@@ -31,6 +31,16 @@ UPDATE public.stores
 SET pos = '{"enabled":false,"targetMarginPct":35,"roundTo":5,"methods":["cash","evc","edahab"]}'::jsonb
 WHERE pos IS NULL;
 
+-- ── Where a store's products are allowed to appear ──────────────────────
+-- 'marketplace' (default) — browse, search, categories, recommendations,
+--   the home page rails and the store directory, exactly as before.
+-- 'own-store-only' — none of those. The store page, its product pages, its
+--   shareable link, its till and checkout all keep working; it simply stops
+--   being SUGGESTED. See Store.listing in lib/types.ts.
+ALTER TABLE public.stores
+  ADD COLUMN IF NOT EXISTS listing TEXT NOT NULL DEFAULT 'marketplace'
+  CHECK (listing IN ('marketplace', 'own-store-only'));
+
 -- ── Where a sale happened ───────────────────────────────────────────────
 -- NULL means the website, which is what every order placed before the till
 -- existed was. Left nullable rather than back-filled so nothing is claimed
