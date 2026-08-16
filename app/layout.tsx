@@ -6,7 +6,10 @@ import PromptHost from "@/components/reco/PromptHost";
 import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import Header from "@/components/layout/Header";
+import StoreSiteHeader, { StoreSiteFooter } from "@/components/store-site/StoreSiteHeader";
+import { STORE_SITE_HEADER } from "@/lib/store-site";
 import Footer from "@/components/layout/Footer";
 import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
@@ -53,6 +56,21 @@ export default async function RootLayout({
   ]);
   const store = session?.store ? await getStore(session.store) : undefined;
 
+  /*
+   * ── Whose shopfront is this? ─────────────────────────────────────────
+   * Middleware stamps the store slug on any request that arrived on a
+   * shop's own address (see lib/store-site.ts). When it is there, the
+   * marketplace header, mega-menu, footer and bottom bar are replaced by
+   * the shop's own — same application, same basket, different clothes.
+   *
+   * An unknown or suspended slug falls through to the marketplace chrome
+   * rather than erroring: a wrong subdomain should look like the mall, not
+   * like a crash.
+   */
+  const siteSlug = (await headers()).get(STORE_SITE_HEADER);
+  const siteStore = siteSlug ? await getStore(siteSlug) : undefined;
+  const onStoreSite = Boolean(siteStore && siteStore.status === "active");
+
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
       <body className="flex min-h-screen flex-col">
@@ -72,16 +90,20 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <ScrollToTop />
           </Suspense>
-          <Header
-            announcement={marketing.announcement}
-            announcementBgColor={marketing.announcementBgColor}
-            announcementTextColor={marketing.announcementTextColor}
-            announcementScroll={marketing.announcementScroll}
-            announcementSpeed={marketing.announcementSpeed}
-            session={session}
-            storeName={store?.name}
-            categories={categories}
-          />
+          {onStoreSite ? (
+            <StoreSiteHeader store={siteStore!} />
+          ) : (
+            <Header
+              announcement={marketing.announcement}
+              announcementBgColor={marketing.announcementBgColor}
+              announcementTextColor={marketing.announcementTextColor}
+              announcementScroll={marketing.announcementScroll}
+              announcementSpeed={marketing.announcementSpeed}
+              session={session}
+              storeName={store?.name}
+              categories={categories}
+            />
+          )}
           {/*
             Shown only to the account an invitation was addressed to, so
             being invited is something you find out inside the app rather
@@ -91,10 +113,19 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <InvitationBanner />
           </Suspense>
-          {/* pb-20 keeps content clear of the mobile bottom nav */}
-          <main className="flex-1 pb-20 md:pb-0">{children}</main>
-          <Footer session={session} />
-          <BottomNav />
+          {/* pb-20 keeps content clear of the mobile bottom nav, which a
+              store site does not have — the shop's own footer is the end
+              of the page. */}
+          <main className={`flex-1 ${onStoreSite ? "" : "pb-20 md:pb-0"}`}>{children}</main>
+
+          {onStoreSite ? (
+            <StoreSiteFooter store={siteStore!} />
+          ) : (
+            <>
+              <Footer session={session} />
+              <BottomNav />
+            </>
+          )}
           {/* Cart / wishlist confirmations */}
           <Toaster />
           {/* The timed ask — see components/reco/PromptHost. Renders

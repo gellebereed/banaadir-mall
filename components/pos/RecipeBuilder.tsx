@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { applyPrice, makeBatch, saveRecipe, type PosState } from "@/app/vendor/pos/actions";
+import SearchableSelect from "@/components/dashboard/SearchableSelect";
 import { money } from "@/lib/format";
 import {
   batchCapacity,
@@ -134,18 +135,21 @@ export default function RecipeBuilder({
               <span className="mb-1 block text-xs font-semibold text-slate-500">
                 The product
               </span>
-              <select
-                value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className="input !py-2.5"
-              >
-                <option value="">— choose —</option>
-                {products.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
+              {/* A shop can carry hundreds of products; a plain dropdown of
+                  them is unusable on the phone this gets used on. */}
+              <SearchableSelect
+                name="productPicker"
+                defaultValue={productId}
+                onChange={setProductId}
+                placeholder="— choose —"
+                searchPlaceholder="Type a product name…"
+                options={products.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  icon: option.icon,
+                  hint: money(option.price),
+                }))}
+              />
               {products.length === 0 && (
                 <span className="mt-1 block text-xs text-coral-600">
                   Add a product first — that is the thing customers buy.

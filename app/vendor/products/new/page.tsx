@@ -6,10 +6,11 @@ import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import SafeForm from "@/components/dashboard/SafeForm";
+import SearchableSelect from "@/components/dashboard/SearchableSelect";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
-import { getCategories, getSubcategories } from "@/lib/api";
+import { getCategoriesFlat, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
@@ -23,7 +24,7 @@ export default async function NewProductPage() {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "products.edit")) redirect("/vendor");
   const [categories, subcategories] = await Promise.all([
-    getCategories(),
+    getCategoriesFlat(),
     getSubcategories(),
   ]);
 

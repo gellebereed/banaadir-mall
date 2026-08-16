@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SearchableSelect from "./SearchableSelect";
 
 /**
  * Subcategory selector with dropdown & custom input option.
@@ -40,27 +41,18 @@ export default function SubcategoryField({
       </div>
 
       {!isCustom && existing.length > 0 ? (
-        <select
+        /* Same reason as the category field: an imported catalogue produces
+           hundreds of these, and a native dropdown of hundreds cannot be
+           searched. See SearchableSelect. */
+        <SearchableSelect
           id="subcategory-select"
-          value={value}
-          onChange={(e) => {
-            if (e.target.value === "__NEW__") {
-              setIsCustom(true);
-              setValue("");
-            } else {
-              setValue(e.target.value);
-            }
-          }}
-          className="input"
-        >
-          <option value="">-- Select a Subcategory --</option>
-          {existing.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-          <option value="__NEW__">✏️ + Create new subcategory...</option>
-        </select>
+          name="subcategoryPicker"
+          defaultValue={value}
+          onChange={setValue}
+          placeholder="-- Select a subcategory --"
+          searchPlaceholder="Type to find a subcategory…"
+          options={existing.map((s) => ({ value: s, label: s }))}
+        />
       ) : (
         <input
           id="subcategory-input"

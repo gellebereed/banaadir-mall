@@ -68,6 +68,38 @@ export default function CategoryMenu({
     !!grandchildrenOf &&
     subcategories.some((child) => (grandchildrenOf.get(child.slug)?.length ?? 0) > 0);
 
+  /*
+   * ── Real groups, and everything else ─────────────────────────────────
+   *
+   * A supplier import files each of its own groupings straight under the
+   * department, so Home & Living ends up with "Tableware" and "Cookware" —
+   * genuine groups with a dozen things inside them — sitting beside
+   * "Bedding Duvet Cover Set Singles", which is one shelf.
+   *
+   * Rendering both the same way is what makes the menu look broken: every
+   * childless entry takes a whole grid cell to display one bold heading and
+   * nothing underneath it, and fourteen of them push the real groups off
+   * the bottom of the panel. The eye reads a wall of headings and finds no
+   * structure, which is the exact opposite of what a menu is for.
+   *
+   * So they are separated. Groups get the columns; the loose ones are
+   * collected into a single compact block at the end, where they read as
+   * what they are — a list of shelves — rather than as fourteen empty
+   * departments.
+   *
+   * The real fix is in the DATA, and it belongs to whoever runs the shop:
+   * "Bedding Duvet Cover Set Singles" wants to be a child of "Bed & Bath".
+   * The importer now files new arrivals correctly (see lib/import/
+   * categories.ts) and /admin/categories can re-parent the ones already
+   * there. Until somebody does that, this at least renders it sensibly.
+   */
+  const realGroups = subcategories.filter(
+    (child) => (grandchildrenOf?.get(child.slug)?.length ?? 0) > 0,
+  );
+  const looseLeaves = subcategories.filter(
+    (child) => (grandchildrenOf?.get(child.slug)?.length ?? 0) === 0,
+  );
+
   useEffect(() => {
     if (!open) return;
 
@@ -178,7 +210,7 @@ export default function CategoryMenu({
                */
               <div className="max-h-[75vh] overflow-y-auto p-5">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
-                  {subcategories.map((group) => {
+                  {realGroups.map((group) => {
                     const leaves = grandchildrenOf?.get(group.slug) ?? [];
                     return (
                       <div key={group.slug} className="min-w-0">
@@ -219,6 +251,32 @@ export default function CategoryMenu({
                     );
                   })}
                 </div>
+
+                {/* Everything that is one shelf rather than a group of them.
+                    Chips, not headings — they are the same KIND of thing as
+                    the grey links inside the columns above, so they are
+                    styled to match rather than competing with the headings. */}
+                {looseLeaves.length > 0 && (
+                  <div className={realGroups.length > 0 ? "mt-6 border-t border-sand-100 pt-5" : ""}>
+                    {realGroups.length > 0 && (
+                      <p className="mb-3 text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                        More in {category.name}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-x-2 gap-y-2">
+                      {looseLeaves.map((leaf) => (
+                        <Link
+                          key={leaf.slug}
+                          href={`/category/${leaf.slug}`}
+                          onClick={() => setOpen(false)}
+                          className="max-w-[15rem] truncate rounded-full border border-sand-200 px-3 py-1.5 text-[13px] text-slate-600 transition hover:border-ocean-400 hover:bg-ocean-50 hover:text-ocean-800"
+                        >
+                          {leaf.name}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               /* A department with only leaves — still a grid, not a list. */

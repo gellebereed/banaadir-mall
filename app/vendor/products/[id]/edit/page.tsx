@@ -7,10 +7,11 @@ import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoManager from "@/components/dashboard/PhotoManager";
 import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import SafeForm from "@/components/dashboard/SafeForm";
+import SearchableSelect from "@/components/dashboard/SearchableSelect";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor from "@/components/dashboard/VariantEditor";
-import { getBaseProduct, getCategories, getDiscountMap, getSubcategories } from "@/lib/api";
+import { getBaseProduct, getCategoriesFlat, getDiscountMap, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { discountPct } from "@/lib/format";
 import { hasVariants } from "@/lib/product-utils";
@@ -36,7 +37,7 @@ export default async function EditProductPage({
   // prices, never the temporarily discounted ones a promotion produces.
   const [product, categories, subcategories] = await Promise.all([
     getBaseProduct(id),
-    getCategories(),
+    getCategoriesFlat(),
     getSubcategories(),
   ]);
   if (!product) notFound();

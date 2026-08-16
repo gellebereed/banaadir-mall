@@ -3,7 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import StoreSettingsForm from "@/components/dashboard/StoreSettingsForm";
 import PosSettingsForm from "@/components/pos/PosSettingsForm";
+import StoreLinkPanel from "@/components/store-site/StoreLinkPanel";
 import { getPosSettings, getStore } from "@/lib/api";
+import { ROOT_DOMAIN } from "@/lib/store-site";
 import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
@@ -37,6 +39,34 @@ export default async function VendorSettingsPage() {
       <div className="card mt-5 p-6 sm:p-8">
         <StoreSettingsForm store={store} includeStoreField={session.role === "admin"} />
       </div>
+
+      {/* ── Your own website ──────────────────────────────────────── */}
+      <section className="card mt-5 p-6 sm:p-8">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-2xl">
+            🔗
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-extrabold text-ocean-950">
+              Your own website
+            </h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              A shopfront at your own address, with your logo and your name —
+              no marketplace menu, no other shops. The basket, checkout and
+              delivery are the same ones you already use, so orders arrive
+              exactly as they do now.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-sand-100 pt-5">
+          <StoreLinkPanel
+            slug={store.slug}
+            storeName={store.name}
+            rootDomain={ROOT_DOMAIN}
+          />
+        </div>
+      </section>
 
       {/*
         ── The counter lives here, and that is the fix ────────────────────
