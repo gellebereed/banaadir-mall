@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { deleteStore, setStoreStatus, toggleStoreOfficial } from "@/app/actions";
+import { deleteStore, setStoreStatus, toggleStoreOfficial, toggleStoreOwnSite } from "@/app/actions";
 import StoreAvatar from "@/components/StoreAvatar";
 import { compact, money } from "@/lib/format";
 import type { Store } from "@/lib/types";
@@ -328,6 +328,38 @@ export default function AdminStoresClient({
                           }`}
                         >
                           {store.official ? "⭐ Official Brand" : "+ Mark Official"}
+                        </button>
+                      </form>
+
+                      {/*
+                        Own shopfront — a grant, not a setting the seller
+                        can help themselves to. Sits under the Official
+                        badge because they are the same KIND of decision:
+                        things the marketplace confers on a shop.
+                      */}
+                      <form
+                        className="mt-1.5"
+                        action={async () => {
+                          startTransition(async () => {
+                            await toggleStoreOwnSite(store.slug);
+                          });
+                        }}
+                      >
+                        <button
+                          type="submit"
+                          disabled={isPending}
+                          title={
+                            store.ownSite
+                              ? `Turn off — /store/${store.slug} goes back to a normal marketplace page`
+                              : `Let this shop use /store/${store.slug} as its own branded website`
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                            store.ownSite
+                              ? "border border-ocean-300 bg-ocean-100 text-ocean-900 hover:bg-ocean-200"
+                              : "bg-sand-100 text-slate-500 hover:bg-ocean-100 hover:text-ocean-900"
+                          }`}
+                        >
+                          {store.ownSite ? "🔗 Own website" : "+ Allow own site"}
                         </button>
                       </form>
                     </td>

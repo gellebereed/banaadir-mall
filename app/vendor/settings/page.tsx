@@ -51,10 +51,9 @@ export default async function VendorSettingsPage() {
               Your own website
             </h2>
             <p className="mt-0.5 text-sm text-slate-500">
-              A shopfront at your own address, with your logo and your name —
-              no marketplace menu, no other shops. The basket, checkout and
-              delivery are the same ones you already use, so orders arrive
-              exactly as they do now.
+              One link to your shop that you can share anywhere. The basket,
+              checkout and delivery are the same ones you already use, so
+              orders arrive exactly as they do now.
             </p>
           </div>
         </div>
@@ -64,6 +63,7 @@ export default async function VendorSettingsPage() {
             slug={store.slug}
             storeName={store.name}
             rootDomain={ROOT_DOMAIN}
+            ownSite={Boolean(store.ownSite)}
           />
         </div>
       </section>

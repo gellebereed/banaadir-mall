@@ -166,6 +166,9 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // no store quietly disappears from the marketplace because a column
       // is missing.
       listing: (s.listing as Store["listing"]) || "marketplace",
+      // Absent until migration-pos.sql runs, and absent means OFF — no shop
+      // is handed a branded site because a column is missing.
+      ownSite: s.own_site ?? false,
     }));
   } catch {
     return null;

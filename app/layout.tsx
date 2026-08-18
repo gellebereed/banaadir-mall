@@ -9,7 +9,7 @@ import { Suspense } from "react";
 import { headers } from "next/headers";
 import Header from "@/components/layout/Header";
 import StoreSiteHeader, { StoreSiteFooter } from "@/components/store-site/StoreSiteHeader";
-import { STORE_SITE_HEADER } from "@/lib/store-site";
+import { PATHNAME_HEADER, storeSlugFromPath } from "@/lib/store-site";
 import Footer from "@/components/layout/Footer";
 import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
@@ -58,18 +58,19 @@ export default async function RootLayout({
 
   /*
    * ── Whose shopfront is this? ─────────────────────────────────────────
-   * Middleware stamps the store slug on any request that arrived on a
-   * shop's own address (see lib/store-site.ts). When it is there, the
-   * marketplace header, mega-menu, footer and bottom bar are replaced by
-   * the shop's own — same application, same basket, different clothes.
+   * On /store/<slug>, a store the marketplace has GRANTED its own site
+   * gets the shop's header and footer instead of the marketplace's — same
+   * application, same basket, same checkout, different clothes.
    *
-   * An unknown or suspended slug falls through to the marketplace chrome
-   * rather than erroring: a wrong subdomain should look like the mall, not
-   * like a crash.
+   * Three conditions, all required. Anything else falls through to the
+   * marketplace chrome rather than erroring, so a bad slug or a suspended
+   * shop looks like the mall rather than like a crash.
    */
-  const siteSlug = (await headers()).get(STORE_SITE_HEADER);
+  const siteSlug = storeSlugFromPath((await headers()).get(PATHNAME_HEADER));
   const siteStore = siteSlug ? await getStore(siteSlug) : undefined;
-  const onStoreSite = Boolean(siteStore && siteStore.status === "active");
+  const onStoreSite = Boolean(
+    siteStore && siteStore.status === "active" && siteStore.ownSite,
+  );
 
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>

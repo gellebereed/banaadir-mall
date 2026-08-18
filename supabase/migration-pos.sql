@@ -41,6 +41,13 @@ ALTER TABLE public.stores
   ADD COLUMN IF NOT EXISTS listing TEXT NOT NULL DEFAULT 'marketplace'
   CHECK (listing IN ('marketplace', 'own-store-only'));
 
+-- ── Which stores get their own branded shopfront ────────────────────────
+-- /store/<slug> renders with the shop's own header and footer instead of
+-- the marketplace's. An ADMIN grant, not a seller setting — see
+-- Store.ownSite in lib/types.ts for why.
+ALTER TABLE public.stores
+  ADD COLUMN IF NOT EXISTS own_site BOOLEAN NOT NULL DEFAULT false;
+
 -- ── Where a sale happened ───────────────────────────────────────────────
 -- NULL means the website, which is what every order placed before the till
 -- existed was. Left nullable rather than back-filled so nothing is claimed

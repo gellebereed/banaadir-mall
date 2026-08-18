@@ -140,6 +140,20 @@ export interface Store {
    * setting keeps behaving exactly as it did.
    */
   listing?: "marketplace" | "own-store-only";
+  /**
+   * Whether this store gets its own branded shopfront at /store/<slug>.
+   *
+   * ── An ADMIN grant, deliberately not a seller setting ─────────────────
+   * A branded page with no marketplace navigation on it is something a
+   * marketplace GIVES — to a brand it has signed, a seller on a higher
+   * plan, a shop that has earned it. If every new registration could switch
+   * one on, the mall would empty itself of the traffic that makes joining
+   * it worth anything in the first place.
+   *
+   * Off means /store/<slug> stays an ordinary marketplace store page,
+   * exactly as it has always been.
+   */
+  ownSite?: boolean;
 }
 
 export interface Product {

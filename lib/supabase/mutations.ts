@@ -205,6 +205,7 @@ const EXTENDED_STORE_COLUMNS = [
   "couriers",
   // Added by supabase/migration-pos.sql.
   "listing",
+  "own_site",
 ] as const;
 
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
@@ -418,6 +419,7 @@ export async function updateStoreFields(
     if (fields.couriers !== undefined) row.couriers = fields.couriers ?? [];
     // Added by supabase/migration-pos.sql.
     if (fields.listing !== undefined) row.listing = fields.listing;
+    if (fields.ownSite !== undefined) row.own_site = fields.ownSite;
 
     if (Object.keys(row).length === 0) return true;
 

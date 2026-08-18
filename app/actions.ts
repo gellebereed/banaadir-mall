@@ -1545,6 +1545,32 @@ export async function setStoreStatus(slug: string, status: Store["status"]): Pro
   refresh();
 }
 
+/**
+ * Grant or withdraw a store's own branded shopfront.
+ *
+ * Admin only, and that is the point — see Store.ownSite. Granting it makes
+ * /store/<slug> render with the shop's header and footer instead of the
+ * marketplace's; withdrawing it puts the page back exactly as it was, with
+ * nothing lost either way.
+ */
+export async function toggleStoreOwnSite(slug: string): Promise<void> {
+  const session = await getSession();
+  if (session?.role !== "admin") redirect("/login");
+
+  const { getStore } = await import("@/lib/api");
+  const store = await getStore(slug);
+  if (!store) return;
+  const next = !store.ownSite;
+
+  const supabaseOk = await updateStoreFields(slug, { ownSite: next });
+  if (!supabaseOk) {
+    await mutateDB((db) => {
+      db.storeOverrides[slug] = { ...db.storeOverrides[slug], ownSite: next };
+    });
+  }
+  refresh();
+}
+
 export async function toggleStoreOfficial(slug: string): Promise<void> {
   const session = await getSession();
   if (session?.role !== "admin") redirect("/login");
@@ -2802,8 +2828,44 @@ export async function toggleCategoryVisibility(slug: string): Promise<void> {
   refresh();
 }
 
+/**
+ * Remove a category — but never the products inside it.
+ *
+ * ── Why this refuses instead of just deleting ────────────────────────────
+ * `products.category` is declared REFERENCES categories(slug) ON DELETE
+ * CASCADE (supabase/schema.sql). Deleting a category therefore deletes
+ * every product filed under it, silently, with no confirmation beyond the
+ * one about the category. Deleting a department that a supplier import had
+ * put 400 products into would have taken all 400 with it.
+ *
+ * So the products are counted first and the delete is refused while any
+ * remain. Moving them somewhere else is a decision for a person — and
+ * /admin/categories can do it in one pass (see the tidy-up tool).
+ */
 export async function deleteCategory(slug: string): Promise<void> {
   await requireAdminSession();
+
+  const { getBaseProducts, getCategories } = await import("@/lib/api");
+  const [products, categories] = await Promise.all([getBaseProducts(), getCategories(true)]);
+
+  const inUse = products.filter((product) => product.category === slug).length;
+  if (inUse > 0) {
+    throw new Error(
+      `${inUse} product${inUse === 1 ? " is" : "s are"} still filed under this category, ` +
+        `and deleting it would delete ${inUse === 1 ? "it" : "them"} too. ` +
+        `Move ${inUse === 1 ? "it" : "them"} to another category first.`,
+    );
+  }
+
+  // Same reasoning one level up: a parent's children would cascade away.
+  const children = categories.filter((category) => category.parentSlug === slug);
+  if (children.length > 0) {
+    throw new Error(
+      `This category still has ${children.length} categor${children.length === 1 ? "y" : "ies"} ` +
+        `inside it (${children.map((c) => c.name).join(", ")}). Move or remove those first.`,
+    );
+  }
+
   if (useSupabaseMutations()) {
     await deleteCategoryFromSupabase(slug);
   } else {
