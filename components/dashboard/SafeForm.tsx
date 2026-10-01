@@ -3,7 +3,11 @@
 import React, { useTransition, useState, useEffect, useRef } from "react";
 
 interface SafeFormProps extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "action"> {
-  action: (formData: FormData) => Promise<void>;
+  /**
+   * May return `{ error }` instead of throwing — the only way a sentence
+   * survives a production build, which hides thrown messages.
+   */
+  action: (formData: FormData) => Promise<void | { error?: string }>;
   storageKey?: string;
   children: React.ReactNode;
 }
@@ -84,7 +88,11 @@ export default function SafeForm({
     startTransition(async () => {
       try {
         setErrorMessage(null);
-        await action(formData);
+        const result = await action(formData);
+        if (result && result.error) {
+          setErrorMessage(result.error);
+          return;
+        }
         if (storageKey) {
           localStorage.removeItem(storageKey);
         }

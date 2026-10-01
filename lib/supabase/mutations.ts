@@ -774,7 +774,12 @@ export async function insertEmployee(emp: {
 
     if (!isMissingColumn(error)) {
       console.error("[Supabase Mutations] insertEmployee error:", error.message);
-      return { ok: false, droppedColumns: false };
+      return {
+        ok: false,
+        droppedColumns: false,
+        message: error.message,
+        duplicateEmail: isUniqueViolation(error),
+      };
     }
 
     console.warn(
@@ -784,12 +789,17 @@ export async function insertEmployee(emp: {
     const retry = await supabase.from("employees").insert(base);
     if (retry.error) {
       console.error("[Supabase Mutations] insertEmployee error:", retry.error.message);
-      return { ok: false, droppedColumns: true };
+      return {
+        ok: false,
+        droppedColumns: true,
+        message: retry.error.message,
+        duplicateEmail: isUniqueViolation(retry.error),
+      };
     }
     return { ok: true, droppedColumns: true };
   } catch (err) {
     console.error("[Supabase Mutations] insertEmployee exception:", err);
-    return { ok: false, droppedColumns: false };
+    return { ok: false, droppedColumns: false, message: (err as Error)?.message };
   }
 }
 
@@ -816,6 +826,17 @@ export interface EmployeeUpdate {
 export interface EmployeeWriteResult {
   ok: boolean;
   droppedColumns: boolean;
+  /** The database's own reason, when the write failed. */
+  message?: string;
+  /** Refused by the one-team-per-email index (an older migration). */
+  duplicateEmail?: boolean;
+  /** An update matched no row — the employee is not in this database. */
+  notFound?: boolean;
+}
+
+/** Postgres unique_violation. */
+function isUniqueViolation(error: { code?: string } | null): boolean {
+  return error?.code === "23505";
 }
 
 /**
@@ -841,15 +862,27 @@ export async function updateEmployeeInSupabase(
 
   try {
     const supabase = await createClient();
-    const { error } = await supabase
+    // .select() so an update that matched NO row is told apart from one
+    // that worked — PostgREST reports both as "no error".
+    const { data, error } = await supabase
       .from("employees")
       .update({ ...base, ...extras })
-      .eq("id", id);
-    if (!error) return { ok: true, droppedColumns: false };
+      .eq("id", id)
+      .select("id");
+    if (!error) {
+      return data && data.length > 0
+        ? { ok: true, droppedColumns: false }
+        : { ok: false, droppedColumns: false, notFound: true, message: "No such team member in the database." };
+    }
 
     if (!isMissingColumn(error)) {
       console.error("[Supabase Mutations] updateEmployee error:", error.message);
-      return { ok: false, droppedColumns: false };
+      return {
+        ok: false,
+        droppedColumns: false,
+        message: error.message,
+        duplicateEmail: isUniqueViolation(error),
+      };
     }
 
     // Nothing left to write once the missing columns are removed, so there
@@ -859,12 +892,12 @@ export async function updateEmployeeInSupabase(
     const retry = await supabase.from("employees").update(base).eq("id", id);
     if (retry.error) {
       console.error("[Supabase Mutations] updateEmployee error:", retry.error.message);
-      return { ok: false, droppedColumns: true };
+      return { ok: false, droppedColumns: true, message: retry.error.message };
     }
     return { ok: true, droppedColumns: true };
   } catch (err) {
     console.error("[Supabase Mutations] updateEmployee exception:", err);
-    return { ok: false, droppedColumns: false };
+    return { ok: false, droppedColumns: false, message: (err as Error)?.message };
   }
 }
 

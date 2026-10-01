@@ -16,6 +16,7 @@ import { stores as seedStores } from "./data/stores";
 import { getDB } from "./db";
 import {
   fetchCategoriesFromSupabase,
+  fetchEmployeeByInviteToken,
   fetchEmployeesFromSupabase,
   fetchProductionRunsFromSupabase,
   fetchRecipesFromSupabase,
@@ -591,8 +592,11 @@ export async function getPendingInvitationsFor(email: string): Promise<Employee[
 export async function getEmployeeByInviteToken(token: string): Promise<Employee | null> {
   const clean = token.trim();
   if (!clean) return null;
-  const all = await getAllEmployees();
-  return all.find((e) => e.inviteToken && e.inviteToken === clean) ?? null;
+  // Live, not cached — see fetchEmployeeByInviteToken.
+  const remote = await fetchEmployeeByInviteToken(clean);
+  if (remote) return remote;
+  const local = (await getDB()).employees;
+  return local.find((e) => e.inviteToken && e.inviteToken === clean) ?? null;
 }
 
 export async function getMarketingSettings(): Promise<MarketingSettings> {

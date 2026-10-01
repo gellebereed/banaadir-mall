@@ -53,6 +53,7 @@ import type {
   CommissionRule,
   CommissionSettings,
   Courier,
+  Employee,
   EmployeeRole,
   HomeSection,
   Order,
@@ -83,6 +84,7 @@ import {
   togglePromotionInSupabase,
   deletePromotionFromSupabase,
   insertEmployee,
+  type EmployeeWriteResult,
   deleteEmployeeFromSupabase,
   updateMarketingInSupabase,
   updateCommissionInSupabase,
@@ -90,6 +92,7 @@ import {
   deleteCategoryFromSupabase,
   toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
+import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
 /**
  * Invalidate what a mutation actually affected.
@@ -1615,7 +1618,32 @@ function permissionsFromForm(formData: FormData): Permission[] | undefined {
  * `active`. Nothing here sends an email — there is no mail provider wired
  * up, and pretending otherwise would be worse than saying so on the page.
  */
-export async function addEmployee(formData: FormData): Promise<void> {
+/**
+ * What the Team page actions report back.
+ *
+ * RETURNED, not thrown: in a production build Next.js replaces the message
+ * of anything a server action throws with a generic "server error", so a
+ * thrown sentence never reaches the person who pressed the button — they
+ * got "Application error" instead of the reason.
+ */
+export interface TeamActionResult {
+  error?: string;
+}
+
+/** The one-team-per-email index from the first team migration. */
+const ONE_TEAM_PER_EMAIL =
+  "This email is already on another team, and this database still allows only one team per email. " +
+  "Run supabase/migration-employee-multistore.sql in Supabase (SQL Editor), then invite them again.";
+
+/** Explain a failed employee write in words the owner can act on. */
+function employeeWriteError(result: EmployeeWriteResult, fallback: string): string {
+  if (result.duplicateEmail) return ONE_TEAM_PER_EMAIL;
+  if (result.droppedColumns) return MIGRATION_REQUIRED;
+  if (result.notFound) return "That team member no longer exists. Reload the page.";
+  return result.message ? `${fallback} (${result.message})` : fallback;
+}
+
+export async function addEmployee(formData: FormData): Promise<TeamActionResult> {
   const session = await requireAccess("team");
   const storeSlug =
     session.role === "admin"
@@ -1638,9 +1666,9 @@ export async function addEmployee(formData: FormData): Promise<void> {
   const { getEmployeeMemberships } = await import("@/lib/api");
   const memberships = await getEmployeeMemberships(email);
   if (memberships.some((m) => m.store === storeSlug)) {
-    throw new Error(
-      `${email} is already on this team. Change their access below instead of inviting them again.`,
-    );
+    return {
+      error: `${email} is already on this team. Change their access below instead of inviting them again.`,
+    };
   }
 
   const emp = {
@@ -1657,31 +1685,49 @@ export async function addEmployee(formData: FormData): Promise<void> {
 
   const result = await insertEmployee(emp);
   if (!result.ok) {
+    /*
+     * The local file only when there is no database at all.
+     *
+     * With Supabase configured, falling back to it looked like success and
+     * was not: on Netlify that file lives in one server instance's memory,
+     * so the invite link appeared on the page and was gone by the time the
+     * person opened it — "this invitation is no longer valid". A failed
+     * write now says why instead.
+     */
+    if (isSupabaseConfigured()) {
+      return { error: employeeWriteError(result, "Could not save the invitation.") };
+    }
     await mutateDB((db) => {
-      if (db.employees.some((e) => e.email.toLowerCase() === email)) return;
+      if (db.employees.some((e) => e.email.toLowerCase() === email && e.store === storeSlug)) return;
       db.employees.push(emp);
     });
   }
   refresh();
 
-  // The person IS on the team either way — this only reports that their
-  // invite link and custom permissions had nowhere to be stored, which the
-  // owner needs to know before they go looking for a link that isn't there.
-  if (result.ok && result.droppedColumns) throw new Error(MIGRATION_REQUIRED);
+  // The person IS on the team — this only reports that their invite link
+  // and custom permissions had nowhere to be stored, which the owner needs
+  // to know before they go looking for a link that isn't there.
+  if (result.ok && result.droppedColumns) return { error: MIGRATION_REQUIRED };
+  return {};
 }
 
 /** Change one person's role and exact grants. */
-export async function updateEmployeeAccess(id: string, formData: FormData): Promise<void> {
+export async function updateEmployeeAccess(
+  id: string,
+  formData: FormData,
+): Promise<TeamActionResult> {
   const session = await requireAccess("team");
-  const employee = await requireManageableEmployee(session, id);
+  const employee = await findManageableEmployee(session, id);
+  if ("error" in employee) return employee;
 
   const role = String(formData.get("role") ?? employee.role) as EmployeeRole;
   const permissions = permissionsFromForm(formData) ?? [];
 
   const result = await saveEmployeeChange(employee, { role, permissions });
-  if (!result.ok) throw new Error("Could not save that access change.");
-  if (result.droppedColumns) throw new Error(MIGRATION_REQUIRED);
+  if (!result.ok) return { error: employeeWriteError(result, "Could not save that access change.") };
   refresh();
+  if (result.droppedColumns) return { error: MIGRATION_REQUIRED };
+  return {};
 }
 
 /**
@@ -1692,9 +1738,10 @@ export async function updateEmployeeAccess(id: string, formData: FormData): Prom
  * this runs, which matters when a link has been forwarded somewhere it
  * should not have been.
  */
-export async function resetInviteLink(id: string): Promise<void> {
+export async function resetInviteLink(id: string): Promise<TeamActionResult> {
   const session = await requireAccess("team");
-  const employee = await requireManageableEmployee(session, id);
+  const employee = await findManageableEmployee(session, id);
+  if ("error" in employee) return employee;
 
   const result = await saveEmployeeChange(employee, {
     inviteToken: newInviteToken(),
@@ -1704,22 +1751,27 @@ export async function resetInviteLink(id: string): Promise<void> {
   });
   // An invite link that silently was not stored is the worst outcome here:
   // the owner sends nothing and believes they sent something.
-  if (!result.ok) throw new Error(result.droppedColumns ? MIGRATION_REQUIRED : "Could not create an invite link.");
+  if (!result.ok) return { error: employeeWriteError(result, "Could not create an invite link.") };
   refresh();
+  return {};
 }
 
-/** The employee this session is allowed to administer, or an error. */
-async function requireManageableEmployee(session: Session, id: string) {
+/** The employee this session is allowed to administer, or why not. */
+async function findManageableEmployee(
+  session: Session,
+  id: string,
+): Promise<Employee | { error: string }> {
   const { getAllEmployees } = await import("@/lib/api");
   const employee = (await getAllEmployees()).find((e) => e.id === id);
-  if (!employee) throw new Error("That team member no longer exists.");
+  if (!employee) return { error: "That team member no longer exists. Reload the page." };
   if (session.role !== "admin") assertOwnsStore(session, employee.store);
   return employee;
 }
 
-export async function removeEmployee(id: string): Promise<void> {
+export async function removeEmployee(id: string): Promise<TeamActionResult> {
   const session = await requireAccess("team");
-  await requireManageableEmployee(session, id);
+  const employee = await findManageableEmployee(session, id);
+  if ("error" in employee) return employee;
 
   /*
    * Delete from BOTH stores, unconditionally.
@@ -1736,6 +1788,7 @@ export async function removeEmployee(id: string): Promise<void> {
   });
 
   refresh();
+  return {};
 }
 
 // ── Commission (admin only) ────────────────────────────────────────────

@@ -103,8 +103,18 @@ function AccountItem({ account, enabled }: { account: AccountRow; enabled: boole
           // The "own password" badge may have changed.
           router.refresh();
         }
-      } catch {
-        setResult({ error: "Something went wrong. Please try again." });
+      } catch (err) {
+        /*
+         * A server action THROWING (rather than returning an error) almost
+         * always means the page is older than the site: after a deploy, the
+         * buttons on a page left open still point at the previous build's
+         * actions, which no longer exist. A reload fixes it.
+         */
+        console.error("[Accounts]", err);
+        setResult({
+          error:
+            "The site was updated since this page was opened. Reload the page and try again.",
+        });
       }
     });
 

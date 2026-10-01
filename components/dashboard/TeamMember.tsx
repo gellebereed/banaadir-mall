@@ -1,5 +1,6 @@
 import { removeEmployee, resetInviteLink, updateEmployeeAccess } from "@/app/actions";
 import InviteLink from "./InviteLink";
+import SafeForm from "./SafeForm";
 import PermissionPicker from "./PermissionPicker";
 import { PERMISSIONS_BY_KEY, permissionsFor } from "@/lib/auth";
 import type { Employee, EmployeeRole } from "@/lib/types";
@@ -101,16 +102,17 @@ export default function TeamMember({
         )}
 
         <div className="mt-3 flex flex-wrap gap-2">
-          <form action={resetInviteLink.bind(null, employee.id)}>
+          {/* SafeForm so a refusal shows its reason — see TeamActionResult. */}
+          <SafeForm action={resetInviteLink.bind(null, employee.id)}>
             <button className="rounded-full border border-ocean-200 px-4 py-1.5 text-xs font-bold text-ocean-800 transition hover:bg-ocean-50">
               {employee.inviteToken ? "Replace link (revokes the old one)" : "Create invite link"}
             </button>
-          </form>
-          <form action={removeEmployee.bind(null, employee.id)}>
+          </SafeForm>
+          <SafeForm action={removeEmployee.bind(null, employee.id)}>
             <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Remove from team
             </button>
-          </form>
+          </SafeForm>
         </div>
       </div>
 
@@ -120,7 +122,7 @@ export default function TeamMember({
           <span className="group-open:hidden">⚙️ Change what they can do</span>
           <span className="hidden group-open:inline">✕ Close</span>
         </summary>
-        <form action={updateEmployeeAccess.bind(null, employee.id)} className="mt-3">
+        <SafeForm action={updateEmployeeAccess.bind(null, employee.id)} className="mt-3">
           <PermissionPicker
             store={employee.store}
             roles={roles}
@@ -134,7 +136,7 @@ export default function TeamMember({
           <p className="mt-2 text-xs text-slate-400">
             Changes take effect the next time they sign in.
           </p>
-        </form>
+        </SafeForm>
       </details>
     </div>
   );

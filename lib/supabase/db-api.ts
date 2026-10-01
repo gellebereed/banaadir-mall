@@ -405,6 +405,30 @@ async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
   }
 }
 
+/** One `employees` row as the app's Employee. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToEmployee(e: any): Employee {
+  return {
+    id: e.id,
+    store: e.store,
+    name: e.name,
+    email: e.email,
+    role: e.role as Employee["role"],
+    addedAt: e.added_at || new Date().toISOString(),
+    // Everything below arrives as undefined until
+    // supabase/migration-employee-permissions.sql has been applied, and
+    // every reader treats undefined as "fall back to the role" — so the
+    // app works either side of that migration.
+    permissions: Array.isArray(e.permissions)
+      ? (e.permissions as Employee["permissions"])
+      : undefined,
+    status: (e.status as Employee["status"]) || "pending",
+    inviteToken: e.invite_token || undefined,
+    invitedAt: e.invited_at || e.added_at || undefined,
+    acceptedAt: e.accepted_at || undefined,
+  } as Employee;
+}
+
 async function fetchEmployeesFromSupabaseRaw(): Promise<Employee[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
@@ -413,27 +437,37 @@ async function fetchEmployeesFromSupabaseRaw(): Promise<Employee[] | null> {
       supabase.from("employees").select("*").range(from, to),
     );
     if (!data) return null;
-    return data.map((e) => ({
-      id: e.id,
-      store: e.store,
-      name: e.name,
-      email: e.email,
-      role: e.role as Employee["role"],
-      addedAt: e.added_at || new Date().toISOString(),
-      // Everything below arrives as undefined until
-      // supabase/migration-employee-permissions.sql has been applied, and
-      // every reader treats undefined as "fall back to the role" — so the
-      // app works either side of that migration.
-      permissions: Array.isArray(e.permissions)
-        ? (e.permissions as Employee["permissions"])
-        : undefined,
-      status: (e.status as Employee["status"]) || "pending",
-      inviteToken: e.invite_token || undefined,
-      invitedAt: e.invited_at || e.added_at || undefined,
-      acceptedAt: e.accepted_at || undefined,
-    }));
+    return data.map(rowToEmployee);
   } catch {
     return null;
+  }
+}
+
+/**
+ * The employee an invite link belongs to, read LIVE — never from the cache.
+ *
+ * The employee list is cached for up to a minute, and an invitation is
+ * usually opened seconds after it was created or replaced. Reading it from
+ * the cache told the person their brand-new link "is no longer valid".
+ * One indexed row is cheap enough to fetch every time.
+ *
+ * undefined: Supabase isn't configured or could not be read (the caller
+ * falls back to the overlay). null: definitely no such link.
+ */
+export async function fetchEmployeeByInviteToken(
+  token: string,
+): Promise<Employee | null | undefined> {
+  if (!isSupabaseConfigured()) return undefined;
+  try {
+    const { data, error } = await getPublicClient()
+      .from("employees")
+      .select("*")
+      .eq("invite_token", token)
+      .limit(1);
+    if (error) return undefined;
+    return data && data.length > 0 ? rowToEmployee(data[0]) : null;
+  } catch {
+    return undefined;
   }
 }
 

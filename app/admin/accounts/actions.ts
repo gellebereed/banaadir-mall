@@ -34,6 +34,22 @@ async function guard(): Promise<string | null> {
   return null;
 }
 
+/**
+ * A Supabase Auth admin error, in words the admin can act on.
+ *
+ * The usual cause by far is the wrong key in SUPABASE_SERVICE_ROLE_KEY —
+ * the anon (public) key pasted by mistake, which Supabase answers with
+ * "User not allowed" or an invalid-key error.
+ */
+function explain(err: unknown, fallback: string): string {
+  const message = (err as Error)?.message || "";
+  console.error("[Accounts]", fallback, message);
+  if (/not allowed|invalid api key|jwt|unauthori[sz]ed|forbidden/i.test(message)) {
+    return "Supabase refused the request: SUPABASE_SERVICE_ROLE_KEY must be the service_role (secret) key from Supabase → Project Settings → API, not the anon key. Fix it in Netlify and redeploy.";
+  }
+  return message ? `${fallback} Supabase said: ${message}` : fallback;
+}
+
 function cleanEmail(value: string): string {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -55,7 +71,7 @@ export async function adminSetPassword(
     await setAccountPassword(target, password);
     return { ok: `Password updated for ${target}. Their old password no longer works.` };
   } catch (err) {
-    return { error: (err as Error).message || "Could not update the password." };
+    return { error: explain(err, "Could not update the password.") };
   }
 }
 
@@ -76,6 +92,6 @@ export async function adminCreateResetLink(email: string): Promise<AccountAction
     const link = await createResetLink(target, origin);
     return { ok: "Reset link created. It works once.", link };
   } catch (err) {
-    return { error: (err as Error).message || "Could not create a reset link." };
+    return { error: explain(err, "Could not create a reset link.") };
   }
 }
