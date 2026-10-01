@@ -56,6 +56,11 @@ export default async function AdminLayout({
                 ? [{ href: "/admin/commissions", icon: "🏦", label: "Commission" }]
                 : []),
               { href: "/admin/team", icon: "👥", label: "Team" },
+              // The main administrator only: setting a password is becoming
+              // that person, so no staff role grants it.
+              ...(!session.access
+                ? [{ href: "/admin/accounts", icon: "🔑", label: "Accounts" }]
+                : []),
             ]}
           />
         </div>

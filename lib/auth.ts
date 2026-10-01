@@ -15,6 +15,10 @@
  *              generated from the active stores, so a store added through
  *              the dashboard gets a login without any code change.
  *   Customer:  ayaan@banaadirmall.com            / Customer@2026
+ *
+ * These shared passwords now only open an email that has no Supabase
+ * account yet; the first such sign-in creates one. Which role an email gets
+ * and which password it takes are decided in lib/accounts.ts.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -93,12 +97,15 @@ export function parseSellerEmail(email: string): string | null {
  * least this deserves while the passwords still live in a file. Set both
  * before launch; the fallback below exists so a fresh clone still starts.
  */
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "ahgbered10@gmail.com").toLowerCase();
+export const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "ahgbered10@gmail.com").toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Admin@2026";
+
+/** The marketplace owner's display name, as their session carries it. */
+export const ADMIN_NAME = "Mall Administrator";
 
 export const DEMO_USERS: DemoUser[] = [
   {
-    name: "Mall Administrator",
+    name: ADMIN_NAME,
     email: ADMIN_EMAIL,
     password: ADMIN_PASSWORD,
     role: "admin",
@@ -123,6 +130,11 @@ export function matchDemoUser(email: string, password: string): Session | null {
   if (!user) return null;
   const { password: _omit, ...session } = user;
   return session;
+}
+
+/** Is this the marketplace owner's email? (Server-side use only.) */
+export function isAdminEmail(email: string): boolean {
+  return email.trim().toLowerCase() === ADMIN_EMAIL;
 }
 
 /** Parse the raw cookie value back into a Session (null if invalid). */

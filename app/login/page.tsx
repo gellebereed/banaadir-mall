@@ -95,6 +95,10 @@ export default function LoginPage() {
             >
               {pending ? "Signing in…" : "Sign in"}
             </button>
+            <p className="text-center text-xs text-slate-400">
+              Forgot your password? Ask the marketplace admin to send you a
+              reset link.
+            </p>
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-500">

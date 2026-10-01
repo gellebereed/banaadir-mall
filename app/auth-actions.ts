@@ -2,21 +2,14 @@
 
 /**
  * Sign-in / sign-out / sign-up server actions.
- * Authenticates against Supabase Auth when configured, with fallback to demo accounts.
+ * Who an email is and which password it takes is decided in lib/accounts.ts.
  */
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  EMPLOYEE_PASSWORD,
-  homeForRole,
-  matchDemoUser,
-  parseSellerEmail,
-  SELLER_PASSWORD,
-  SESSION_COOKIE,
-  type Session,
-} from "@/lib/auth";
-import { markInviteAccepted, sessionForEmployee } from "@/lib/employees";
+import { authenticate, isReservedEmail } from "@/lib/accounts";
+import { homeForRole, SESSION_COOKIE, type Session } from "@/lib/auth";
+import { sessionForEmployee } from "@/lib/employees";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
@@ -40,147 +33,26 @@ export async function signIn(
   }
 
   /*
-   * A Supabase sign-in that came back as a plain customer, held back while
-   * the built-in logins below get their turn.
-   *
-   * A Supabase account with no role in its metadata is a customer — and the
-   * same email can easily have one: the marketplace owner trying the sign-up
-   * form, a seller who registered as a shopper first. Committing to it on
-   * the spot meant that account WON, and the admin or seller signed in to
-   * the customer view with no dashboard in sight. So a customer result only
-   * stands if the same credentials don't open a higher-privileged built-in
-   * account; matching one of those still takes its own password, so this
-   * grants nothing a correct password didn't already.
+   * One email, one password, one role — see lib/accounts.ts. The role is
+   * decided by WHO the email is, never by which password happened to match,
+   * which is what used to send the admin to the shopper view when they
+   * typed their other password.
    */
-  let supabaseCustomer: Session | null = null;
-
-  // 1. Try Supabase Auth if configured
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = await createClient();
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (!error && data.user) {
-        const metadata = data.user.user_metadata || {};
-        const role = (metadata.role || "customer") as Session["role"];
-        const session: Session = {
-          name: metadata.name || data.user.email?.split("@")[0] || "User",
-          email: data.user.email || email,
-          role,
-          store: metadata.store || undefined,
-          access: metadata.access || undefined,
-        };
-
-        if (role === "seller" && metadata.store) {
-          const { getStore } = await import("@/lib/api");
-          const store = await getStore(metadata.store);
-          if (store && store.status === "pending") {
-            return {
-              error: `⏳ Your store application for "${store.name}" is currently awaiting admin review. Once approved, you will be able to access your store dashboard.`,
-            };
-          }
-          if (store && (store.status === "suspended" || store.status === "rejected")) {
-            return {
-              error: `❌ Your store application for "${store.name}" is currently inactive or suspended. Please contact support.`,
-            };
-          }
-        }
-
-        if (role === "customer") {
-          supabaseCustomer = session;
-        } else {
-          const cookieStore = await cookies();
-          cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-            path: "/",
-            maxAge: 60 * 60 * 24 * 7,
-            sameSite: "lax",
-          });
-          redirect(homeForRole(session.role));
-        }
-      }
-    } catch (err: unknown) {
-      if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) {
-        throw err;
-      }
-      console.warn("[Auth] Supabase sign in failed, checking demo fallback:", err);
-    }
-  }
-
-  // 2. Built-in accounts fallback (admin, customer).
-  let session: Session | null = matchDemoUser(email, password);
-
-  /*
-   * 3. Store-owner logins, resolved against the LIVE store list.
-   *
-   * These were previously generated from the bundled seed stores, so a
-   * deleted demo brand kept a working owner login and a real store added
-   * through the dashboard had none. Checking the catalogue means the set of
-   * valid owner logins is exactly the set of stores that exist.
-   */
-  if (!session && password === SELLER_PASSWORD) {
-    const slug = parseSellerEmail(email);
-    if (slug) {
-      const { getStore } = await import("@/lib/api");
-      const store = await getStore(slug);
-      if (store) {
-        if (store.status === "pending") {
-          return {
-            error: `⏳ Your store application for "${store.name}" is currently awaiting admin review. Once approved, you will be able to access your store dashboard.`,
-          };
-        }
-        if (store.status === "suspended" || store.status === "rejected") {
-          return {
-            error: `❌ Your store account for "${store.name}" is currently inactive or suspended.`,
-          };
-        }
-        if (store.status === "active") {
-          session = { name: store.name, email, role: "seller", store: store.slug };
-        }
-      }
-    }
-  }
-
-  /*
-   * 4. Employees added from a Team page (password is EMPLOYEE_PASSWORD).
-   *
-   * This used to read `getDB().employees` — the JSON overlay — and only
-   * that. Every employee added while Supabase is configured is written to
-   * Supabase and never touches the overlay, so the lookup found nothing and
-   * the person the owner had just invited was told their password was
-   * wrong. Which is how a team page can look like it works, save a real
-   * row, and still hand out an account nobody can sign in to.
-   */
-  if (!session && password === EMPLOYEE_PASSWORD) {
-    const { getEmployeeMemberships } = await import("@/lib/api");
-    /*
-     * Every team, not the first one found.
-     *
-     * Someone invited to two shops has two rows, and reading only one of
-     * them meant the other store simply did not exist as far as their
-     * account was concerned. The list goes into the session so the
-     * dashboard can offer a switcher; they still LAND in the first.
-     */
-    const memberships = await getEmployeeMemberships(email);
-    const employee = memberships[0];
-    if (employee) {
-      session = sessionForEmployee(employee, memberships);
-      await markInviteAccepted(employee);
-    }
-  }
-
-  session ??= supabaseCustomer;
-
-  if (!session) {
-    return { error: "Invalid email or password. Please try again." };
-  }
+  const result = await authenticate(email, password);
+  if ("error" in result) return { error: result.error };
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+  cookieStore.set(SESSION_COOKIE, JSON.stringify(result.session), {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "lax",
   });
-  redirect(homeForRole(session.role));
+  redirect(homeForRole(result.session.role));
 }
+
+/** Refused on the sign-up forms — see isReservedEmail. */
+const RESERVED_EMAIL_ERROR =
+  "This email already belongs to an admin, staff or store login. Please sign in instead, or ask the marketplace admin to send you a password reset link.";
 
 /** Customer registration action */
 export async function signUpCustomer(
@@ -197,6 +69,9 @@ export async function signUpCustomer(
   }
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters long." };
+  }
+  if (await isReservedEmail(email)) {
+    return { error: RESERVED_EMAIL_ERROR };
   }
 
   if (isSupabaseConfigured()) {
@@ -274,6 +149,9 @@ export async function signUpSeller(
   }
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters long." };
+  }
+  if (await isReservedEmail(email)) {
+    return { error: RESERVED_EMAIL_ERROR };
   }
 
   const storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
