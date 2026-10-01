@@ -9,10 +9,10 @@
  * ever tapped it.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { MIN_PASSWORD_LENGTH, resolveSession } from "@/lib/accounts";
-import { homeForRole, SESSION_COOKIE } from "@/lib/auth";
+import { homeForRole } from "@/lib/auth";
+import { setSessionCookie } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
@@ -50,11 +50,6 @@ export async function resetPassword(_prev: ResetState, formData: FormData): Prom
   const result = await resolveSession(data.user.email, data.user);
   if ("error" in result) return { error: result.error };
 
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(result.session), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
-  });
+  await setSessionCookie(result.session);
   redirect(homeForRole(result.session.role));
 }

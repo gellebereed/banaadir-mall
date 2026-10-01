@@ -1,35 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import type { Session } from "@/lib/auth";
+import { verifySession } from "@/lib/session-token";
 import { PATHNAME_HEADER, storeSlugFromPath } from "@/lib/store-site";
 
 const SESSION_COOKIE = "bm_session";
 
-interface SessionShape {
-  email?: string;
-  role?: "admin" | "seller" | "customer";
-}
-
-function readSession(request: NextRequest): SessionShape | null {
-  const raw = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!raw) return null;
-
-  for (const candidate of [raw, safeDecode(raw)]) {
-    try {
-      const parsed = JSON.parse(candidate) as SessionShape;
-      if (parsed?.email && parsed?.role) return parsed;
-    } catch {
-      // try next candidate
-    }
-  }
-  return null;
-}
-
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
+/**
+ * The session, only if its signature checks out — see lib/session-token.ts.
+ * An edited cookie reads as signed out, so it is sent to /login.
+ */
+function readSession(request: NextRequest): Promise<Session | null> {
+  return verifySession(request.cookies.get(SESSION_COOKIE)?.value);
 }
 
 function redirectTo(request: NextRequest, path: string) {
@@ -44,7 +26,7 @@ export async function middleware(request: NextRequest) {
   const response = await updateSession(request);
 
   const { pathname } = request.nextUrl;
-  const session = readSession(request);
+  const session = await readSession(request);
 
   /*
    * ── Which page is this? ──────────────────────────────────────────────

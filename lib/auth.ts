@@ -2,12 +2,11 @@
  * ─────────────────────────────────────────────────────────────────────────
  *  DEMO AUTHENTICATION — for end-to-end testing only.
  * ─────────────────────────────────────────────────────────────────────────
- * Sessions are stored in a plain (non-httpOnly) cookie so both client
- * components and server components can read them. Passwords live in this
- * file in plain text. That is fine for a demo and completely unacceptable
- * for production — replace with real auth (NextAuth.js, Clerk, or Odoo
- * portal users) before going live. The rest of the app only depends on
- * the `Session` shape, so swapping the mechanism is contained.
+ * Sessions live in a SIGNED, httpOnly cookie — written and read only by
+ * lib/session.ts, signed by lib/session-token.ts — so a visitor cannot
+ * edit their way into another role. The shared default passwords below
+ * are the remaining demo-era piece; see lib/accounts.ts for how they are
+ * retired account by account.
  *
  * Accounts:
  *   Admin:     ADMIN_EMAIL env var, else ahgbered10@gmail.com / Admin@2026
@@ -135,28 +134,6 @@ export function matchDemoUser(email: string, password: string): Session | null {
 /** Is this the marketplace owner's email? (Server-side use only.) */
 export function isAdminEmail(email: string): boolean {
   return email.trim().toLowerCase() === ADMIN_EMAIL;
-}
-
-/** Parse the raw cookie value back into a Session (null if invalid). */
-export function parseSession(raw: string | undefined): Session | null {
-  if (!raw) return null;
-  for (const candidate of [raw, safeDecode(raw)]) {
-    try {
-      const data = JSON.parse(candidate) as Session;
-      if (data && data.email && data.role) return data;
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null;
-}
-
-function safeDecode(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
 }
 
 // ── Permissions ─────────────────────────────────────────────────────────

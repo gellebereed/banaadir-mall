@@ -1,16 +1,47 @@
 /**
- * Server-side session helper. Import ONLY from server components —
- * client components should read the cookie via lib/auth.ts helpers.
+ * Server-side session helpers. Import ONLY from server code — the session
+ * cookie is httpOnly, so the browser cannot read it; client components get
+ * the session as a prop from a server component.
  */
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { parseSession, SESSION_COOKIE, type Session } from "./auth";
+import { SESSION_COOKIE, type Session } from "./auth";
+import { SESSION_MAX_AGE_SECONDS, signSession, verifySession } from "./session-token";
 
-/** The signed-in demo user, or null. Makes the calling page dynamic. */
+/**
+ * The signed-in user, or null. Makes the calling page dynamic.
+ *
+ * Only a correctly SIGNED cookie counts (lib/session-token.ts). An edited
+ * cookie, or an unsigned one from before signing existed, is no session.
+ */
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
-  return parseSession(cookieStore.get(SESSION_COOKIE)?.value);
+  return verifySession(cookieStore.get(SESSION_COOKIE)?.value);
+}
+
+/**
+ * Sign this person in. The only place the session cookie is written —
+ * call from a server action or route handler.
+ *
+ * httpOnly so page scripts (and anything injected into them) cannot read
+ * or copy it; secure in production so it never travels over plain http.
+ */
+export async function setSessionCookie(session: Session): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, await signSession(session), {
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    sameSite: "lax",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+/** Sign out. */
+export async function clearSessionCookie(): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE);
 }
 
 /**

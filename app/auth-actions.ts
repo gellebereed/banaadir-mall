@@ -5,10 +5,10 @@
  * Who an email is and which password it takes is decided in lib/accounts.ts.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authenticate, isReservedEmail } from "@/lib/accounts";
-import { homeForRole, SESSION_COOKIE, type Session } from "@/lib/auth";
+import { homeForRole, type Session } from "@/lib/auth";
+import { clearSessionCookie, setSessionCookie } from "@/lib/session";
 import { sessionForEmployee } from "@/lib/employees";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
@@ -41,12 +41,7 @@ export async function signIn(
   const result = await authenticate(email, password);
   if ("error" in result) return { error: result.error };
 
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(result.session), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
-  });
+  await setSessionCookie(result.session);
   redirect(homeForRole(result.session.role));
 }
 
@@ -99,12 +94,7 @@ export async function signUpCustomer(
           email,
           role: "customer",
         };
-        const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-          path: "/",
-          maxAge: 60 * 60 * 24 * 7,
-          sameSite: "lax",
-        });
+        await setSessionCookie(session);
         redirect("/account");
       }
     } catch (err: unknown) {
@@ -121,12 +111,7 @@ export async function signUpCustomer(
     email,
     role: "customer",
   };
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
-  });
+  await setSessionCookie(session);
   redirect("/account");
 }
 
@@ -312,12 +297,7 @@ export async function switchStore(storeSlug: string): Promise<void> {
     throw new Error("You can only manage your own store.");
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(next), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
-  });
+  await setSessionCookie(next);
   redirect("/vendor");
 }
 
@@ -331,7 +311,6 @@ export async function signOut(): Promise<void> {
     }
   }
 
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
+  await clearSessionCookie();
   redirect("/");
 }

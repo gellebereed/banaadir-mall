@@ -9,10 +9,10 @@
  * issuing a new one from the Team page.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getEmployeeByInviteToken, getStore } from "@/lib/api";
-import { homeForRole, SESSION_COOKIE } from "@/lib/auth";
+import { homeForRole } from "@/lib/auth";
+import { setSessionCookie } from "@/lib/session";
 import { markInviteAccepted, sessionForEmployee } from "@/lib/employees";
 
 export async function acceptInvite(token: string): Promise<void> {
@@ -29,12 +29,7 @@ export async function acceptInvite(token: string): Promise<void> {
   await markInviteAccepted(employee);
 
   const session = sessionForEmployee(employee);
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    sameSite: "lax",
-  });
+  await setSessionCookie(session);
 
   redirect(homeForRole(session.role));
 }
