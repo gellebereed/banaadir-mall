@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
-import { PATHNAME_HEADER } from "@/lib/store-site";
+import { PATHNAME_HEADER, storeSlugFromPath } from "@/lib/store-site";
 
 const SESSION_COOKIE = "bm_session";
 
@@ -53,21 +53,31 @@ export async function middleware(request: NextRequest) {
    * for exactly one decision: a store the marketplace has granted its own
    * shopfront gets the shop's branding on /store/<slug> instead of the
    * marketplace header. See lib/store-site.ts.
-   */
-  const withPath = new Headers(request.headers);
-  withPath.set(PATHNAME_HEADER, pathname);
-
-  /**
-   * Continue, carrying BOTH the path header and whatever cookies
-   * updateSession refreshed.
    *
-   * `updateSession` returns its own NextResponse with rotated Supabase auth
-   * cookies on it. Returning a fresh `NextResponse.next()` instead — which
-   * is the only way to attach modified request headers — throws those
-   * cookies away, and the symptom is users being quietly signed out when
-   * their token expires. So the cookies are copied across.
+   * ── Only there, and nowhere else ─────────────────────────────────────
+   * Stamping a header means `NextResponse.next({ request: { headers } })`,
+   * which REPLACES the request headers for the render — the Cookie header
+   * included, frozen as it was when the request arrived. This used to run
+   * on every route, /login among them, and signing in is a server action
+   * on /login that sets the session cookie and redirects. The redirect
+   * target was then rendered from the frozen, pre-login cookies, so the
+   * root layout (and the header with it) came back as a signed-out
+   * customer, and because layouts survive client navigation it stayed
+   * that way until a full reload. Admins and sellers "logged in as a
+   * normal user". So the override is applied on /store/<slug> only, and
+   * every other request passes straight through.
    */
   const proceed = () => {
+    if (!storeSlugFromPath(pathname)) return response;
+
+    const withPath = new Headers(request.headers);
+    withPath.set(PATHNAME_HEADER, pathname);
+    /**
+     * `updateSession` returns its own NextResponse with rotated Supabase
+     * auth cookies on it. A fresh `NextResponse.next()` — the only way to
+     * attach modified request headers — would throw those away, signing
+     * people out quietly when their token expires. So they are copied.
+     */
     const next = NextResponse.next({ request: { headers: withPath } });
     for (const cookie of response.cookies.getAll()) next.cookies.set(cookie);
     return next;
@@ -96,15 +106,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   /*
-   * Everything except Next's own assets and static files.
-   *
-   * It used to cover only the three guarded areas, which is all the auth
-   * checks need — but the layout reads the current path from a header
-   * stamped here, so it has to run on every page that renders chrome. The
-   * excluded prefixes keep it off the hot path for images, fonts and the
-   * build output.
+   * The three guarded areas, plus the store pages whose layout needs the
+   * path header. Keeping it off everything else — /login in particular —
+   * is what keeps sign-in's freshly set session cookie visible to the page
+   * it redirects to. See `proceed` above.
    */
-  matcher: [
-    "/((?!_next/static|_next/image|api/uploads|favicon.ico|icon.png|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|woff2?)$).*)",
-  ],
+  matcher: ["/admin/:path*", "/vendor/:path*", "/account/:path*", "/store/:path*"],
 };

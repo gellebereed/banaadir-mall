@@ -39,6 +39,21 @@ export async function signIn(
     return { error: "Please enter both email and password." };
   }
 
+  /*
+   * A Supabase sign-in that came back as a plain customer, held back while
+   * the built-in logins below get their turn.
+   *
+   * A Supabase account with no role in its metadata is a customer — and the
+   * same email can easily have one: the marketplace owner trying the sign-up
+   * form, a seller who registered as a shopper first. Committing to it on
+   * the spot meant that account WON, and the admin or seller signed in to
+   * the customer view with no dashboard in sight. So a customer result only
+   * stands if the same credentials don't open a higher-privileged built-in
+   * account; matching one of those still takes its own password, so this
+   * grants nothing a correct password didn't already.
+   */
+  let supabaseCustomer: Session | null = null;
+
   // 1. Try Supabase Auth if configured
   if (isSupabaseConfigured()) {
     try {
@@ -70,13 +85,17 @@ export async function signIn(
           }
         }
 
-        const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
-          path: "/",
-          maxAge: 60 * 60 * 24 * 7,
-          sameSite: "lax",
-        });
-        redirect(homeForRole(session.role));
+        if (role === "customer") {
+          supabaseCustomer = session;
+        } else {
+          const cookieStore = await cookies();
+          cookieStore.set(SESSION_COOKIE, JSON.stringify(session), {
+            path: "/",
+            maxAge: 60 * 60 * 24 * 7,
+            sameSite: "lax",
+          });
+          redirect(homeForRole(session.role));
+        }
       }
     } catch (err: unknown) {
       if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) {
@@ -147,6 +166,8 @@ export async function signIn(
       await markInviteAccepted(employee);
     }
   }
+
+  session ??= supabaseCustomer;
 
   if (!session) {
     return { error: "Invalid email or password. Please try again." };
