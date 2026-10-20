@@ -45,6 +45,10 @@ Rules:
   (`lib/image-compress`), and represented in the order list by
   `uploadPlaceholder()` so the server slots each upload where the seller
   put it. Variant photos post as `variant-photos-<variantId>`.
+- **Categories**: the tree is admin-owned. Imports never create
+  categories — they map supplier groupings onto existing ones
+  (`lib/category-mappings.ts`); unmatched products wait on the hidden
+  `needs-category` shelf until the admin files them in /admin/categories.
 - **Types**: `lib/types.ts` (`Product`, `Variant`, …); variant helpers in
   `lib/product-utils.ts` (`hasVariants`, `totalStock`, `colorSwatch`).
 

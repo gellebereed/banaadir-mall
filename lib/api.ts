@@ -71,7 +71,14 @@ import type {
 
 export async function getCategories(includeHidden = false): Promise<Category[]> {
   const supabaseCategories = await fetchCategoriesFromSupabase();
-  const list = (supabaseCategories && supabaseCategories.length > 0) ? supabaseCategories : seedCategories;
+  const fromSupabase = Boolean(supabaseCategories && supabaseCategories.length > 0);
+  // Without Supabase, categories saved locally (the admin's, the import's
+  // holding shelf) are layered over the seed list — they used to be
+  // written to the local file and then never read back.
+  const local = fromSupabase ? [] : ((await getDB()).categories ?? []);
+  const list = fromSupabase
+    ? supabaseCategories!
+    : [...seedCategories.filter((c) => !local.some((l) => l.slug === c.slug)), ...local];
   // visibleCategories() drops hidden categories AND everything beneath
   // them — see lib/category-tree.ts for why that matters.
   return includeHidden ? list : visibleCategories(list);

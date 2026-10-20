@@ -41,6 +41,7 @@ import type {
 } from "./types";
 
 import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
+import type { CategoryMapping } from "./category-mappings";
 
 export interface DB {
   /** Field-level edits per product id (price, stock, hidden, …). */
@@ -93,6 +94,8 @@ export interface DB {
   payouts?: PayoutRecord[];
   payoutAccounts?: PayoutAccount[];
   activity?: ActivityEntry[];
+  /** Supplier grouping → category decisions (lib/category-mappings.ts). */
+  categoryMappings?: CategoryMapping[];
 }
 
 /**

@@ -268,6 +268,11 @@ export interface SupplierMeta {
   invoiceDate?: string;
   /** ISO timestamp of the import run that last wrote this product. */
   importedAt?: string;
+  /**
+   * The supplier's own grouping, kept while the product waits on the
+   * "Needs a category" shelf so the admin can file the whole group at once.
+   */
+  grouping?: string;
 }
 
 /**

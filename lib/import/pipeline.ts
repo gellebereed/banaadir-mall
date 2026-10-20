@@ -46,6 +46,12 @@ export interface ImportSettings {
   overwriteDetails: boolean;
   overwritePrices: boolean;
   publishImmediately: boolean;
+  /**
+   * Supplier grouping (the slug the importer derived for it) → the existing
+   * marketplace category it files into, or REVIEW to leave it for the admin.
+   * Imports never create categories — see lib/category-mappings.ts.
+   */
+  categoryMap?: Record<string, string>;
 }
 
 export function defaultSettings(storeSlug: string): ImportSettings {

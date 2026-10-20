@@ -69,6 +69,19 @@ Do these in order — step 3 before step 1–2 takes the site offline.
    to their own email (My account → Password & email) — they keep their store.
    Confirm owners in `/admin/accounts` → Store owners.
 
+## Categories: one marketplace tree
+
+The category tree belongs to the marketplace — **only the admin adds to it**.
+Supplier imports no longer create categories: in the import wizard the
+seller matches each of their supplier's groups to an existing category (a
+match is suggested), or leaves it for the marketplace. Undecided products
+wait, hidden, on a "Needs a category" shelf that the admin files from
+`/admin/categories`. Every decision is remembered per store, so the next
+import from the same supplier files itself.
+
+Run **`supabase/migration-category-mappings.sql`** once to store those
+decisions (without it they are asked again on every import).
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL

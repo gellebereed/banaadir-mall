@@ -23,7 +23,17 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getBaseProducts, getCategories } from "@/lib/api";
 import { may } from "@/lib/auth";
-import { categoryIcon } from "@/lib/category-icons";
+import {
+  getCategoryMappings,
+  HOLDING_CATEGORY,
+  HOLDING_NAME,
+  HOLDING_SLUG,
+  REVIEW,
+  saveCategoryMappings,
+  suggestCategory,
+} from "@/lib/category-mappings";
+import { buildCategoryTree, flattenCategoryTree } from "@/lib/category-tree";
+import { categoryKey } from "@/lib/import/categories";
 import { mutateDB } from "@/lib/db";
 import { buildProduct } from "@/lib/import/build";
 import {
@@ -195,8 +205,23 @@ export interface PreviewPayload {
     retailValue: number;
   };
   products: PreviewProduct[];
-  newCategories: { slug: string; name: string; count: number }[];
+  /**
+   * Supplier groupings that are not a marketplace category. Each must be
+   * matched to an existing one (or left for the admin) — imports never
+   * create categories. `choice` is what the wizard pre-selects.
+   */
+  groups: {
+    slug: string;
+    name: string;
+    count: number;
+    choice: string;
+    why: "remembered" | "suggested" | "none";
+    /** The closest category even when not confident enough to pre-select. */
+    closest?: { slug: string; name: string };
+  }[];
   existingCategories: { slug: string; name: string; count: number }[];
+  /** The marketplace's categories, to choose from. */
+  categoryOptions: { value: string; label: string; icon?: string; depth?: number }[];
   issues: ImportIssue[];
   issueCounts: { error: number; warning: number; info: number };
   batchSize: number;
@@ -217,6 +242,7 @@ export async function previewImport(formData: FormData): Promise<PreviewResponse
 
     const analysis = analyse(bytes, filename, settings, catalogue, categories);
     const known = new Set(existingSlugs);
+    const remembered_ = await getCategoryMappings(storeSlug);
 
     const products: PreviewProduct[] = analysis.plan.products.map((planned) => {
       const draft = planned.draft;
@@ -275,11 +301,27 @@ export async function previewImport(formData: FormData): Promise<PreviewResponse
           retailValue: analysis.plan.stats.retailValue,
         },
         products,
-        newCategories: analysis.plan.categoriesToCreate.map((c) => ({
-          slug: c.slug,
-          name: c.name,
-          count: countFor(c.slug),
-        })),
+        groups: analysis.plan.categoriesToCreate.map((c) => {
+          const remembered = remembered_[categoryKey(c.name)];
+          const suggestion = suggestCategory(c.name, categories, settings.rootSlug);
+          const choice =
+            remembered && known.has(remembered)
+              ? remembered
+              : suggestion && suggestion.score >= 70
+                ? suggestion.slug
+                : REVIEW;
+          return {
+            slug: c.slug,
+            name: c.name,
+            count: countFor(c.slug),
+            choice,
+            why: remembered && known.has(remembered) ? "remembered" : choice !== REVIEW ? "suggested" : "none",
+            closest: suggestion ? { slug: suggestion.slug, name: suggestion.name } : undefined,
+          };
+        }),
+        categoryOptions: flattenCategoryTree(buildCategoryTree(categories))
+          .filter((c) => c.slug !== HOLDING_SLUG)
+          .map((c) => ({ value: c.slug, label: c.name, icon: c.icon, depth: c.depth })),
         existingCategories: analysis.aggregate.categories
           .filter((c) => known.has(c.slug))
           .map((c) => ({ slug: c.slug, name: c.name, count: countFor(c.slug) })),
@@ -325,22 +367,70 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
     const analysis = analyse(bytes, filename, settings, catalogue, categories);
 
     const importedAt = new Date().toISOString();
+    // Always empty now: imports map onto the marketplace's categories and
+    // never add to them. Kept in the response for the wizard's summary.
     const categoriesCreated: string[] = [];
 
-    // Categories first, and only on the opening batch: `products.category`
-    // is a foreign key onto `categories.slug`, so a product filed into a
-    // category that does not exist yet is not merely invisible — the write
-    // is rejected outright.
-    if (offset === 0) {
-      for (const category of analysis.plan.categoriesToCreate) {
-        await createCategory(category.slug, category.name, category.parentSlug);
-        categoriesCreated.push(category.name);
-      }
+    /*
+     * ── Supplier groupings → existing categories ─────────────────────────
+     * A grouping the marketplace doesn't have is filed where the seller
+     * chose in the wizard, else where this store filed it last time, else
+     * on the hidden "Needs a category" shelf for the admin. See
+     * lib/category-mappings.ts for why the tree is no longer grown here.
+     */
+    const known = new Set(categories.map((c) => c.slug));
+    const remembered = await getCategoryMappings(storeSlug);
+    const chosen = settings.categoryMap ?? {};
+    const targetFor = new Map<string, string>();
+    for (const group of analysis.plan.categoriesToCreate) {
+      const pick = chosen[group.slug];
+      const memory = remembered[categoryKey(group.name)];
+      const target =
+        pick && pick !== REVIEW && known.has(pick)
+          ? pick
+          : pick === undefined && memory && known.has(memory)
+            ? memory
+            : HOLDING_SLUG;
+      targetFor.set(group.slug, target);
+    }
+    const groupName = new Map(analysis.plan.categoriesToCreate.map((g) => [g.slug, g.name]));
+    const held = new Set<string>();
+    for (const planned of analysis.plan.products) {
+      const original = planned.draft.category;
+      const target = original ? targetFor.get(original.slug) : undefined;
+      if (!original || !target) continue;
+      if (target === HOLDING_SLUG) held.add(planned.draft.name);
+      const into = categories.find((c) => c.slug === target);
+      planned.draft.category = {
+        ...original,
+        slug: target,
+        name: into?.name ?? HOLDING_NAME,
+        parentSlug: into?.parentSlug ?? "",
+        matchedExisting: true,
+        // Kept so the holding shelf can show the supplier's own grouping.
+        heldFrom: target === HOLDING_SLUG ? groupName.get(original.slug) : undefined,
+      } as typeof original & { heldFrom?: string };
+    }
 
-      // Verify rather than assume. Every product in this run depends on
-      // these rows existing, so one check here replaces one identical
-      // failure per product — which is what a silent category failure
-      // produced before: 104 rejections all saying the same thing.
+    if (offset === 0) {
+      if ([...targetFor.values()].includes(HOLDING_SLUG) && !known.has(HOLDING_SLUG)) {
+        await ensureHoldingCategory();
+      }
+      // Remember what the seller decided, so the next file from this
+      // supplier files itself. "Let the marketplace decide" isn't a decision.
+      await saveCategoryMappings(
+        analysis.plan.categoriesToCreate
+          .filter((g) => targetFor.get(g.slug) && targetFor.get(g.slug) !== HOLDING_SLUG && chosen[g.slug])
+          .map((g) => ({
+            store: storeSlug,
+            sourceKey: categoryKey(g.name),
+            sourceName: g.name,
+            category: targetFor.get(g.slug)!,
+          })),
+      );
+
+      // Verify rather than assume: `products.category` is a foreign key, so
+      // one check here replaces one identical failure per product.
       const missing = await missingCategorySlugs(
         analysis.plan.products
           .filter((planned) => planned.action !== "blocked")
@@ -351,9 +441,8 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
         return {
           ok: false,
           error:
-            `Could not create ${missing.length === 1 ? "the category" : "these categories"}: ` +
-            `${missing.join(", ")}. Every product in this file needs ${missing.length === 1 ? "it" : "them"}, ` +
-            `so nothing was imported. Check the server log for the reason, then try again.`,
+            `${missing.length === 1 ? "The category" : "These categories"} ${missing.join(", ")} ` +
+            `could not be found, so nothing was imported. Reload the page and try again.`,
         };
       }
     }
@@ -380,6 +469,8 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
         publishImmediately: settings.publishImmediately,
         importedAt,
       });
+      const heldFrom = (planned.draft.category as { heldFrom?: string } | undefined)?.heldFrom;
+      if (heldFrom) product.supplier = { ...product.supplier, grouping: heldFrom };
 
       // The same validation a hand-typed product goes through. One bad row
       // must fail alone — 103 good products should not be lost to it.
@@ -443,34 +534,19 @@ async function writeProduct(product: Product): Promise<void> {
   });
 }
 
-async function createCategory(slug: string, name: string, parentSlug: string): Promise<void> {
-  const category = {
-    slug,
-    name,
-    // Derived from the name rather than left as a parcel — an import that
-    // creates thirteen categories should not create thirteen identical
-    // icons for someone to fix by hand afterwards.
-    icon: categoryIcon(name),
-    tagline: "",
-    art: { from: "#e0f2fe", to: "#bae6fd" },
-    hidden: false,
-    parentSlug,
-  };
-
+/** Create the hidden "Needs a category" shelf the first time it's needed. */
+async function ensureHoldingCategory(): Promise<void> {
+  const { slug, name, icon, tagline, art, hidden } = HOLDING_CATEGORY;
   if (useSupabaseMutations()) {
-    // The return value is checked because it was not, once: a failed
-    // category insert was reported to the seller as "Categories created"
-    // and the import then walked into 104 foreign-key rejections.
-    const ok = await upsertCategoryInSupabase(category);
-    if (!ok) console.error(`[Import] could not create category "${slug}"`);
+    const ok = await upsertCategoryInSupabase({ slug, name, icon, tagline, hidden });
+    if (!ok) console.error("[Import] could not create the holding category");
     return;
   }
-
   await mutateDB((db) => {
     db.categories = db.categories || [];
-    const index = db.categories.findIndex((c) => c.slug === slug);
-    if (index >= 0) db.categories[index] = category;
-    else db.categories.push(category);
+    if (!db.categories.some((c) => c.slug === slug)) {
+      db.categories.push({ slug, name, icon, tagline, art, hidden });
+    }
   });
 }
 

@@ -38,6 +38,8 @@ import {
 import { DEFAULT_PRICING, type RoundingMode } from "@/lib/import/pricing";
 import type { StockMode } from "@/lib/import/plan";
 import { money } from "@/lib/format";
+import SearchableSelect from "@/components/dashboard/SearchableSelect";
+import { REVIEW } from "@/lib/category-holding";
 
 interface CategoryOption {
   slug: string;
@@ -72,6 +74,8 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
   const [sheetIndex, setSheetIndex] = useState(0);
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
+  /** Supplier grouping → marketplace category, decided on the review step. */
+  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [fileCategories, setFileCategories] = useState<CategoryScan[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -132,6 +136,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
         overwriteDetails: settings.overwriteDetails,
         overwritePrices: settings.overwritePrices,
         publishImmediately: settings.publishImmediately,
+        categoryMap,
         pricing: {
           currency: settings.currency,
           fxRate: settings.fxRate,
@@ -143,7 +148,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
       }),
     );
     return form;
-  }, [file, mapping, sheetIndex, settings]);
+  }, [file, mapping, sheetIndex, settings, categoryMap]);
 
   // ── Step 1 → 2 ───────────────────────────────────────────────────
   function onFile(chosen: File | null) {
@@ -227,6 +232,7 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
         return;
       }
       setPreview(response.payload);
+      setCategoryMap(Object.fromEntries(response.payload.groups.map((g) => [g.slug, g.choice])));
       setStep(3);
     });
   }
@@ -325,6 +331,8 @@ export default function ImportWizard({ categories }: { categories: CategoryOptio
         <ReviewStep
           preview={preview}
           settings={settings}
+          categoryMap={categoryMap}
+          onCategoryChange={(slug, value) => setCategoryMap((prev) => ({ ...prev, [slug]: value }))}
           progress={progress}
           pending={pending}
           onBack={() => setStep(2)}
@@ -773,14 +781,15 @@ function SettingsStep({
               ))}
             </select>
             <span className="mt-1 block text-xs text-slate-500">
-              Your file&apos;s own categories become children of this one, and
-              are created if they don&apos;t exist.
+              Used to suggest the best match for each of your file&apos;s
+              groups. You confirm every match on the next step — imports never
+              add new categories to the marketplace.
             </span>
             {!settings.rootSlug && (
               <span className="mt-1 block text-xs font-semibold text-mango-700">
                 Pick the department this file belongs to — kitchenware under
-                Home &amp; Living, clothing under a fashion department. Every
-                category the file creates is filed inside it.
+                Home &amp; Living, clothing under a fashion department — so the
+                suggested matches come from the right part of the shop.
               </span>
             )}
           </label>
@@ -789,7 +798,7 @@ function SettingsStep({
             checked={settings.mergeBasicLines}
             onChange={(value) => set("mergeBasicLines", value)}
             title={'Merge "Basic" ranges'}
-            description='File "BASIC SHIRT" under Shirts rather than creating a near-duplicate category next to it.'
+            description='Treat "BASIC SHIRT" as "SHIRT" when matching to a category.'
           />
         </div>
       </section>
@@ -1008,6 +1017,8 @@ function Toggle({
 function ReviewStep({
   preview,
   settings,
+  categoryMap,
+  onCategoryChange,
   progress,
   pending,
   onBack,
@@ -1015,6 +1026,8 @@ function ReviewStep({
 }: {
   preview: PreviewPayload;
   settings: Settings;
+  categoryMap: Record<string, string>;
+  onCategoryChange: (groupSlug: string, value: string) => void;
   progress: {
     processed: number;
     total: number;
@@ -1037,7 +1050,13 @@ function ReviewStep({
 
   if (progress) {
     return (
-      <ProgressPanel progress={progress} pending={pending} />
+      <ProgressPanel
+        progress={progress}
+        pending={pending}
+        waiting={preview.groups
+          .filter((g) => (categoryMap[g.slug] ?? g.choice) === REVIEW)
+          .reduce((sum, g) => sum + g.count, 0)}
+      />
     );
   }
 
@@ -1095,33 +1114,69 @@ function ReviewStep({
         </p>
       </section>
 
-      {(preview.newCategories.length > 0 || preview.existingCategories.length > 0) && (
+      {preview.groups.length > 0 && (
         <section className="card p-6">
-          <h2 className="font-display text-lg font-bold text-ocean-950">Categories</h2>
+          <h2 className="font-display text-lg font-bold text-ocean-950">
+            Match your supplier&apos;s groups to Banaadir categories
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Banaadir Mall uses one set of categories for every store, so customers always find
+            things in the same place. Pick where each group belongs — we&apos;ve suggested the
+            closest match. Not sure? Leave it to the marketplace and those products wait in
+            &ldquo;Needs a category&rdquo; until the team files them.
+          </p>
+          <ul className="mt-4 divide-y divide-sand-100 rounded-2xl border border-sand-200">
+            {preview.groups.map((group) => {
+              const value = categoryMap[group.slug] ?? group.choice;
+              return (
+                <li key={group.slug} className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-800">{group.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {group.count} product{group.count === 1 ? "" : "s"}
+                      {value === group.choice && group.why === "remembered" && " · remembered from your last import"}
+                      {value === group.choice && group.why === "suggested" && " · suggested match"}
+                      {value === REVIEW && " · will wait for the marketplace team"}
+                    </p>
+                    {value === REVIEW && group.closest && (
+                      <button
+                        type="button"
+                        onClick={() => onCategoryChange(group.slug, group.closest!.slug)}
+                        className="mt-0.5 text-xs font-semibold text-ocean-700 underline"
+                      >
+                        Closest match: {group.closest.name} — use it
+                      </button>
+                    )}
+                  </div>
+                  <SearchableSelect
+                    key={`${group.slug}-${value}`}
+                    name={`catmap-${group.slug}`}
+                    defaultValue={value}
+                    onChange={(next) => onCategoryChange(group.slug, next)}
+                    placeholder="Choose a category"
+                    searchPlaceholder="Type to find a category…"
+                    options={[
+                      { value: REVIEW, label: "Not sure — let the marketplace decide", icon: "📥" },
+                      ...preview.categoryOptions,
+                    ]}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {preview.existingCategories.length > 0 && (
+        <section className="card p-6">
+          <h2 className="font-display text-lg font-bold text-ocean-950">Already-matching categories</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {preview.newCategories.map((category) => (
-              <span
-                key={category.slug}
-                className="rounded-full bg-mango-100 px-3 py-1 text-sm text-mango-800"
-              >
-                + {category.name} ({category.count})
-              </span>
-            ))}
             {preview.existingCategories.map((category) => (
-              <span
-                key={category.slug}
-                className="rounded-full bg-sand-100 px-3 py-1 text-sm text-slate-600"
-              >
+              <span key={category.slug} className="rounded-full bg-sand-100 px-3 py-1 text-sm text-slate-600">
                 {category.name} ({category.count})
               </span>
             ))}
           </div>
-          {preview.newCategories.length > 0 && (
-            <p className="mt-3 text-xs text-slate-500">
-              Categories in mango will be created under{" "}
-              <strong>{settings.rootSlug}</strong>.
-            </p>
-          )}
         </section>
       )}
 
@@ -1352,7 +1407,10 @@ function IssuePanel({ preview }: { preview: PreviewPayload }) {
 function ProgressPanel({
   progress,
   pending,
+  waiting,
 }: {
+  /** Products this import leaves on the "Needs a category" shelf. */
+  waiting: number;
   progress: {
     processed: number;
     total: number;
@@ -1396,10 +1454,12 @@ function ProgressPanel({
           />
         </div>
 
-        {progress.categories.length > 0 && (
-          <p className="mt-4 text-sm text-slate-600">
-            Categories created: {progress.categories.join(", ")}
-          </p>
+        {progress.done && waiting > 0 && (
+            <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
+              📥 {waiting} product{waiting === 1 ? " is" : "s are"} waiting in &ldquo;Needs a
+              category&rdquo; — the marketplace team will file {waiting === 1 ? "it" : "them"}. You
+              can still edit {waiting === 1 ? "it" : "them"} in the meantime.
+            </p>
         )}
 
         {progress.failed.length > 0 && (
