@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import AccountsClient from "@/components/dashboard/AccountsClient";
-import { accountsEnabled, listAccounts } from "@/lib/accounts";
+import StoreOwnersPanel from "@/components/dashboard/StoreOwnersPanel";
+import { accountsEnabled, listAccounts, listStoreOwnership } from "@/lib/accounts";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Accounts & Passwords" };
@@ -15,7 +16,10 @@ export default async function AdminAccountsPage() {
   if (session?.role !== "admin" || session.access) redirect("/admin");
 
   const enabled = accountsEnabled();
-  const accounts = await listAccounts();
+  const [accounts, ownership] = await Promise.all([
+    listAccounts(),
+    enabled ? listStoreOwnership() : Promise.resolve([]),
+  ]);
 
   return (
     <div>
@@ -39,6 +43,8 @@ export default async function AdminAccountsPage() {
           </p>
         </div>
       )}
+
+      {enabled && <StoreOwnersPanel stores={ownership} />}
 
       <AccountsClient accounts={accounts} enabled={enabled} />
     </div>

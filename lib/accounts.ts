@@ -432,3 +432,108 @@ export async function bindStoreOwner(slug: string): Promise<number> {
   }
   return applicants.length;
 }
+
+// ── The admin's "Store owners" panel ───────────────────────────────────
+
+export interface OwnerClaim {
+  email: string;
+  /** Why this account looks like the owner — shown so the admin can judge. */
+  reason: string;
+  createdAt?: string;
+  lastSignIn?: string;
+  emailConfirmed: boolean;
+}
+
+export interface StoreOwnership {
+  slug: string;
+  name: string;
+  status: string;
+  /** Accounts already bound as owner (app_metadata). */
+  owners: string[];
+  /** Unbound accounts that claim this store, for the admin to confirm. */
+  claims: OwnerClaim[];
+}
+
+/**
+ * Every store, its confirmed owner(s), and the accounts that claim it but
+ * are not bound yet — the old user_metadata record, a pending application,
+ * or a `<store>@seller…` owner login. Claims are evidence, not proof: the
+ * old field was user-editable, which is why a human confirms each one.
+ */
+export async function listStoreOwnership(): Promise<StoreOwnership[]> {
+  const [users, stores] = await Promise.all([listAuthUsers(), getAllStores()]);
+  const rows = new Map<string, StoreOwnership>(
+    stores.map((s) => [
+      s.slug,
+      { slug: s.slug, name: s.name, status: s.status ?? "active", owners: [], claims: [] },
+    ]),
+  );
+
+  for (const user of users) {
+    const email = user.email?.toLowerCase();
+    if (!email) continue;
+    const bound = storeOfAuthUser(user);
+    if (bound) {
+      rows.get(bound)?.owners.push(email);
+      continue;
+    }
+    const meta = user.user_metadata ?? {};
+    const claims: [string, string][] = [];
+    const login = parseSellerEmail(email);
+    if (login) claims.push([login, "Store owner login address"]);
+    if (typeof user.app_metadata?.applied_store === "string") {
+      claims.push([user.app_metadata.applied_store, "Applied for this store (verified)"]);
+    }
+    if (meta.role === "seller" && typeof meta.store === "string") {
+      claims.push([meta.store, "Old seller record (could have been edited by the user)"]);
+    }
+    const seen = new Set<string>();
+    for (const [slug, reason] of claims) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      rows.get(slug)?.claims.push({
+        email,
+        reason,
+        createdAt: user.created_at,
+        lastSignIn: user.last_sign_in_at ?? undefined,
+        emailConfirmed: Boolean(user.email_confirmed_at),
+      });
+    }
+  }
+
+  return [...rows.values()].sort(
+    (a, b) => Number(a.owners.length > 0) - Number(b.owners.length > 0) || a.name.localeCompare(b.name),
+  );
+}
+
+/** Make this email an owner of this store. The account must already exist. */
+export async function setStoreOwner(slug: string, email: string): Promise<void> {
+  if (!(await getStore(slug))) throw new Error(`There is no store "${slug}".`);
+  const user = await findAuthUser(email);
+  if (!user) {
+    throw new Error(
+      `${email} has no account yet. Ask them to register (or set a password for it below), then try again.`,
+    );
+  }
+  if (isAdminEmail(email)) throw new Error("The admin account can't also be a store owner.");
+  const current = storeOfAuthUser(user);
+  if (current && current !== slug) {
+    throw new Error(`${email} already owns "${current}". One account owns one store.`);
+  }
+  const { error } = await adminClient().auth.admin.updateUserById(user.id, {
+    app_metadata: { ...user.app_metadata, role: "seller", store: slug },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Take a store away from this account; it signs in as a customer after. */
+export async function removeStoreOwner(slug: string, email: string): Promise<void> {
+  const user = await findAuthUser(email);
+  if (!user || storeOfAuthUser(user) !== slug) return;
+  // Explicit nulls: Supabase MERGES app_metadata, so leaving a key out
+  // would leave it in place.
+  const { error } = await adminClient().auth.admin.updateUserById(user.id, {
+    app_metadata: { role: null, store: null },
+  });
+  if (error) throw new Error(error.message);
+}

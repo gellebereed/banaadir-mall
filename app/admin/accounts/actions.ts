@@ -8,6 +8,7 @@
  * anyone, the admin included, so it is not something a team role hands out.
  */
 
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import {
   accountsEnabled,
@@ -94,4 +95,40 @@ export async function adminCreateResetLink(email: string): Promise<AccountAction
   } catch (err) {
     return { error: explain(err, "Could not create a reset link.") };
   }
+}
+
+/** Confirm an account as the owner of a store (see lib/accounts.ts). */
+export async function adminSetStoreOwner(
+  slug: string,
+  email: string,
+): Promise<AccountActionResult> {
+  const blocked = await guard();
+  if (blocked) return { error: blocked };
+  const clean = cleanEmail(email);
+  if (!clean.includes("@")) return { error: "Enter the owner's email address." };
+  try {
+    const { setStoreOwner } = await import("@/lib/accounts");
+    await setStoreOwner(slug, clean);
+  } catch (err) {
+    return { error: explain(err, "Could not set the owner.") };
+  }
+  revalidatePath("/admin/accounts");
+  return { ok: `${clean} now owns this store. They'll land in its dashboard at their next sign-in.` };
+}
+
+/** Remove an owner; that account signs in as a customer afterwards. */
+export async function adminRemoveStoreOwner(
+  slug: string,
+  email: string,
+): Promise<AccountActionResult> {
+  const blocked = await guard();
+  if (blocked) return { error: blocked };
+  try {
+    const { removeStoreOwner } = await import("@/lib/accounts");
+    await removeStoreOwner(slug, cleanEmail(email));
+  } catch (err) {
+    return { error: explain(err, "Could not remove the owner.") };
+  }
+  revalidatePath("/admin/accounts");
+  return { ok: `${cleanEmail(email)} is no longer an owner of this store.` };
 }
