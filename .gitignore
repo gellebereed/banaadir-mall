@@ -20,3 +20,6 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI code graph (rebuilt on demand; the compact CODEMAP.md is committed)
+/.claude/graph/code-graph.json
