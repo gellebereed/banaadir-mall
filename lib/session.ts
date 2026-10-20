@@ -5,6 +5,7 @@
  */
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, type Session } from "./auth";
 import { SESSION_MAX_AGE_SECONDS, signSession, verifySession } from "./session-token";
@@ -17,8 +18,41 @@ import { SESSION_MAX_AGE_SECONDS, signSession, verifySession } from "./session-t
  */
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
-  return verifySession(cookieStore.get(SESSION_COOKIE)?.value);
+  const session = await verifySession(cookieStore.get(SESSION_COOKIE)?.value);
+  if (!session?.access) return session;
+  const fresh = await staffSessionFor(session.email, session.role, session.store ?? "");
+  // An admin-panel staffer previewing a shop keeps the shop they picked.
+  return fresh && session.role === "admin" && session.store ? { ...fresh, store: session.store } : fresh;
 }
+
+/**
+ * ── Staff access is re-read on every request ─────────────────────────────
+ * A staff session used to carry its permissions inside the cookie for its
+ * whole week. So "Remove from team" did nothing to someone already signed
+ * in — they kept full access for up to seven days — and lowering someone
+ * from manager to viewer only took effect at their next sign-in.
+ *
+ * Now the team row is looked up each request (cheap: the team list is
+ * cached and refreshed whenever it changes). No row → no session. A row →
+ * the session is rebuilt from it, so a change of access is immediate.
+ *
+ * Owners and the admin have no `access` and are unaffected; their stores'
+ * status is re-checked in requireVendor.
+ */
+// Keyed on primitives so the per-request cache actually hits: getSession
+// runs many times per page.
+const staffSessionFor = cache(
+  async (email: string, role: Session["role"], store: string): Promise<Session | null> => {
+    const { getEmployeeMemberships } = await import("./api");
+    const { sessionForEmployee } = await import("./employees");
+    const memberships = await getEmployeeMemberships(email);
+    const row =
+      role === "admin"
+        ? memberships.find((m) => m.store === "platform")
+        : memberships.find((m) => m.store === store);
+    return row ? sessionForEmployee(row, memberships) : null;
+  },
+);
 
 /**
  * Sign this person in. The only place the session cookie is written —

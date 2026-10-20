@@ -39,7 +39,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { createClient as createSupabaseClient, type User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import {
   ADMIN_EMAIL,
   ADMIN_NAME,
@@ -54,6 +54,7 @@ import {
 import { getAllEmployees, getAllStores, getEmployeeMemberships, getStore } from "./api";
 import { markInviteAccepted, sessionForEmployee } from "./employees";
 import { createClient } from "./supabase/server";
+import { getServiceClient, hasServiceRole } from "./supabase/service";
 import { isSupabaseConfigured } from "./supabase/storage";
 
 /** Shortest password the admin page or the reset page will accept. */
@@ -61,20 +62,27 @@ export const MIN_PASSWORD_LENGTH = 8;
 
 // ── The service-role client ─────────────────────────────────────────────
 
-function serviceKey(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  return key && !key.includes("your-service-role-key") ? key : "";
-}
-
 /** Can accounts be looked up, created and changed from the server? */
 export function accountsEnabled(): boolean {
-  return isSupabaseConfigured() && Boolean(serviceKey());
+  return hasServiceRole();
 }
 
 function adminClient() {
-  return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "", serviceKey(), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return getServiceClient();
+}
+
+/**
+ * May the old shared passwords (Seller@…, Employee@…, the demo customer)
+ * still open an account?
+ *
+ * Only on a demo install with no Supabase at all — or when an operator
+ * deliberately sets ALLOW_SHARED_PASSWORDS=true as a temporary escape
+ * hatch. On a live marketplace they were a skeleton key: the store-owner
+ * logins are `<store>@seller.banaadirmall.com`, the password was in the
+ * README, and the first person to sign in with it got to keep the store.
+ */
+export function sharedPasswordsAllowed(): boolean {
+  return !isSupabaseConfigured() || process.env.ALLOW_SHARED_PASSWORDS === "true";
 }
 
 /** Every Supabase Auth user. Paged, because the API caps a page at 1000. */
@@ -103,17 +111,18 @@ export type ResolveResult = { session: Session } | { error: string };
 /**
  * The store a Supabase account owns, if it is a seller account.
  *
- * app_metadata first — only the service role can write it. user_metadata
- * is the legacy place store applications recorded it; it is still honoured
- * for the store slug so existing sellers keep their dashboards.
+ * ── app_metadata ONLY ────────────────────────────────────────────────────
+ * user_metadata used to count too, and user_metadata is writable by the
+ * signed-in user straight from the browser with the public key. One call —
+ * `updateUser({ data: { role: "seller", store: "any-shop" } })` — made any
+ * customer the owner of any store. app_metadata can only be written with
+ * the service role key, i.e. by this server: at approval (bindStoreOwner),
+ * when the admin sets an owner login's password, or by
+ * scripts/migrate-seller-ownership.mjs for sellers from before this rule.
  */
 function storeOfAuthUser(user: User | null): string | undefined {
-  if (!user) return undefined;
-  const app = user.app_metadata ?? {};
-  if (app.role === "seller" && typeof app.store === "string") return app.store;
-  const meta = user.user_metadata ?? {};
-  if (meta.role === "seller" && typeof meta.store === "string") return meta.store;
-  return undefined;
+  const app = user?.app_metadata ?? {};
+  return app.role === "seller" && typeof app.store === "string" ? app.store : undefined;
 }
 
 /**
@@ -136,7 +145,11 @@ export async function resolveSession(email: string, authUser: User | null): Prom
     return { session: sessionForEmployee(employee, memberships) };
   }
 
-  const ownerSlug = parseSellerEmail(clean) ?? storeOfAuthUser(authUser);
+  // A `<store>@seller…` address only means "owner" by itself on a demo
+  // install. Live, its account must carry the binding too — otherwise
+  // registering that address straight with Supabase would be enough.
+  const ownerSlug =
+    storeOfAuthUser(authUser) ?? (sharedPasswordsAllowed() ? parseSellerEmail(clean) : undefined);
   if (ownerSlug) {
     const store = await getStore(ownerSlug);
     if (store?.status === "pending") {
@@ -191,7 +204,14 @@ const INVALID = { error: "Invalid email or password. Please try again." } as con
 
 /** Does this password open the email under the old shared-password scheme? */
 async function legacyPasswordMatches(email: string, password: string): Promise<boolean> {
-  if (matchDemoUser(email, password)) return true;
+  const demo = matchDemoUser(email, password);
+  // The admin's bootstrap password (ADMIN_PASSWORD). With accounts enabled,
+  // authenticate() refuses it the moment the admin has an account, so it
+  // works exactly once. Without the service key there is no way to tell,
+  // and it keeps working — one more reason the key is required live.
+  if (demo?.role === "admin") return true;
+  if (!sharedPasswordsAllowed()) return false;
+  if (demo) return true;
   if (password === SELLER_PASSWORD && parseSellerEmail(email)) return true;
   if (password === EMPLOYEE_PASSWORD && (await getEmployeeMemberships(email)).length > 0) {
     return true;
@@ -226,6 +246,7 @@ export async function authenticate(email: string, password: string): Promise<Res
           email,
           password,
           email_confirm: true,
+          app_metadata: await bindingFor(email, null),
         });
         if (created.error) console.warn("[Auth] Could not create account:", created.error.message);
       } catch (err) {
@@ -311,13 +332,25 @@ export async function listAccounts(): Promise<AccountRow[]> {
   );
 }
 
+/**
+ * What an account handed out by the marketplace must carry: a store
+ * owner login (`<store>@seller…`) is bound to its store, since the
+ * address alone no longer proves anything (see resolveSession).
+ */
+async function bindingFor(email: string, user: User | null): Promise<Record<string, unknown> | undefined> {
+  const slug = parseSellerEmail(email);
+  if (!slug || !(await getStore(slug))) return undefined;
+  return { ...(user?.app_metadata ?? {}), role: "seller", store: slug };
+}
+
 /** Set an email's password, creating its account if it has none yet. */
 export async function setAccountPassword(email: string, password: string): Promise<void> {
   const admin = adminClient().auth.admin;
   const user = await findAuthUser(email);
+  const app_metadata = await bindingFor(email, user);
   const { error } = user
-    ? await admin.updateUserById(user.id, { password })
-    : await admin.createUser({ email, password, email_confirm: true });
+    ? await admin.updateUserById(user.id, { password, ...(app_metadata && { app_metadata }) })
+    : await admin.createUser({ email, password, email_confirm: true, app_metadata });
   if (error) throw new Error(error.message);
 }
 
@@ -334,16 +367,68 @@ export async function setAccountPassword(email: string, password: string): Promi
  */
 export async function createResetLink(email: string, origin: string): Promise<string> {
   const admin = adminClient().auth.admin;
-  if (!(await findAuthUser(email))) {
+  const user = await findAuthUser(email);
+  const app_metadata = await bindingFor(email, user);
+  if (!user) {
     const { error } = await admin.createUser({
       email,
       password: `${crypto.randomUUID()}-${crypto.randomUUID()}`,
       email_confirm: true,
+      app_metadata,
     });
     if (error) throw new Error(error.message);
+  } else if (app_metadata) {
+    await admin.updateUserById(user.id, { app_metadata });
   }
   const { data, error } = await admin.generateLink({ type: "recovery", email });
   if (error) throw new Error(error.message);
   const hash = data.properties.hashed_token;
   return `${origin}/reset-password?token_hash=${encodeURIComponent(hash)}`;
+}
+
+// ── Store ownership ─────────────────────────────────────────────────────
+
+/** The store this account has applied for, if any (server-written). */
+export function appliedStoreOf(user: User | null): string | undefined {
+  const app = user?.app_metadata ?? {};
+  if (typeof app.applied_store === "string") return app.applied_store;
+  return storeOfAuthUser(user);
+}
+
+/**
+ * Remember which store an account applied for. app_metadata, so the
+ * applicant cannot change it afterwards to point at somebody else's shop.
+ */
+export async function recordStoreApplication(userId: string, slug: string): Promise<void> {
+  if (!accountsEnabled()) {
+    console.warn(
+      "[Accounts] SUPABASE_SERVICE_ROLE_KEY is not set — the store application was saved but cannot be linked to its applicant until it is.",
+    );
+    return;
+  }
+  const admin = adminClient().auth.admin;
+  const { data } = await admin.getUserById(userId);
+  const { error } = await admin.updateUserById(userId, {
+    app_metadata: { ...(data.user?.app_metadata ?? {}), applied_store: slug },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Approval: the account that applied for this store becomes its owner.
+ * Returns how many accounts were bound (0 when nobody applied through the
+ * form — e.g. a store the admin created — whose owner login the admin
+ * then sets up from /admin/accounts).
+ */
+export async function bindStoreOwner(slug: string): Promise<number> {
+  if (!accountsEnabled()) return 0;
+  const admin = adminClient().auth.admin;
+  const applicants = (await listAuthUsers()).filter((u) => u.app_metadata?.applied_store === slug);
+  for (const user of applicants) {
+    const { error } = await admin.updateUserById(user.id, {
+      app_metadata: { ...user.app_metadata, role: "seller", store: slug },
+    });
+    if (error) console.warn(`[Accounts] Could not bind ${user.email} to ${slug}:`, error.message);
+  }
+  return applicants.length;
 }

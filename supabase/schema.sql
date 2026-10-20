@@ -130,7 +130,10 @@ CREATE TABLE IF NOT EXISTS public.flash_requests (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────
--- ROW LEVEL SECURITY (RLS) POLICIES
+-- ROW LEVEL SECURITY (RLS) — on, with NO policies.
+-- No policies: the public key gets no access. The server uses the service
+-- role key (lib/supabase/service.ts). See migration-lockdown.sql.
+
 -- Enable RLS and grant read access to anonymous users and write to authenticated
 -- ─────────────────────────────────────────────────────────────────────────
 
@@ -145,23 +148,5 @@ ALTER TABLE public.flash_deals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.flash_requests ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read access to catalog tables
-CREATE POLICY "Public stores viewable" ON public.stores FOR SELECT USING (true);
-CREATE POLICY "Public categories viewable" ON public.categories FOR SELECT USING (true);
-CREATE POLICY "Public products viewable" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Public orders viewable" ON public.orders FOR SELECT USING (true);
-CREATE POLICY "Public promotions viewable" ON public.promotions FOR SELECT USING (true);
-CREATE POLICY "Public employees viewable" ON public.employees FOR SELECT USING (true);
-CREATE POLICY "Public marketing viewable" ON public.marketing_settings FOR SELECT USING (true);
-CREATE POLICY "Public flash deals viewable" ON public.flash_deals FOR SELECT USING (true);
-CREATE POLICY "Public flash requests viewable" ON public.flash_requests FOR SELECT USING (true);
 
 -- Allow full access for anon/service_role keys
-CREATE POLICY "Full stores management" ON public.stores FOR ALL USING (true);
-CREATE POLICY "Full categories management" ON public.categories FOR ALL USING (true);
-CREATE POLICY "Full products management" ON public.products FOR ALL USING (true);
-CREATE POLICY "Full orders management" ON public.orders FOR ALL USING (true);
-CREATE POLICY "Full promotions management" ON public.promotions FOR ALL USING (true);
-CREATE POLICY "Full employees management" ON public.employees FOR ALL USING (true);
-CREATE POLICY "Full marketing management" ON public.marketing_settings FOR ALL USING (true);
-CREATE POLICY "Full flash deals management" ON public.flash_deals FOR ALL USING (true);
-CREATE POLICY "Full flash requests management" ON public.flash_requests FOR ALL USING (true);

@@ -3,7 +3,8 @@ import { cache as perRequest } from "react";
 import { DEFAULT_COMMISSION } from "../commission";
 import { DEFAULT_POS } from "../pos";
 import { categoryIcon } from "../category-icons";
-import { CACHE_TAGS, getPublicClient } from "./public-client";
+import { CACHE_TAGS } from "./public-client";
+import { getDataClient } from "./service";
 import type {
   Category,
   Employee,
@@ -118,7 +119,7 @@ const STORE_LOGO_FALLBACK: Record<string, string> = {
 async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("stores").select("*").range(from, to),
     );
@@ -189,7 +190,7 @@ const CANONICAL_SLUGS = [
 async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("categories").select("*").range(from, to),
     );
@@ -273,7 +274,7 @@ const LEGACY_CATEGORY_MAP: Record<string, string> = {
 async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("products").select("*").range(from, to),
     );
@@ -340,7 +341,7 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
 async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("orders").select("*").range(from, to),
     );
@@ -384,7 +385,7 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
 async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("promotions").select("*").range(from, to),
     );
@@ -432,7 +433,7 @@ function rowToEmployee(e: any): Employee {
 async function fetchEmployeesFromSupabaseRaw(): Promise<Employee[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("employees").select("*").range(from, to),
     );
@@ -459,7 +460,7 @@ export async function fetchEmployeeByInviteToken(
 ): Promise<Employee | null | undefined> {
   if (!isSupabaseConfigured()) return undefined;
   try {
-    const { data, error } = await getPublicClient()
+    const { data, error } = await getDataClient()
       .from("employees")
       .select("*")
       .eq("invite_token", token)
@@ -474,7 +475,7 @@ export async function fetchEmployeeByInviteToken(
 async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase.from("marketing_settings").select("*").eq("id", 1).single();
     if (error || !data) return null;
     return {
@@ -590,7 +591,7 @@ export const fetchMarketingFromSupabase = cached(
 async function fetchRecoSettingsFromSupabaseRaw(): Promise<RecoSettings | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase
       .from("reco_settings")
       .select("*")
@@ -620,7 +621,7 @@ async function fetchRecoSettingsFromSupabaseRaw(): Promise<RecoSettings | null> 
 async function fetchStoriesFromSupabaseRaw(): Promise<ProductStory[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase
       .from("product_stories")
       .select("*")
@@ -651,7 +652,7 @@ async function fetchStoriesFromSupabaseRaw(): Promise<ProductStory[] | null> {
 async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase
       .from("product_reviews")
       .select("*")
@@ -683,7 +684,7 @@ async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
 async function fetchSuppliesFromSupabaseRaw(): Promise<Supply[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("supplies").select("*").range(from, to),
     );
@@ -706,7 +707,7 @@ async function fetchSuppliesFromSupabaseRaw(): Promise<Supply[] | null> {
 async function fetchSupplyPurchasesFromSupabaseRaw(): Promise<SupplyPurchase[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("supply_purchases").select("*").range(from, to),
     );
@@ -728,7 +729,7 @@ async function fetchSupplyPurchasesFromSupabaseRaw(): Promise<SupplyPurchase[] |
 async function fetchRecipesFromSupabaseRaw(): Promise<Recipe[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase.from("recipes").select("*").range(from, to),
     );
@@ -753,7 +754,7 @@ async function fetchRecipesFromSupabaseRaw(): Promise<Recipe[] | null> {
 async function fetchProductionRunsFromSupabaseRaw(): Promise<ProductionRun[] | null> {
   if (!isSupabaseConfigured()) return null;
   try {
-    const supabase = getPublicClient();
+    const supabase = getDataClient();
     const data = await fetchAllRows((from, to) =>
       supabase
         .from("production_runs")

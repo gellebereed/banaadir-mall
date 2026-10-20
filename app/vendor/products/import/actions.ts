@@ -38,7 +38,7 @@ import { isSupportedFile } from "@/lib/import/workbook";
 import { validateProductCodes } from "@/lib/odoo/mapping";
 import { getSession } from "@/lib/session";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
-import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { getDataClient } from "@/lib/supabase/service";
 import {
   upsertCategoryInSupabase,
   upsertProductWithError,
@@ -495,7 +495,7 @@ async function readCategorySlugs(): Promise<string[]> {
     return (await getCategories(true)).map((category) => category.slug);
   }
 
-  const supabase = await createSupabaseClient();
+  const supabase = getDataClient();
   const { data, error } = await supabase.from("categories").select("slug");
   if (error) {
     console.error("[Import] could not re-read categories:", error.message);

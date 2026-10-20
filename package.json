@@ -15,7 +15,8 @@
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "upload:images": "node scripts/upload-images-to-supabase.mjs",
     "reset:demo": "node scripts/reset-demo-data.mjs",
-    "graph": "node scripts/build-code-graph.mjs"
+    "graph": "node scripts/build-code-graph.mjs",
+    "migrate:owners": "node scripts/migrate-seller-ownership.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

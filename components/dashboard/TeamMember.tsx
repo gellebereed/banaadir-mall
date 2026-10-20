@@ -87,27 +87,28 @@ export default function TeamMember({
         {employee.inviteToken ? (
           <>
             <p className="mb-2 text-xs font-semibold text-slate-600">
-              {pending
-                ? "Send them this link to get started:"
-                : "Their sign-in link (still valid):"}
+              Send them this link — it works once, and they choose their own
+              password when they open it:
             </p>
             <InviteLink token={employee.inviteToken} />
           </>
         ) : (
           <p className="text-xs text-slate-500">
-            This person was added before invitation links existed. They can sign
-            in with the shared employee password — or create a link for them
-            below.
+            {pending
+              ? "No invitation link yet — create one below and send it to them."
+              : "They sign in with their own email and password. If they forget it, the marketplace admin can send them a reset link."}
           </p>
         )}
 
         <div className="mt-3 flex flex-wrap gap-2">
           {/* SafeForm so a refusal shows its reason — see TeamActionResult. */}
-          <SafeForm action={resetInviteLink.bind(null, employee.id)}>
-            <button className="rounded-full border border-ocean-200 px-4 py-1.5 text-xs font-bold text-ocean-800 transition hover:bg-ocean-50">
-              {employee.inviteToken ? "Replace link (revokes the old one)" : "Create invite link"}
-            </button>
-          </SafeForm>
+          {pending && (
+            <SafeForm action={resetInviteLink.bind(null, employee.id)}>
+              <button className="rounded-full border border-ocean-200 px-4 py-1.5 text-xs font-bold text-ocean-800 transition hover:bg-ocean-50">
+                {employee.inviteToken ? "Replace link (revokes the old one)" : "Create invite link"}
+              </button>
+            </SafeForm>
+          )}
           <SafeForm action={removeEmployee.bind(null, employee.id)}>
             <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Remove from team

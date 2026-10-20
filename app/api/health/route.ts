@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPublicClient } from "@/lib/supabase/public-client";
+import { getDataClient, hasServiceRole } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
 /**
@@ -51,7 +52,26 @@ export async function GET() {
   }
 
   try {
-    const supabase = getPublicClient();
+    // The app's own client — what the pages and actions actually use.
+    const supabase = getDataClient();
+
+    /*
+     * Is the database still open to the public key? Anyone holding it (it
+     * is in every page) could read these rows. After
+     * supabase/migration-lockdown.sql the answer must be "no rows".
+     */
+    const { data: leaked } = await getPublicClient().from("employees").select("id").limit(1);
+    const { data: leakedOrders } = await getPublicClient().from("orders").select("id").limit(1);
+    report.security = {
+      serviceRole: hasServiceRole(),
+      publicKeyCanReadPrivateTables: Boolean(leaked?.length || leakedOrders?.length),
+      sharedPasswords: process.env.ALLOW_SHARED_PASSWORDS === "true" ? "ALLOWED (temporary escape hatch)" : "off",
+      next: !hasServiceRole()
+        ? "Set SUPABASE_SERVICE_ROLE_KEY in Netlify and redeploy — then run supabase/migration-lockdown.sql."
+        : leaked?.length || leakedOrders?.length
+          ? "Service key is set. Now run supabase/migration-lockdown.sql to close the database to the public key."
+          : "Locked down.",
+    };
 
     const [products, stores, migrated, storesMigrated] = await Promise.all([
       supabase.from("products").select("id", { count: "exact", head: true }),
@@ -98,7 +118,9 @@ export async function GET() {
     if (report.writable === false) {
       report.status = "READ_ONLY";
       report.problem = "Reads work but writes are rejected — check RLS policies.";
-      report.fix = "Re-run the RLS section at the bottom of supabase/migration.sql.";
+      report.fix = hasServiceRole()
+        ? "Check SUPABASE_SERVICE_ROLE_KEY is the service_role secret, not the anon key."
+        : "Set SUPABASE_SERVICE_ROLE_KEY — after the lockdown migration the public key cannot write.";
     } else if (report.storageBucket !== "public") {
       report.status = "NO_PHOTO_STORAGE";
       report.problem =

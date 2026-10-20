@@ -1,4 +1,4 @@
-import { createClient } from "./server";
+import { getDataClient } from "./service";
 import { isSupabaseConfigured } from "./public-client";
 
 // Re-exported for the server-side callers that already import it from here.
@@ -20,7 +20,7 @@ export async function uploadToSupabaseStorage(
   if (!isSupabaseConfigured()) return [];
 
   const urls: string[] = [];
-  const supabase = await createClient();
+  const supabase = getDataClient();
 
   for (const file of files) {
     if (!file || typeof file.arrayBuffer !== "function" || file.size === 0) continue;
@@ -63,7 +63,7 @@ export async function deleteFromSupabaseStorage(
   if (!isSupabaseConfigured() || !publicUrl) return false;
 
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const urlObj = new URL(publicUrl);
     const pathParts = urlObj.pathname.split(`/storage/v1/object/public/${bucketName}/`);
     if (pathParts.length < 2) return false;

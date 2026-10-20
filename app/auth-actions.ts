@@ -38,8 +38,25 @@ export async function signIn(
    * which is what used to send the admin to the shopper view when they
    * typed their other password.
    */
+  const { headers } = await import("next/headers");
+  const { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } = await import(
+    "@/lib/rate-limit"
+  );
+  const ip = clientIp(await headers());
+  const wait = signInBlockedFor(email, ip);
+  if (wait > 0) {
+    return {
+      error: `Too many failed attempts. Please wait ${wait} minute${wait === 1 ? "" : "s"} and try again.`,
+    };
+  }
+
   const result = await authenticate(email, password);
-  if ("error" in result) return { error: result.error };
+  if ("error" in result) {
+    // Only a wrong password counts — not "your store is awaiting review".
+    if (result.error.startsWith("Invalid email or password")) recordSignInFailure(email, ip);
+    return { error: result.error };
+  }
+  recordSignInSuccess(email, ip);
 
   await setSessionCookie(result.session);
   redirect(homeForRole(result.session.role));
@@ -140,6 +157,9 @@ export async function signUpSeller(
   }
 
   const storeSlug = storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!storeSlug) {
+    return { error: "Please use letters or numbers in your store name." };
+  }
 
   /*
    * The number they just gave us IS their WhatsApp number.
@@ -147,34 +167,42 @@ export async function signUpSeller(
    * Orders reach a seller over WhatsApp (see lib/whatsapp.ts). Leaving that
    * field empty at registration meant every order for a new store went to
    * the platform's fallback number until the owner happened to find the
-   * field in Settings — so the shop's first sales were routed away from the
-   * person who had to pack them. Asking for the same number twice, in two
-   * places, was never going to fix that.
-   *
-   * Normalised on the way in, because sellers write a phone number every
-   * possible way and a malformed one is a dead button.
+   * field in Settings. Normalised on the way in, because sellers write a
+   * phone number every possible way and a malformed one is a dead button.
    */
   const { normalizeWhatsAppNumber } = await import("@/lib/whatsapp");
   const whatsapp = normalizeWhatsAppNumber(phone);
 
+  /*
+   * ── A store name that is taken stays taken ───────────────────────────
+   * The application used to UPSERT on the slug. Applying as "Karaca Home"
+   * therefore overwrote the real Karaca Home: its status flipped to
+   * pending (off the marketplace) and its WhatsApp number became the
+   * applicant's, so its orders went to a stranger. Now an existing slug
+   * is only accepted back from the account that applied for it — a
+   * rejected applicant trying again.
+   */
+  const { getStore } = await import("@/lib/api");
+  const existing = await getStore(storeSlug);
+  const TAKEN = {
+    error: `A store called "${existing?.name ?? storeName}" is already on Banaadir Mall. Please choose a different store name.`,
+  };
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
+      const { appliedStoreOf, recordStoreApplication } = await import("@/lib/accounts");
 
-      // 1. Create auth user in Supabase or authenticate existing user
+      // Only the applicant's own name and phone go in user_metadata — that
+      // field is theirs to edit. Which store they applied for is recorded
+      // server-side in app_metadata (recordStoreApplication).
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: {
-            name: ownerName,
-            role: "seller",
-            store: storeSlug,
-            phone,
-          },
-        },
+        options: { data: { name: ownerName, phone } },
       });
 
+      let user = authErr ? null : authData.user;
       if (authErr) {
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
           email,
@@ -188,37 +216,44 @@ export async function signUpSeller(
               : authErr.message,
           };
         }
+        user = signInData.user;
+        await supabase.auth.updateUser({ data: { name: ownerName, phone } });
+      }
+      if (!user) return { error: "Could not create your account. Please try again." };
 
-        await supabase.auth.updateUser({
-          data: {
-            name: ownerName,
-            role: "seller",
-            store: storeSlug,
-            phone,
-          },
-        });
+      if (existing && appliedStoreOf(user) !== storeSlug) return TAKEN;
+      if (existing?.status === "active") {
+        return { error: `"${existing.name}" is already open — sign in to manage it.` };
       }
 
-      // 2. Insert store into Supabase stores table with status 'pending'
-      await supabase.from("stores").upsert(
-        {
-          id: `store-${Date.now()}`,
-          slug: storeSlug,
-          name: storeName,
-          tagline: about.slice(0, 100) || "Quality products & local service",
-          description: about,
-          owner: ownerName,
-          location: city || "Mogadishu",
-          category: category || "general",
-          phone,
-          whatsapp,
-          status: "pending",
-        },
-        { onConflict: "slug" }
-      );
+      await recordStoreApplication(user.id, storeSlug);
+
+      // The store row is written by the server (service role): with the
+      // database locked down, the applicant's own key can't touch `stores`.
+      const { getDataClient } = await import("@/lib/supabase/service");
+      const row = {
+        slug: storeSlug,
+        name: storeName,
+        tagline: about.slice(0, 100) || "Quality products & local service",
+        description: about,
+        owner: ownerName,
+        location: city || "Mogadishu",
+        category: category || "general",
+        phone,
+        whatsapp,
+        status: "pending",
+      };
+      const { error: storeErr } = existing
+        ? await getDataClient().from("stores").update(row).eq("slug", storeSlug)
+        : await getDataClient().from("stores").insert({ id: `store-${Date.now()}`, ...row });
+      if (storeErr) return { error: `Could not save your application: ${storeErr.message}` };
     } catch (err: unknown) {
       return { error: (err as Error).message || "Seller sign up failed." };
     }
+  } else if (existing) {
+    // Demo install: there is no account to prove a re-application is the
+    // same person's, so a taken name is simply taken.
+    return TAKEN;
   }
 
   // Also save to local DB as fallback/cache

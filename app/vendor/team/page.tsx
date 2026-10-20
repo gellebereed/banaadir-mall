@@ -5,7 +5,7 @@ import PermissionPicker from "@/components/dashboard/PermissionPicker";
 import SafeForm from "@/components/dashboard/SafeForm";
 import TeamMember from "@/components/dashboard/TeamMember";
 import { getEmployees } from "@/lib/api";
-import { can, EMPLOYEE_PASSWORD } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 import type { EmployeeRole } from "@/lib/types";
 
@@ -70,9 +70,8 @@ export default async function VendorTeamPage() {
         </SafeForm>
         <p className="mt-3 rounded-lg bg-sand-100 px-3 py-2 text-xs text-slate-500">
           🔗 You will get a link to send them yourself — on WhatsApp, or however
-          you normally reach them. Nothing is emailed automatically. They can
-          also sign in at the login page with their email and the password{" "}
-          <code className="font-bold">{EMPLOYEE_PASSWORD}</code>.
+          you normally reach them. Nothing is emailed automatically. The link
+          works once: opening it, they choose their own password.
         </p>
       </div>
 

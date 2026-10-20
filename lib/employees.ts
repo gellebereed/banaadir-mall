@@ -112,13 +112,21 @@ export async function saveEmployeeChange(
   return remote;
 }
 
-/** Flip a pending invitation to active the first time they get in. */
+/**
+ * They are in: flip a pending invitation to active, and spend the link.
+ *
+ * The link used to stay valid after it was used — a permanent, password-
+ * free key to the dashboard sitting in a WhatsApp chat, opening the shop
+ * for anyone who scrolled back to it. Once the person has signed in (by
+ * the link or by password) it has done its job and is cleared.
+ */
 export async function markInviteAccepted(employee: Employee): Promise<void> {
-  if (employee.status === "active") return;
+  if (employee.status === "active" && !employee.inviteToken) return;
   try {
     await saveEmployeeChange(employee, {
       status: "active",
-      acceptedAt: new Date().toISOString(),
+      acceptedAt: employee.acceptedAt ?? new Date().toISOString(),
+      inviteToken: null,
     });
   } catch (err) {
     // Never fail a valid sign-in over a bookkeeping write.

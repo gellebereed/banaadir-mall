@@ -142,27 +142,14 @@ CREATE INDEX IF NOT EXISTS production_runs_store_idx ON public.production_runs (
 -- ── Row level security ──────────────────────────────────────────────────
 -- Matches how the rest of this schema is set up: the app authenticates and
 -- authorises in the server actions (requireVendor / assertOwnsStore), and
--- reads go through the anon key.
+-- the server reads and writes with the service role key.
 ALTER TABLE public.supplies         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.supply_purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recipes          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_runs  ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'supplies' AND policyname = 'supplies_all') THEN
-    CREATE POLICY supplies_all ON public.supplies FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'supply_purchases' AND policyname = 'supply_purchases_all') THEN
-    CREATE POLICY supply_purchases_all ON public.supply_purchases FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'recipes' AND policyname = 'recipes_all') THEN
-    CREATE POLICY recipes_all ON public.recipes FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'production_runs' AND policyname = 'production_runs_all') THEN
-    CREATE POLICY production_runs_all ON public.production_runs FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
+-- No policies: the public key gets no access. The server uses the service
+-- role key (lib/supabase/service.ts). See migration-lockdown.sql.
 
 -- ── VERIFY ──────────────────────────────────────────────────────────────
 SELECT 'supplies' AS table, count(*) FROM public.supplies

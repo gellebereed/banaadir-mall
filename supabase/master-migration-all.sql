@@ -57,8 +57,6 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS "banaadir_all_access" ON public.%I', t);
-    EXECUTE format(
-      'CREATE POLICY "banaadir_all_access" ON public.%I FOR ALL USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
 
@@ -81,18 +79,6 @@ DROP POLICY IF EXISTS "banaadir_uploads_read"   ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_insert" ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_update" ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_delete" ON storage.objects;
-
-CREATE POLICY "banaadir_uploads_read"
-  ON storage.objects FOR SELECT USING (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_insert"
-  ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_update"
-  ON storage.objects FOR UPDATE USING (bucket_id = 'uploads') WITH CHECK (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_delete"
-  ON storage.objects FOR DELETE USING (bucket_id = 'uploads');
 
 -- ═════════════════════════════════════════════════════════════════════════
 --  NEXT: run supabase/migration-odoo-catalog.sql

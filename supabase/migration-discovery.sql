@@ -87,8 +87,6 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS "banaadir_all_access" ON public.%I', t);
-    EXECUTE format(
-      'CREATE POLICY "banaadir_all_access" ON public.%I FOR ALL USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
 

@@ -14,7 +14,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { createClient } from "./server";
+import { getDataClient } from "./service";
 import { isSupabaseConfigured } from "./storage";
 import type {
   CommissionSettings,
@@ -63,7 +63,7 @@ export async function upsertProductWithError(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!useSupabaseMutations()) return { ok: false };
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {
       id: product.id,
       slug: product.slug,
@@ -260,7 +260,7 @@ export async function fetchProductPhotoState(
 ): Promise<{ images: string[]; variants: Variant[] } | null> {
   if (!useSupabaseMutations()) return null;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase
       .from("products")
       .select("images,variants")
@@ -282,7 +282,7 @@ export async function updateProductFields(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {};
 
     // ── Core columns (always present) ──────────────────────────────
@@ -370,7 +370,7 @@ export async function updateProductFields(
 export async function deleteProductFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
       console.error("[Supabase Mutations] deleteProduct error:", error.message);
@@ -393,7 +393,7 @@ export async function updateStoreFields(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {};
     if (fields.name !== undefined) row.name = fields.name;
     if (fields.tagline !== undefined) row.tagline = fields.tagline;
@@ -468,7 +468,7 @@ export async function setStoreStatusInSupabase(
 export async function createOrderInSupabase(order: Order): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {
       id: order.id,
       date: order.date || new Date().toISOString().slice(0, 10),
@@ -530,7 +530,7 @@ export async function setOrderStatusInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase
       .from("orders")
       .update({ status })
@@ -555,7 +555,7 @@ export async function setOrderStatusInSupabase(
 export async function markOrdersSeenInSupabase(orderIds: string[]): Promise<boolean> {
   if (!useSupabaseMutations() || orderIds.length === 0) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase
       .from("orders")
       .update({ seen_at: new Date().toISOString() })
@@ -590,7 +590,7 @@ export async function updateOrderDeliveryInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {};
     if (fields.status !== undefined) row.status = fields.status;
     if (fields.delivery !== undefined) row.delivery = fields.delivery ?? null;
@@ -633,7 +633,7 @@ export async function updateOrderDeliveryInSupabase(
 export async function insertPromotion(promo: Promotion): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const row: Record<string, unknown> = {
       id: promo.id,
       store: promo.store,
@@ -676,7 +676,7 @@ export async function togglePromotionInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase
       .from("promotions")
       .update({ active })
@@ -695,7 +695,7 @@ export async function togglePromotionInSupabase(
 export async function deletePromotionFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("promotions").delete().eq("id", id);
     if (error) {
       console.error("[Supabase Mutations] deletePromotion error:", error.message);
@@ -768,7 +768,7 @@ export async function insertEmployee(emp: {
   };
 
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("employees").insert({ ...base, ...extras });
     if (!error) return { ok: true, droppedColumns: false };
 
@@ -861,7 +861,7 @@ export async function updateEmployeeInSupabase(
   if (changes.acceptedAt !== undefined) extras.accepted_at = changes.acceptedAt;
 
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     // .select() so an update that matched NO row is told apart from one
     // that worked — PostgREST reports both as "no error".
     const { data, error } = await supabase
@@ -904,7 +904,7 @@ export async function updateEmployeeInSupabase(
 export async function deleteEmployeeFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("employees").delete().eq("id", id);
     if (error) {
       console.error("[Supabase Mutations] deleteEmployee error:", error.message);
@@ -927,7 +927,7 @@ export async function updateMarketingInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const fullPayload = {
       id: 1,
       announcement: settings.announcement,
@@ -1008,7 +1008,7 @@ export async function updateCommissionInSupabase(
 ): Promise<{ ok: boolean; migrationRequired: boolean }> {
   if (!useSupabaseMutations()) return { ok: false, migrationRequired: false };
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase
       .from("marketing_settings")
       .upsert({ id: 1, commission }, { onConflict: "id" });
@@ -1045,7 +1045,7 @@ export async function updatePosSettingsInSupabase(
 ): Promise<{ ok: boolean; migrationRequired: boolean }> {
   if (!useSupabaseMutations()) return { ok: false, migrationRequired: false };
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { data, error } = await supabase
       .from("stores")
       .update({ pos })
@@ -1070,7 +1070,7 @@ export async function updatePosSettingsInSupabase(
 export async function upsertSupplyInSupabase(supply: Supply): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("supplies").upsert(
       {
         id: supply.id,
@@ -1098,7 +1098,7 @@ export async function upsertSupplyInSupabase(supply: Supply): Promise<boolean> {
 export async function deleteSupplyFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("supplies").delete().eq("id", id);
     if (error) {
       console.error("[Supabase Mutations] deleteSupply error:", error.message);
@@ -1115,7 +1115,7 @@ export async function insertSupplyPurchaseInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("supply_purchases").insert({
       id: purchase.id,
       store: purchase.store,
@@ -1139,7 +1139,7 @@ export async function insertSupplyPurchaseInSupabase(
 export async function upsertRecipeInSupabase(recipe: Recipe): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("recipes").upsert(
       {
         id: recipe.id,
@@ -1167,7 +1167,7 @@ export async function upsertRecipeInSupabase(recipe: Recipe): Promise<boolean> {
 export async function deleteRecipeFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("recipes").delete().eq("id", id);
     if (error) {
       console.error("[Supabase Mutations] deleteRecipe error:", error.message);
@@ -1182,7 +1182,7 @@ export async function deleteRecipeFromSupabase(id: string): Promise<boolean> {
 export async function insertProductionRunInSupabase(run: ProductionRun): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("production_runs").insert({
       id: run.id,
       store: run.store,
@@ -1222,7 +1222,7 @@ export async function applyStockMovesInSupabase(
   if (!useSupabaseMutations()) return { ok: false, failed: [] };
   const failed: string[] = [];
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     for (const move of moves) {
       const { error } = await supabase
         .from("supplies")
@@ -1255,7 +1255,7 @@ export async function upsertCategoryInSupabase(category: {
 }): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
 
     // `categories.id` is a TEXT primary key with NO default (schema.sql), so
     // an insert that omits it is rejected outright with a not-null violation.
@@ -1326,7 +1326,7 @@ export async function upsertCategoryInSupabase(category: {
 export async function deleteCategoryFromSupabase(slug: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("categories").delete().eq("slug", slug);
     if (error) {
       console.error("[Supabase Mutations] deleteCategory error:", error.message);
@@ -1342,7 +1342,7 @@ export async function deleteCategoryFromSupabase(slug: string): Promise<boolean>
 export async function toggleCategoryVisibilityInSupabase(slug: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { data: existing } = await supabase.from("categories").select("*").eq("slug", slug).maybeSingle();
     if (!existing) return false;
 
@@ -1380,7 +1380,7 @@ export async function updateRecoSettingsInSupabase(
 ): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("reco_settings").upsert(
       {
         id: 1,
@@ -1411,7 +1411,7 @@ export async function updateRecoSettingsInSupabase(
 export async function upsertStoryInSupabase(story: ProductStory): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("product_stories").upsert(
       {
         id: story.id,
@@ -1446,7 +1446,7 @@ export async function upsertStoryInSupabase(story: ProductStory): Promise<boolea
 export async function deleteStoryFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("product_stories").delete().eq("id", id);
     return !error;
   } catch {
@@ -1457,7 +1457,7 @@ export async function deleteStoryFromSupabase(id: string): Promise<boolean> {
 export async function upsertReviewInSupabase(review: ProductReview): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
-    const supabase = await createClient();
+    const supabase = getDataClient();
     const { error } = await supabase.from("product_reviews").upsert(
       {
         id: review.id,

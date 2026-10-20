@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { acceptInvite } from "./actions";
+import AcceptInviteForm from "./AcceptInviteForm";
+import { accountsEnabled, findAuthUser, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
 import { getEmployeeByInviteToken, getStore } from "@/lib/api";
 import {
-  EMPLOYEE_PASSWORD,
   PERMISSIONS_BY_KEY,
   permissionsFor,
   ROLE_DESCRIPTIONS,
@@ -43,6 +43,11 @@ export default async function InvitePage({
   }
 
   const grants = permissionsFor(employee);
+  const mode = !accountsEnabled()
+    ? "none"
+    : (await findAuthUser(employee.email))
+      ? "confirm"
+      : "create";
   const placeName = store?.name ?? "Banaadir Mall (platform team)";
 
   return (
@@ -84,26 +89,15 @@ export default async function InvitePage({
           )}
         </div>
 
-        {employee.status === "active" && (
-          <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-xs text-mango-800">
-            This invitation has already been used once. Opening it again just
-            signs you back in.
-          </p>
-        )}
-
-        <form action={acceptInvite.bind(null, token)} className="mt-5">
-          <button type="submit" className="btn-primary w-full">
-            Accept &amp; open my dashboard
-          </button>
-        </form>
+        <AcceptInviteForm token={token} mode={mode} minLength={MIN_PASSWORD_LENGTH} />
 
         <p className="mt-4 text-xs text-slate-400">
-          You can also sign in at any time at{" "}
+          This link works once. Afterwards, sign in at{" "}
           <Link href="/login" className="font-semibold text-ocean-700 underline">
             the login page
           </Link>{" "}
-          with your email and the password{" "}
-          <code className="font-bold">{EMPLOYEE_PASSWORD}</code>.
+          with {employee.email} and{" "}
+          {mode === "none" ? "the demo staff password" : "your password"}.
         </p>
       </div>
     </div>

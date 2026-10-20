@@ -1545,6 +1545,15 @@ export async function setStoreStatus(slug: string, status: Store["status"]): Pro
       db.storeStatus[slug] = status;
     });
   }
+
+  // Approval is the moment the applicant becomes the owner — written to
+  // app_metadata, which only this server can set. See lib/accounts.ts.
+  if (status === "active") {
+    const { bindStoreOwner } = await import("@/lib/accounts");
+    await bindStoreOwner(slug).catch((err) =>
+      console.warn(`[Stores] Approved ${slug} but could not link its owner:`, err),
+    );
+  }
   refresh();
 }
 
@@ -1652,6 +1661,14 @@ export async function addEmployee(formData: FormData): Promise<TeamActionResult>
 
   const email = String(formData.get("email")).trim().toLowerCase();
 
+  // Never a team row for the admin or a store-owner login: a team row
+  // decides how an email signs in, so inviting those would let a store
+  // owner turn the admin's address into a staff login at their shop.
+  const { isAdminEmail, parseSellerEmail } = await import("@/lib/auth");
+  if (isAdminEmail(email) || parseSellerEmail(email)) {
+    return { error: "That email belongs to a marketplace or store-owner login and can't be invited as staff." };
+  }
+
   /*
    * One row per person PER STORE — not one row per person.
    *
@@ -1743,6 +1760,13 @@ export async function resetInviteLink(id: string): Promise<TeamActionResult> {
   const employee = await findManageableEmployee(session, id);
   if ("error" in employee) return employee;
 
+  // Links are for people who have not joined yet. A member who has can't
+  // be "re-invited" into resetting their password — see acceptInvite.
+  if (employee.status === "active") {
+    return {
+      error: "They have already joined. If they forgot their password, the marketplace admin can send a reset link.",
+    };
+  }
   const result = await saveEmployeeChange(employee, {
     inviteToken: newInviteToken(),
     invitedAt: new Date().toISOString(),
@@ -3235,8 +3259,8 @@ export async function deleteStore(slug: string): Promise<void> {
   const productIds = new Set(products.map((product) => product.id));
 
   if (useSupabaseMutations()) {
-    const { createClient } = await import("@/lib/supabase/server");
-    const supabase = await createClient();
+    const { getDataClient } = await import("@/lib/supabase/service");
+    const supabase = getDataClient();
 
     await supabase.from("products").delete().eq("store", clean);
     await supabase.from("promotions").delete().eq("store", clean);

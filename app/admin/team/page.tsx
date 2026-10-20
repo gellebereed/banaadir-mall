@@ -4,7 +4,6 @@ import PermissionPicker from "@/components/dashboard/PermissionPicker";
 import SafeForm from "@/components/dashboard/SafeForm";
 import TeamMember from "@/components/dashboard/TeamMember";
 import { getEmployees } from "@/lib/api";
-import { EMPLOYEE_PASSWORD } from "@/lib/auth";
 import type { EmployeeRole } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Team" };
@@ -52,9 +51,8 @@ export default async function AdminTeamPage() {
           </button>
         </SafeForm>
         <p className="mt-3 rounded-lg bg-sand-100 px-3 py-2 text-xs text-slate-500">
-          🔗 An invitation link is created for you to send. Staff can also sign
-          in with their email and the password{" "}
-          <code className="font-bold">{EMPLOYEE_PASSWORD}</code>.
+          🔗 An invitation link is created for you to send. It works once:
+          opening it, they choose their own password.
         </p>
       </div>
 

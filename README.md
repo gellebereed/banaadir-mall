@@ -32,20 +32,39 @@ every Next.js project, not just this one. It is **not** shipped to users.
   new page that fetches data — that habit is what stops "slow buttons"
   from ever coming back.
 
-## Demo logins (end-to-end testing)
+## Demo logins (local demo only)
 
-Defined in `lib/auth.ts` — the login page has tap-to-fill buttons for these:
+These shared passwords work **only on a demo install with no Supabase**
+(or while `ALLOW_SHARED_PASSWORDS=true` is set as a temporary escape hatch).
+On a live site every login has its own password — see
+[Security setup](#security-setup-live-site).
 
 | Role | Email | Password | Lands on |
 |---|---|---|---|
-| Admin | `admin@banaadirmall.com` | `Admin@2026` | `/admin` |
+| Admin | `ADMIN_EMAIL` | `ADMIN_PASSWORD` (first sign-in only) | `/admin` |
 | Seller (any store) | `<store-slug>@seller.banaadirmall.com` | `Seller@2026` | `/vendor` (their own store) |
 | Customer | `ayaan@banaadirmall.com` | `Customer@2026` | `/account` (with order history) |
 
-Examples: `karaca-home@seller.banaadirmall.com`, `us-polo-assn@seller.banaadirmall.com`,
-`sahra-fashion@seller.banaadirmall.com`. `/admin` and `/vendor` redirect to
-`/login` unless the right role is signed in. The session is a plain cookie —
-demo only; replace with real auth before launch.
+Examples: `karaca-home@seller.banaadirmall.com`, `us-polo-assn@seller.banaadirmall.com`.
+
+## Security setup (live site)
+
+Do these in order — step 3 before step 1–2 takes the site offline.
+
+1. **Netlify → Environment variables:** set `SUPABASE_SERVICE_ROLE_KEY`
+   (Supabase → Project settings → API keys → `service_role`) and a long
+   random `SESSION_SECRET`. Redeploy.
+2. **Check `/api/health`** shows `"serviceRole": true`.
+3. **Run `supabase/migration-lockdown.sql`** in the Supabase SQL editor.
+   `/api/health` should then show `"publicKeyCanReadPrivateTables": false`.
+4. **Run `npm run migrate:owners`** (with the service key in `.env.local`),
+   read the list, then `npm run migrate:owners -- --apply`. Without this,
+   sellers whose ownership was only recorded the old way sign in as
+   customers.
+5. **Supabase → Authentication → Sign In / Providers → Email:** turn ON
+   "Confirm email", so nobody can register an address they don't own.
+6. Built-in `<store>@seller.banaadirmall.com` logins: set each one's password
+   (or send a reset link) from `/admin/accounts`.
 
 ## Artwork sizes (banners & campaign tiles)
 
@@ -186,8 +205,8 @@ product and the discount they're offering; the admin approves at
 targeted promotion automatically. Rejections and withdrawals are supported.
 
 **Access rights** — employee roles: `manager` (everything), `products`,
-`orders`, `marketing` (platform), `viewer`. Employees sign in with their
-email + `Employee@2026`. Pages they lack access to show a view-only notice
+`orders`, `marketing` (platform), `viewer`. Employees open their invitation
+link once, choose a password, and sign in with their email after that. Pages they lack access to show a view-only notice
 or redirect.
 
 ### Route guards live in `middleware.ts` — don't remove them

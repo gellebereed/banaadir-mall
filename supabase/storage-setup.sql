@@ -25,24 +25,12 @@ ON CONFLICT (id) DO UPDATE
       file_size_limit = 5242880,
       allowed_mime_types = ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/avif','image/gif'];
 
--- Policies: anyone may read; the dashboards (anon key) may write.
--- Tighten these once real Supabase Auth replaces the demo cookie login.
+-- No policies: the bucket is public, so photo URLs work without one, and only
+-- the server (service role key) may upload or delete. See migration-lockdown.sql.
 DROP POLICY IF EXISTS "banaadir_uploads_read"   ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_insert" ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_update" ON storage.objects;
 DROP POLICY IF EXISTS "banaadir_uploads_delete" ON storage.objects;
-
-CREATE POLICY "banaadir_uploads_read"
-  ON storage.objects FOR SELECT USING (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_insert"
-  ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_update"
-  ON storage.objects FOR UPDATE USING (bucket_id = 'uploads') WITH CHECK (bucket_id = 'uploads');
-
-CREATE POLICY "banaadir_uploads_delete"
-  ON storage.objects FOR DELETE USING (bucket_id = 'uploads');
 
 -- ── VERIFY ──────────────────────────────────────────────────────────────
 SELECT id, name, public, file_size_limit FROM storage.buckets WHERE id = 'uploads';
