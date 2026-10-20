@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import CategoryManagerClient from "@/components/dashboard/CategoryManagerClient";
 import CategoryTidyPanel from "@/components/dashboard/CategoryTidyPanel";
 import HoldingQueue, { type HeldGroup } from "@/components/dashboard/HoldingQueue";
 import { getAllStores, getBaseProducts, getCategories, getCategoriesFlat } from "@/lib/api";
 import { HOLDING_SLUG, suggestCategory } from "@/lib/category-mappings";
 import { proposeTidy } from "@/lib/category-tidy";
+import { standardNode } from "@/lib/taxonomy";
 
 export const metadata: Metadata = {
   title: "Categories",
@@ -71,11 +73,37 @@ export default async function AdminCategoriesPage() {
     .filter((c) => c.slug !== HOLDING_SLUG)
     .map((c) => ({ value: c.slug, label: c.name, icon: c.icon, depth: c.depth }));
 
+  // Only the paths the form needs, not the whole taxonomy.
+  const standardPaths: Record<string, string> = {};
+  let unlinked = 0;
+  for (const c of categories) {
+    if (c.slug === HOLDING_SLUG) continue;
+    const node = standardNode(c.standardId);
+    if (node) standardPaths[node.id] = node.path;
+    else unlinked++;
+  }
+
   return (
     <div>
       <HoldingQueue groups={heldGroups} options={fileOptions} />
+      <Link
+        href="/admin/categories/standard"
+        className={`card mb-6 flex flex-wrap items-center justify-between gap-3 p-5 transition hover:bg-sand-50 ${
+          unlinked > 0 ? "border-amber-300 bg-amber-50/60" : ""
+        }`}
+      >
+        <div>
+          <p className="font-display font-extrabold text-ocean-950">🧭 Standard categories</p>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {unlinked > 0
+              ? `${unlinked} categor${unlinked === 1 ? "y isn't" : "ies aren't"} linked to the standard taxonomy yet — review suggested links.`
+              : "Every category is linked to the standard taxonomy."}
+          </p>
+        </div>
+        <span className="btn-secondary !py-2 text-sm">Open →</span>
+      </Link>
       <CategoryTidyPanel proposals={proposals} />
-      <CategoryManagerClient initialCategories={flat} />
+      <CategoryManagerClient initialCategories={flat} standardPaths={standardPaths} />
     </div>
   );
 }

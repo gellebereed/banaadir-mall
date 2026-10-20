@@ -52,6 +52,11 @@ export interface Category {
   parentSlug?: string;
   /** Odoo `product.category` id, set by the sync. */
   odooId?: number;
+  /**
+   * The standard taxonomy node this category means (Shopify Product
+   * Taxonomy id, e.g. "aa-1-13-8" for Shirts). See lib/taxonomy.ts.
+   */
+  standardId?: string;
 }
 
 /**

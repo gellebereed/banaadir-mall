@@ -82,6 +82,27 @@ import from the same supplier files itself.
 Run **`supabase/migration-category-mappings.sql`** once to store those
 decisions (without it they are asked again on every import).
 
+### Standard categories (the meaning underneath the menu)
+
+Every category is linked to a node of a published product taxonomy —
+[Shopify's open taxonomy](https://github.com/Shopify/product-taxonomy)
+(MIT), trimmed to the verticals we sell in and kept in
+`lib/taxonomy/standard.json` (`npm run taxonomy` rebuilds it). Our menu keeps
+its own names and shape; the link is what makes one store's "Dirac" and
+another's "Dresses" the same kind of thing, and what attribute filters and
+automatic categorisation will build on.
+
+- **`/admin/categories/standard`** — suggests a link for every unlinked
+  category, shows duplicates (two categories meaning the same thing), and
+  saves only what the admin approves.
+- **New categories** must name their standard category when created.
+- Run **`supabase/migration-category-standard.sql`** once (adds
+  `categories.standard_id`).
+- **AI suggestions:** set `ANTHROPIC_API_KEY` in Netlify's environment
+  variables and redeploy. Claude then chooses among the word-matched
+  candidates, reading each category's products. Without the key the page
+  still works, on word matching alone.
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL

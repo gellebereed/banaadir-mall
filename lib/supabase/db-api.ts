@@ -214,6 +214,8 @@ async function fetchCategoriesFromSupabaseRaw(): Promise<Category[] | null> {
         // Odoo product.category.parent_id — see supabase/migration-odoo-catalog.sql.
         parentSlug: c.parent_slug || undefined,
         odooId: c.odoo_id ?? undefined,
+        // supabase/migration-category-standard.sql
+        standardId: c.standard_id ?? undefined,
       };
     });
     // Filter to canonical categories in navbar order, appending any extra custom ones

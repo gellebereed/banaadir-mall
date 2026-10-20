@@ -9,6 +9,7 @@ import {
 } from "@/app/actions";
 import PhotoPicker from "@/components/dashboard/PhotoPicker";
 import SafeForm from "@/components/dashboard/SafeForm";
+import StandardPicker from "@/components/dashboard/StandardPicker";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import {
   categoryCompleteName,
@@ -17,7 +18,14 @@ import {
 } from "@/lib/category-tree";
 import type { Category } from "@/lib/types";
 
-export default function CategoryManagerClient({ initialCategories }: { initialCategories: Category[] }) {
+export default function CategoryManagerClient({
+  initialCategories,
+  standardPaths = {},
+}: {
+  initialCategories: Category[];
+  /** standardId → "Home & Garden › Kitchen & Dining", for the picker. */
+  standardPaths?: Record<string, string>;
+}) {
   const [search, setSearch] = useState("");
   const [editingCat, setEditingCat] = useState<Category | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -234,6 +242,11 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
 
             <SafeForm
               action={async (formData) => {
+                // The server refuses a new category without a standard one,
+                // but a thrown message is hidden in production — say it here.
+                if (!editingCat && !String(formData.get("standardId") || "")) {
+                  return { error: "Choose the standard category this one means before creating it." };
+                }
                 if (editingCat) {
                   await updateCategory(formData);
                 } else {
@@ -352,6 +365,36 @@ export default function CategoryManagerClient({ initialCategories }: { initialCa
                     Products in a subcategory also appear on the parent&apos;s
                     page. A category cannot be placed inside itself or one of
                     its own subcategories.
+                  </p>
+                </div>
+
+                {/*
+                  What the category MEANS, in the shared standard taxonomy.
+                  Our name and menu position stay ours ("Women's Fashion");
+                  this is what keeps two stores' "Dirac" and "Dresses" the
+                  same kind of thing. Required for new categories.
+                */}
+                <div>
+                  <label className="label">
+                    Standard category{" "}
+                    {editingCat ? (
+                      <span className="font-normal text-slate-400">(what this category means)</span>
+                    ) : (
+                      <span className="font-normal text-coral-600">(required)</span>
+                    )}
+                  </label>
+                  <StandardPicker
+                    key={editingCat?.slug ?? "new"}
+                    initial={
+                      editingCat?.standardId && standardPaths[editingCat.standardId]
+                        ? { id: editingCat.standardId, path: standardPaths[editingCat.standardId] }
+                        : null
+                    }
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    From the shared product taxonomy every category is linked
+                    to. Pick the closest match; gender and age don&apos;t
+                    matter here (&ldquo;Men&apos;s Shoes&rdquo; is just Shoes).
                   </p>
                 </div>
               </div>

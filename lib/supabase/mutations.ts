@@ -1252,6 +1252,8 @@ export async function upsertCategoryInSupabase(category: {
   image?: string | null;
   /** Odoo product.category.parent_id. Pass null to move it back to a root. */
   parentSlug?: string | null;
+  /** Standard taxonomy node. Pass null to unlink; undefined leaves it alone. */
+  standardId?: string | null;
 }): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
@@ -1293,6 +1295,9 @@ export async function upsertCategoryInSupabase(category: {
     if (category.image !== undefined) {
       row.image = category.image || null;
     }
+    if (category.standardId !== undefined) {
+      row.standard_id = category.standardId || null;
+    }
 
     let { error } = await supabase.from("categories").upsert(row, { onConflict: "slug" });
 
@@ -1307,6 +1312,11 @@ export async function upsertCategoryInSupabase(category: {
       );
       delete row.parent_slug;
       delete row.image;
+      // supabase/migration-category-standard.sql
+      if (row.standard_id !== undefined) {
+        console.warn("[Supabase] categories.standard_id is missing — run supabase/migration-category-standard.sql.");
+      }
+      delete row.standard_id;
       ({ error } = await supabase.from("categories").upsert(row, { onConflict: "slug" }));
     }
 
@@ -1321,6 +1331,16 @@ export async function upsertCategoryInSupabase(category: {
     console.error("[Supabase Mutations] upsertCategory exception:", err);
     return false;
   }
+}
+
+/**
+ * Whether migration-category-standard.sql has been run. The upsert above
+ * drops a missing standard_id and still succeeds — right for an ordinary
+ * edit, but a save whose whole point IS the link must not report success.
+ */
+export async function categoriesHaveStandardColumn(): Promise<boolean> {
+  const { error } = await getDataClient().from("categories").select("standard_id").limit(1);
+  return !(error && isMissingColumnError(error));
 }
 
 export async function deleteCategoryFromSupabase(slug: string): Promise<boolean> {

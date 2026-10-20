@@ -49,6 +49,9 @@ Rules:
   categories — they map supplier groupings onto existing ones
   (`lib/category-mappings.ts`); unmatched products wait on the hidden
   `needs-category` shelf until the admin files them in /admin/categories.
+  Each category also carries `standardId`, a node of the standard taxonomy
+  (`lib/taxonomy.ts`, Shopify's, trimmed); new categories must have one,
+  existing ones are linked at /admin/categories/standard.
 - **Types**: `lib/types.ts` (`Product`, `Variant`, …); variant helpers in
   `lib/product-utils.ts` (`hasVariants`, `totalStock`, `colorSwatch`).
 

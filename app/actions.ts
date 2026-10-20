@@ -2855,6 +2855,14 @@ export async function createCategory(formData: FormData): Promise<void> {
   const typedCover = String(formData.get("image") || "").trim();
 
   if (!name) throw new Error("Category name is required.");
+
+  // New categories must say which standard category they mean — that is
+  // what keeps the tree from drifting as stores join. See lib/taxonomy.ts.
+  const { standardNode } = await import("@/lib/taxonomy");
+  const standardId = String(formData.get("standardId") || "").trim();
+  if (!standardNode(standardId)) {
+    throw new Error("Choose the standard category this one means (search for it under \"Standard category\").");
+  }
   if (!slug) {
     slug = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   }
@@ -2879,6 +2887,7 @@ export async function createCategory(formData: FormData): Promise<void> {
     // The Category type uses undefined for "no parent"; the mutation layer
     // needs null to actually CLEAR the column rather than leave it alone.
     parentSlug: parentSlug ?? undefined,
+    standardId,
   };
 
   if (useSupabaseMutations()) {
@@ -2918,6 +2927,8 @@ export async function updateCategory(formData: FormData): Promise<void> {
   const previous = await getCategory(originalSlug || slug);
   const image = uploadedCover ?? (typedCover || previous?.image);
 
+  const standardIdRaw = formData.get("standardId");
+  const standardIdField = standardIdRaw === null ? null : String(standardIdRaw).trim();
   const category = {
     slug,
     name,
@@ -2926,10 +2937,17 @@ export async function updateCategory(formData: FormData): Promise<void> {
     tagline,
     art: { from: "#e0f2fe", to: "#bae6fd" },
     parentSlug: parentSlug ?? undefined,
+    // Sent by the edit form; absent means "leave the link alone".
+    ...(standardIdField !== null ? { standardId: standardIdField || undefined } : {}),
   };
 
   if (useSupabaseMutations()) {
-    await upsertCategoryInSupabase({ ...category, parentSlug, image: image ?? null });
+    await upsertCategoryInSupabase({
+      ...category,
+      parentSlug,
+      image: image ?? null,
+      ...(standardIdField !== null ? { standardId: standardIdField || null } : {}),
+    });
   } else {
     await mutateDB((db) => {
       db.categories = db.categories || [];
