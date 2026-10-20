@@ -93,6 +93,8 @@ import {
   toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
+import { logActivity } from "@/lib/activity";
+import { money } from "@/lib/format";
 
 /**
  * Invalidate what a mutation actually affected.
@@ -147,6 +149,24 @@ function assertOwnsStore(session: Session, storeSlug: string) {
   if (session.role === "admin") return;
   if (session.role === "seller" && session.store === storeSlug) return;
   throw new Error("You can only manage your own store.");
+}
+
+const sentenceCase = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** "Edited "Polo" · price $20 → $25 · stock 10 → 4" — for the activity log. */
+function describeProductChange(before: Product, after: Partial<Product>): string {
+  const parts = [`Edited "${after.name ?? before.name}"`];
+  if (after.price !== undefined && after.price !== before.price) {
+    parts.push(`price ${money(before.price)} → ${money(after.price)}`);
+  }
+  if (after.stock !== undefined && after.stock !== before.stock) {
+    parts.push(`stock ${before.stock} → ${after.stock}`);
+  }
+  if (after.hidden !== undefined && after.hidden !== Boolean(before.hidden)) {
+    parts.push(after.hidden ? "hidden" : "made live");
+  }
+  if (after.name !== undefined && after.name !== before.name) parts.push(`renamed from "${before.name}"`);
+  return parts.join(" · ");
 }
 
 // ── Products ───────────────────────────────────────────────────────────
@@ -513,6 +533,7 @@ export async function updateProduct(formData: FormData): Promise<void> {
   // shown — which is the whole reason this moved down here.
   await Promise.all(orphaned.map(deleteUpload));
 
+  await logActivity(product.store, "product.update", describeProductChange(product, updatedFields), id);
   refresh();
   redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
 }
@@ -532,6 +553,7 @@ export async function toggleProductHidden(id: string): Promise<void> {
       };
     });
   }
+  await logActivity(product.store, "product.visibility", `${product.hidden ? "Put" : "Hid"} "${product.name}" ${product.hidden ? "back in the shop" : "from the shop"}`, id);
   refresh();
 }
 
@@ -551,6 +573,7 @@ export async function toggleProductFeatured(id: string): Promise<void> {
       };
     });
   }
+  await logActivity(product.store, "product.feature", `${newFeatured ? "Featured" : "Unfeatured"} "${product.name}"`, id);
   refresh();
 }
 
@@ -563,9 +586,11 @@ export async function batchUpdateProducts(
   if (!ids || ids.length === 0) return { ok: false, count: 0, message: "No products selected" };
 
   let count = 0;
+  let onlyName = "";
   for (const id of ids) {
     const product = await getBaseProduct(id);
     if (!product) continue;
+    onlyName = product.name;
     assertOwnsStore(session, product.store);
 
     if (action === "delete") {
@@ -600,6 +625,16 @@ export async function batchUpdateProducts(
     }
   }
 
+  await logActivity(
+    session.store ?? "platform",
+    `product.bulk.${action}`,
+    // First letter up: the single-product sentence starts lower-case.
+    sentenceCase(
+      `${count === 1 ? "" : "Bulk "}${({ hide: "hid", show: "made live", feature: "featured", unfeature: "unfeatured", delete: "deleted", price: "set the price of", stock: "set the stock of" } as const)[action]} ${count === 1 ? `"${onlyName}"` : `${count} products`}${
+      value !== undefined ? ` to ${action === "price" ? money(value) : value}` : ""
+    }`,
+    ),
+  );
   refresh();
   return { ok: true, count, message: `Successfully updated ${count} products.` };
 }
@@ -620,6 +655,7 @@ export async function deleteProduct(id: string): Promise<void> {
       delete db.productOverrides[id];
     });
   }
+  await logActivity(product.store, "product.delete", `Deleted "${product.name}"`, id);
   refresh();
   redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
 }
@@ -686,6 +722,7 @@ export async function createProduct(formData: FormData): Promise<void> {
       db.newProducts.push(product);
     });
   }
+  await logActivity(product.store, "product.create", `Added "${product.name}" at ${money(product.price)}`, product.id);
   refresh();
   redirect("/vendor/products");
 }
@@ -1282,6 +1319,7 @@ export async function updateStoreSettings(
       };
     });
   }
+  await logActivity(storeSlug, "store.settings", `Updated store settings${removeLogo ? " · removed logo" : logo ? " · new logo" : ""}${banner ? " · new banner" : ""}`);
   refresh();
 
   return {
@@ -1345,6 +1383,7 @@ export async function createPromotion(
       db.promotions.push(promo);
     });
   }
+  await logActivity(promo.store, "promotion.create", `Started promotion "${promo.name}" (−${promo.pct}%)`, promo.id);
   refresh();
 
   const scopeLabel = productIds.length
@@ -1398,6 +1437,7 @@ export async function deletePromotion(id: string): Promise<void> {
       db.promotions = db.promotions.filter((p) => p.id !== id);
     });
   }
+  await logActivity(session.store ?? "platform", "promotion.delete", "Deleted a promotion", id);
   refresh();
 }
 
@@ -1503,6 +1543,7 @@ export async function updateParcelDelivery(formData: FormData): Promise<SaveStat
     }
   }
 
+  await logActivity(order.store, "order.delivery", `Updated order ${orderId}: ${status}${courierName ? ` · courier ${courierName}` : ""}`, orderId);
   refresh();
   return {
     ok: true,
@@ -1530,6 +1571,11 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
       db.orderStatus[orderId] = status;
     });
   }
+  {
+    const { getOrder } = await import("@/lib/api");
+    const order = await getOrder(orderId);
+    await logActivity(order?.store ?? "platform", "order.status", `Marked order ${orderId} as ${status}`, orderId);
+  }
   refresh();
 }
 
@@ -1554,6 +1600,7 @@ export async function setStoreStatus(slug: string, status: Store["status"]): Pro
       console.warn(`[Stores] Approved ${slug} but could not link its owner:`, err),
     );
   }
+  await logActivity(slug, "store.status", `Set the store's status to ${status}`, slug);
   refresh();
 }
 
@@ -1719,6 +1766,7 @@ export async function addEmployee(formData: FormData): Promise<TeamActionResult>
       db.employees.push(emp);
     });
   }
+  await logActivity(storeSlug, "team.invite", `Invited ${email} as ${emp.role}`, email);
   refresh();
 
   // The person IS on the team — this only reports that their invite link
@@ -1742,6 +1790,7 @@ export async function updateEmployeeAccess(
 
   const result = await saveEmployeeChange(employee, { role, permissions });
   if (!result.ok) return { error: employeeWriteError(result, "Could not save that access change.") };
+  await logActivity(employee.store, "team.access", `Changed ${employee.email}'s access to ${role}`, employee.email);
   refresh();
   if (result.droppedColumns) return { error: MIGRATION_REQUIRED };
   return {};
@@ -1811,6 +1860,7 @@ export async function removeEmployee(id: string): Promise<TeamActionResult> {
     db.employees = db.employees.filter((e) => e.id !== id);
   });
 
+  await logActivity(employee.store, "team.remove", `Removed ${employee.email} from the team`, employee.email);
   refresh();
   return {};
 }
@@ -1906,6 +1956,7 @@ export async function updateCommissionSettings(
     });
   }
 
+  await logActivity("platform", "commission.update", `Changed commission settings (default ${commission.defaultPct}%${commission.enabled ? "" : ", switched off"})`);
   refresh();
 
   return {
@@ -3311,5 +3362,6 @@ export async function deleteStore(slug: string): Promise<void> {
     console.warn("[stores] could not tidy recommender settings:", error);
   }
 
+  await logActivity("platform", "store.delete", `Deleted the store "${clean}" and its products`, clean);
   refresh();
 }

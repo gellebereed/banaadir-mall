@@ -7,6 +7,8 @@ import StoreLinkPanel from "@/components/store-site/StoreLinkPanel";
 import { getPosSettings, getStore } from "@/lib/api";
 import { ROOT_DOMAIN } from "@/lib/store-site";
 import { may } from "@/lib/auth";
+import { accountsEnabled } from "@/lib/accounts";
+import TransferOwnershipForm from "@/components/dashboard/TransferOwnershipForm";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Store Settings" };
@@ -109,6 +111,19 @@ export default async function VendorSettingsPage() {
           </p>
         )}
       </section>
+
+      {/* Owners only, and only where accounts are real. */}
+      {!session.access && session.role === "seller" && accountsEnabled() && store && (
+        <section className="mt-6 rounded-2xl border border-coral-100 bg-coral-100/20 p-5 sm:p-6">
+          <h2 className="font-display text-lg font-bold text-coral-700">Transfer ownership</h2>
+          <p className="mb-4 mt-1 max-w-2xl text-sm text-slate-600">
+            Hand {store.name} to another account — for example if you sell the business. They become
+            the owner with full control, including payouts. You&apos;ll be signed out; you can stay
+            on as a manager or leave the store entirely.
+          </p>
+          <TransferOwnershipForm storeName={store.name} />
+        </section>
+      )}
     </div>
   );
 }

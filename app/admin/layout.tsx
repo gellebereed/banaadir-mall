@@ -40,9 +40,13 @@ export default async function AdminLayout({
     // Behind settings.manage, like the page itself — a staff member who
     // cannot change the commission is not shown the door to it.
     ...(may(session, "settings.manage")
-      ? [{ href: "/admin/commissions", icon: "commission" as const, label: "Commission" }]
+      ? [
+          { href: "/admin/commissions", icon: "commission" as const, label: "Commission" },
+          { href: "/admin/payouts", icon: "payouts" as const, label: "Payouts" },
+        ]
       : []),
     { href: "/admin/team", icon: "team", label: "Team" },
+    { href: "/admin/activity", icon: "activity", label: "Activity log" },
     // The main administrator only: setting a password is becoming that
     // person, so no staff role grants it.
     ...(!session.access

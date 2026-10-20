@@ -121,6 +121,8 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
       email_confirm: true,
     });
     if (error) return { error: error.message };
+    const { ownersChanged } = await import("@/lib/accounts");
+    ownersChanged();
     await setSessionCookie({ ...session, email });
     return { ok: `Done — your login email is now ${email}. Use it with your current password from now on.` };
   }

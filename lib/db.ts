@@ -40,6 +40,8 @@ import type {
   SupplyPurchase,
 } from "./types";
 
+import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
+
 export interface DB {
   /** Field-level edits per product id (price, stock, hidden, …). */
   productOverrides: Record<string, Partial<Product>>;
@@ -84,6 +86,13 @@ export interface DB {
   stories?: ProductStory[];
   /** Reviews left by real customers, newest last. */
   reviews?: ProductReview[];
+  /**
+   * Payouts, payout accounts and the activity log, for the local-dev path
+   * where Supabase isn't configured (see lib/payouts.ts, lib/activity.ts).
+   */
+  payouts?: PayoutRecord[];
+  payoutAccounts?: PayoutAccount[];
+  activity?: ActivityEntry[];
 }
 
 /**

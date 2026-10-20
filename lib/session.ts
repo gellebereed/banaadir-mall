@@ -19,6 +19,11 @@ import { SESSION_MAX_AGE_SECONDS, signSession, verifySession } from "./session-t
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
   const session = await verifySession(cookieStore.get(SESSION_COOKIE)?.value);
+  if (session && !session.access && session.role === "seller" && session.store) {
+    // Owners are re-checked too — see stillOwns in lib/accounts.ts.
+    const { stillOwns } = await import("./accounts");
+    return (await stillOwns(session.email, session.store)) ? session : null;
+  }
   if (!session?.access) return session;
   const fresh = await staffSessionFor(session.email, session.role, session.store ?? "");
   // An admin-panel staffer previewing a shop keeps the shop they picked.

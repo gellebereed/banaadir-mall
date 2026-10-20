@@ -40,6 +40,7 @@
  */
 
 import type { User } from "@supabase/supabase-js";
+import { revalidateTag, unstable_cache } from "next/cache";
 import {
   ADMIN_EMAIL,
   ADMIN_NAME,
@@ -459,6 +460,7 @@ export async function bindStoreOwner(slug: string): Promise<number> {
     });
     if (error) console.warn(`[Accounts] Could not bind ${user.email} to ${slug}:`, error.message);
   }
+  if (applicants.length) ownersChanged();
   return applicants.length;
 }
 
@@ -553,6 +555,7 @@ export async function setStoreOwner(slug: string, email: string): Promise<void> 
     app_metadata: { ...user.app_metadata, role: "seller", store: slug },
   });
   if (error) throw new Error(error.message);
+  ownersChanged();
 }
 
 /** Take a store away from this account; it signs in as a customer after. */
@@ -565,4 +568,57 @@ export async function removeStoreOwner(slug: string, email: string): Promise<voi
     app_metadata: { role: null, store: null },
   });
   if (error) throw new Error(error.message);
+  ownersChanged();
+}
+
+// ── Is this owner session still an owner? ──────────────────────────────
+
+const OWNERS_TAG = "bm:owners";
+
+/** email → store for every bound owner. Cached; refreshed on any change. */
+const cachedOwnerBindings = unstable_cache(
+  async (): Promise<Record<string, string>> => {
+    const map: Record<string, string> = {};
+    for (const user of await listAuthUsers()) {
+      const store = storeOfAuthUser(user);
+      if (store && user.email) map[user.email.toLowerCase()] = store;
+    }
+    return map;
+  },
+  ["owner-bindings"],
+  { tags: [OWNERS_TAG], revalidate: 300 },
+);
+
+/** Call after any change to who owns what. */
+export function ownersChanged(): void {
+  try {
+    revalidateTag(OWNERS_TAG);
+  } catch {
+    // Outside a request (scripts) there is nothing cached to drop.
+  }
+}
+
+/**
+ * Does this email still own this store?
+ *
+ * ── Why sign-in alone wasn't enough ──────────────────────────────────────
+ * The session cookie lasts a week. An owner who handed the store over, or
+ * whom the admin removed in Store owners, kept the dashboard until it
+ * expired. Owner sessions are now re-checked on every request, against a
+ * cached list of owners; a miss is re-checked live before anyone is
+ * signed out, so a just-changed email or binding never locks out the
+ * real owner. If Supabase can't be asked at all, the session stands —
+ * an outage must not lock every seller out of their shop.
+ */
+export async function stillOwns(email: string, store: string): Promise<boolean> {
+  if (!accountsEnabled()) return true;
+  const clean = email.trim().toLowerCase();
+  try {
+    if ((await cachedOwnerBindings())[clean] === store) return true;
+    const user = await findAuthUser(clean);
+    return storeOfAuthUser(user) === store;
+  } catch (err) {
+    console.warn("[Accounts] owner check failed; keeping the session:", err);
+    return true;
+  }
 }

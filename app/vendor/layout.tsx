@@ -156,8 +156,15 @@ export default async function VendorLayout({
           { href: "/vendor/flash", icon: "flash" as const, label: "Flash deals" },
         ]
       : []),
+    // Money: the owner, and staff trusted with costs & profit.
+    ...(!session.access || may(session, "costs.view")
+      ? [{ href: "/vendor/payouts", icon: "payouts" as const, label: "Payouts" }]
+      : []),
     ...(may(session, "team.manage")
-      ? [{ href: "/vendor/team", icon: "team" as const, label: "Team" }]
+      ? [
+          { href: "/vendor/team", icon: "team" as const, label: "Team" },
+          { href: "/vendor/activity", icon: "activity" as const, label: "Activity" },
+        ]
       : []),
     ...(may(session, "settings.manage")
       ? [{ href: "/vendor/settings", icon: "settings" as const, label: "Store settings" }]

@@ -69,6 +69,19 @@ Do these in order — step 3 before step 1–2 takes the site offline.
    to their own email (My account → Password & email) — they keep their store.
    Confirm owners in `/admin/accounts` → Store owners.
 
+## Payouts, activity log & ownership transfer
+
+Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL
+editor. It adds three private tables: `payouts` (payments recorded by the
+admin), `payout_accounts` (where each store wants to be paid) and
+`activity_log` (who changed what).
+
+- Sellers: **Payouts** shows earned / paid / owed per month and where to be
+  paid; **Activity** shows who changed what in the store; **Store settings →
+  Transfer ownership** hands the store to another account.
+- Admin: **Payouts** lists what every store is owed and records payments;
+  **Activity log** covers the whole marketplace.
+
 ## Account emails (forgot password, change email)
 
 Sent by Supabase Auth — no code changes needed, only settings:

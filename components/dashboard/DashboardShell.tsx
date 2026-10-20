@@ -10,6 +10,7 @@ import {
   Compass,
   ExternalLink,
   FolderTree,
+  History,
   Images,
   KeyRound,
   Landmark,
@@ -26,6 +27,7 @@ import {
   Tag,
   UserCog,
   Users,
+  Wallet,
   X,
   Zap,
   type LucideIcon,
@@ -76,7 +78,9 @@ export type ShellIcon =
   | "marketing"
   | "discovery"
   | "commission"
-  | "accounts";
+  | "accounts"
+  | "payouts"
+  | "activity";
 
 const ICONS: Record<ShellIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -96,6 +100,8 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   discovery: Compass,
   commission: Landmark,
   accounts: KeyRound,
+  payouts: Wallet,
+  activity: History,
 };
 
 export interface ShellItem {
@@ -203,12 +209,13 @@ export default function DashboardShell({
         </aside>
 
         {/* ── Page ──────────────────────────────────────────────────── */}
-        <main className="min-w-0 flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-7">
+        {/* A div, not <main>: the root layout's <main> already wraps this. */}
+        <div className="min-w-0 flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-7">
           <div className="mx-auto max-w-6xl">
             {notice}
             {children}
           </div>
-        </main>
+        </div>
       </div>
 
       {/* ── Phone: bottom tab bar ──────────────────────────────────── */}

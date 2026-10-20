@@ -16,6 +16,7 @@ import {
   MIN_PASSWORD_LENGTH,
   setAccountPassword,
 } from "@/lib/accounts";
+import { logActivity } from "@/lib/activity";
 import { getSession } from "@/lib/session";
 
 export interface AccountActionResult {
@@ -70,6 +71,7 @@ export async function adminSetPassword(
 
   try {
     await setAccountPassword(target, password);
+    await logActivity("platform", "account.password", `Set a new password for ${target}`, target);
     return { ok: `Password updated for ${target}. Their old password no longer works.` };
   } catch (err) {
     return { error: explain(err, "Could not update the password.") };
@@ -91,6 +93,7 @@ export async function adminCreateResetLink(email: string): Promise<AccountAction
 
   try {
     const link = await createResetLink(target, origin);
+    await logActivity("platform", "account.reset_link", `Created a password reset link for ${target}`, target);
     return { ok: "Reset link created. It works once.", link };
   } catch (err) {
     return { error: explain(err, "Could not create a reset link.") };
@@ -113,6 +116,7 @@ export async function adminSetStoreOwner(
     return { error: explain(err, "Could not set the owner.") };
   }
   revalidatePath("/admin/accounts");
+  await logActivity(slug, "store.owner.set", `Admin made ${clean} an owner of this store`, clean);
   return { ok: `${clean} now owns this store. They'll land in its dashboard at their next sign-in.` };
 }
 
@@ -130,5 +134,6 @@ export async function adminRemoveStoreOwner(
     return { error: explain(err, "Could not remove the owner.") };
   }
   revalidatePath("/admin/accounts");
+  await logActivity(slug, "store.owner.remove", `Admin removed ${cleanEmail(email)} as owner`, cleanEmail(email));
   return { ok: `${cleanEmail(email)} is no longer an owner of this store.` };
 }
