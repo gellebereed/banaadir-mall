@@ -13,6 +13,7 @@ import { redirect } from "next/navigation";
 import { MIN_PASSWORD_LENGTH, resolveSession } from "@/lib/accounts";
 import { homeForRole } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session";
+import { isRecoverySession } from "@/lib/supabase/recovery";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
@@ -25,8 +26,8 @@ export async function resetPassword(_prev: ResetState, formData: FormData): Prom
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
 
-  if (!tokenHash || !isSupabaseConfigured()) {
-    return { error: "This reset link is not valid. Ask the marketplace admin for a new one." };
+  if (!isSupabaseConfigured()) {
+    return { error: "This reset link is not valid. Request a new one." };
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { error: `Use at least ${MIN_PASSWORD_LENGTH} characters.` };
@@ -35,11 +36,22 @@ export async function resetPassword(_prev: ResetState, formData: FormData): Prom
     return { error: "The two passwords do not match." };
   }
 
+  /*
+   * Two kinds of link land here:
+   *   · ?token_hash=…  — the admin's link, or an emailed one when the
+   *     Supabase template uses {{ .TokenHash }}. Redeemed now, on submit.
+   *   · no token       — Supabase's default email link, already exchanged
+   *     for a short recovery session by /api/auth/callback.
+   */
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
+  const { data, error } = tokenHash
+    ? await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash })
+    : (await isRecoverySession(supabase))
+      ? await supabase.auth.getUser()
+      : { data: { user: null }, error: new Error("not a recovery session") };
   if (error || !data.user?.email) {
     return {
-      error: "This reset link has expired or has already been used. Ask the marketplace admin for a new one.",
+      error: "This reset link has expired or has already been used. Request a new one from \"Forgot password\".",
     };
   }
 

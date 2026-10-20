@@ -66,6 +66,26 @@ Do these in order — step 3 before step 1–2 takes the site offline.
 6. Built-in `<store>@seller.banaadirmall.com` logins: set each one's password
    (or send a reset link) from `/admin/accounts`.
 
+## Account emails (forgot password, change email)
+
+Sent by Supabase Auth — no code changes needed, only settings:
+
+1. **Supabase → Authentication → URL Configuration:** set *Site URL* to your
+   live address and add `https://<your-site>/api/auth/**` to *Redirect URLs*.
+2. **Supabase → Authentication → SMTP Settings:** connect a mail service
+   (e.g. Resend, Brevo, SendGrid). Supabase's built-in sender only delivers
+   to your own team members' addresses and a few emails an hour — real
+   customers and sellers would never receive their links.
+3. *(Recommended)* **Authentication → Email Templates**, so links work even
+   when opened in a different app or browser than the one that asked:
+   - Reset Password: `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}`
+   - Change Email Address:
+     `{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=email_change&next=/account/security?email=confirmed`
+
+Everyone manages their own login at `/account/security` (linked from the
+account menu and both dashboards). Staff and the admin can change their
+password there but not their email — see `app/account/security/actions.ts`.
+
 ## Artwork sizes (banners & campaign tiles)
 
 These are the **exact frames the storefront renders**, measured in the

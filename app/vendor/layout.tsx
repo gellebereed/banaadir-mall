@@ -211,6 +211,8 @@ export default async function VendorLayout({
               ...(may(session, "settings.manage")
                 ? [{ href: "/vendor/settings", icon: "⚙️", label: "Settings" }]
                 : []),
+              // Everyone's own login — owner and staff alike.
+              { href: "/account/security", icon: "🔑", label: "My account" },
             ]}
           />
         </div>

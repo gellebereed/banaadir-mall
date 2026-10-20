@@ -61,6 +61,7 @@ export default async function AdminLayout({
               ...(!session.access
                 ? [{ href: "/admin/accounts", icon: "🔑", label: "Accounts" }]
                 : []),
+              { href: "/account/security", icon: "👤", label: "My account" },
             ]}
           />
         </div>

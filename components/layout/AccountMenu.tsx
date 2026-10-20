@@ -109,6 +109,13 @@ export default function AccountMenu({
               <span aria-hidden>👤</span> My account
             </Link>
             <Link
+              href="/account/security"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition hover:bg-sand-50"
+            >
+              <span aria-hidden>🔑</span> Password &amp; email
+            </Link>
+            <Link
               href="/track"
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition hover:bg-sand-50"
