@@ -11,6 +11,7 @@ import Header from "@/components/layout/Header";
 import StoreSiteHeader, { StoreSiteFooter } from "@/components/store-site/StoreSiteHeader";
 import { PATHNAME_HEADER, storeSlugFromPath } from "@/lib/store-site";
 import Footer from "@/components/layout/Footer";
+import ShopChrome from "@/components/layout/ShopChrome";
 import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
@@ -94,6 +95,7 @@ export default async function RootLayout({
           {onStoreSite ? (
             <StoreSiteHeader store={siteStore!} />
           ) : (
+            <ShopChrome>
             <Header
               announcement={marketing.announcement}
               announcementBgColor={marketing.announcementBgColor}
@@ -104,6 +106,7 @@ export default async function RootLayout({
               storeName={store?.name}
               categories={categories}
             />
+            </ShopChrome>
           )}
           {/*
             Shown only to the account an invitation was addressed to, so
@@ -111,9 +114,11 @@ export default async function RootLayout({
             than only through a link somebody remembered to send you.
             Renders nothing for everyone else — see the component.
           */}
-          <Suspense fallback={null}>
-            <InvitationBanner />
-          </Suspense>
+          <ShopChrome>
+            <Suspense fallback={null}>
+              <InvitationBanner />
+            </Suspense>
+          </ShopChrome>
           {/* pb-20 keeps content clear of the mobile bottom nav, which a
               store site does not have — the shop's own footer is the end
               of the page. */}
@@ -122,19 +127,22 @@ export default async function RootLayout({
           {onStoreSite ? (
             <StoreSiteFooter store={siteStore!} />
           ) : (
-            <>
+            // Dashboards draw their own frame — see ShopChrome.
+            <ShopChrome>
               <Footer session={session} />
               <BottomNav />
-            </>
+            </ShopChrome>
           )}
           {/* Cart / wishlist confirmations */}
           <Toaster />
           {/* The timed ask — see components/reco/PromptHost. Renders
               nothing until the engine decides there is a question worth
               the interruption, and never on checkout. */}
-          <Suspense fallback={null}>
-            <PromptHost />
-          </Suspense>
+          <ShopChrome>
+            <Suspense fallback={null}>
+              <PromptHost />
+            </Suspense>
+          </ShopChrome>
           </RecoProvider>
         </CartProvider>
       </body>

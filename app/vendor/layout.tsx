@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import DashboardShell, { type ShellItem } from "@/components/dashboard/DashboardShell";
 import OrderNotifications from "@/components/dashboard/OrderNotifications";
 import StoreSwitcher, { type SwitchableStore } from "@/components/dashboard/StoreSwitcher";
 import { getAllStores, getEmployeeMemberships, getOrdersByStore, getStore } from "@/lib/api";
@@ -117,111 +117,83 @@ export default async function VendorLayout({
     );
   }
 
+  const subtitle = session.access
+    ? `Team member · ${session.access}${switchable.length > 1 ? ` · ${switchable.length} stores` : ""}`
+    : session.role === "admin"
+      ? "Admin preview"
+      : "Store owner";
+
+  /*
+   * Only the sections this person can actually open.
+   *
+   * Every page behind these enforces its own access, so showing them all
+   * was never a security hole — it was worse than that in daily use: an
+   * employee clicking Team, Settings and Promotions in turn and being
+   * bounced back to the dashboard each time, with nothing saying why.
+   *
+   * `tab` marks the four the phone's bottom bar shows; the rest are one
+   * tap away under "More".
+   */
+  const items: ShellItem[] = [
+    { href: "/vendor", icon: "dashboard", label: "Dashboard", exact: true, tab: true },
+    ...(may(session, "orders.view")
+      ? [{ href: "/vendor/orders", icon: "orders" as const, label: "Orders", badge: newOrders.length, tab: true }]
+      : []),
+    ...(may(session, "products.view")
+      ? [{ href: "/vendor/products", icon: "products" as const, label: "Products", tab: true }]
+      : []),
+    // Only for shops that have switched the counter on. Everyone else never
+    // learns it exists, which is the point of a toggle.
+    ...(store?.pos?.enabled && may(session, "products.edit")
+      ? [{ href: "/vendor/pos", icon: "pos" as const, label: "Counter", tab: true }]
+      : []),
+    ...(may(session, "photos.manage")
+      ? [{ href: "/vendor/photos", icon: "photos" as const, label: "Bulk photos" }]
+      : []),
+    ...(may(session, "promotions.manage")
+      ? [
+          { href: "/vendor/promotions", icon: "promotions" as const, label: "Promotions", tab: !store?.pos?.enabled },
+          { href: "/vendor/flash", icon: "flash" as const, label: "Flash deals" },
+        ]
+      : []),
+    ...(may(session, "team.manage")
+      ? [{ href: "/vendor/team", icon: "team" as const, label: "Team" }]
+      : []),
+    ...(may(session, "settings.manage")
+      ? [{ href: "/vendor/settings", icon: "settings" as const, label: "Store settings" }]
+      : []),
+    // Everyone's own login — owner and staff alike.
+    { href: "/account/security", icon: "account", label: "My account" },
+  ];
+
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row">
-      <aside className="lg:w-56 lg:shrink-0">
-        <div className="rounded-2xl bg-ocean-950 p-3 lg:sticky lg:top-40 lg:flex lg:min-h-[70vh] lg:flex-col">
-          {/*
-            ONE header row for both breakpoints — the logo and role hide on
-            mobile, the row itself does not.
-
-            This used to be two rows (a desktop one and a mobile one), which
-            put two live OrderNotifications on the page. `supabase.channel()`
-            returns the EXISTING channel for a topic, and subscribing to the
-            same channel twice throws — which took the whole dashboard down
-            with a client-side exception. Keep this to a single instance.
-          */}
-          <div className="mb-2 flex items-center gap-2 px-1 pt-1 lg:px-3 lg:pt-2">
-            {store?.logo ? (
-              <Image
-                src={store.logo}
-                alt=""
-                width={28}
-                height={28}
-                className="hidden h-7 w-7 shrink-0 rounded-lg object-cover lg:block"
-              />
-            ) : (
-              <span className="hidden text-xl lg:inline">{store?.icon ?? "🏪"}</span>
-            )}
-            <div className="min-w-0 flex-1">
-              {switchable.length > 1 ? (
-                <StoreSwitcher
-                  current={
-                    store
-                      ? { slug: store.slug, name: store.name, icon: store.icon, logo: store.logo }
-                      : undefined
-                  }
-                  stores={switchable}
-                />
-              ) : (
-                <p className="truncate font-display text-sm font-extrabold text-white">
-                  {store?.name ?? "My Store"}
-                </p>
-              )}
-              <p className="hidden truncate text-[10px] text-ocean-300 lg:block">
-                {session.access
-                  ? `Employee · ${session.access}${switchable.length > 1 ? ` · ${switchable.length} stores` : ""}`
-                  : session.role === "admin"
-                    ? "Admin preview"
-                    : "Store owner"}
-              </p>
-            </div>
-            <OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />
-          </div>
-          {/*
-            Only the tabs this person can actually open.
-
-            Every page behind these enforces its own access, so showing them
-            all was never a security hole — it was worse than that in daily
-            use: an employee clicking Team, Settings and Promotions in turn
-            and being bounced back to the dashboard each time, with nothing
-            saying why.
-          */}
-          <DashboardSidebar
-            items={[
-              { href: "/vendor", icon: "📊", label: "Dashboard", exact: true },
-              ...(may(session, "products.view")
-                ? [{ href: "/vendor/products", icon: "📦", label: "Products" }]
-                : []),
-              ...(may(session, "photos.manage")
-                ? [{ href: "/vendor/photos", icon: "📸", label: "Bulk Photos" }]
-                : []),
-              // Only for shops that have switched the counter on. Everyone
-              // else never learns it exists, which is the point of a toggle.
-              ...(store?.pos?.enabled && may(session, "products.edit")
-                ? [{ href: "/vendor/pos", icon: "🧾", label: "Counter" }]
-                : []),
-              ...(may(session, "orders.view")
-                ? [
-                  {
-                    href: "/vendor/orders",
-                    icon: "🧾",
-                    label: "Orders",
-                    badge: newOrders.length,
-                  },
-                ]
-                : []),
-              ...(may(session, "promotions.manage")
-                ? [
-                  { href: "/vendor/promotions", icon: "🏷️", label: "Promotions" },
-                  { href: "/vendor/flash", icon: "⚡", label: "Flash Deals" },
-                ]
-                : []),
-              ...(may(session, "team.manage")
-                ? [{ href: "/vendor/team", icon: "👥", label: "Team" }]
-                : []),
-              ...(may(session, "settings.manage")
-                ? [{ href: "/vendor/settings", icon: "⚙️", label: "Settings" }]
-                : []),
-              // Everyone's own login — owner and staff alike.
-              { href: "/account/security", icon: "🔑", label: "My account" },
-            ]}
+    <DashboardShell
+      brand={
+        switchable.length > 1 ? (
+          <StoreSwitcher
+            current={store ? { slug: store.slug, name: store.name, icon: store.icon, logo: store.logo } : undefined}
+            stores={switchable}
           />
-        </div>
-      </aside>
-      <div className="min-w-0 flex-1">
-        {/* Owners still on a retired generated login — see lib/accounts.ts. */}
-        {!session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed() && (
+        ) : (
+          <span className="flex min-w-0 items-center gap-2">
+            {store?.logo ? (
+              <Image src={store.logo} alt="" width={24} height={24} className="h-6 w-6 shrink-0 rounded-md object-cover" />
+            ) : (
+              <span className="text-lg">{store?.icon ?? "🏪"}</span>
+            )}
+            <span className="truncate font-display text-sm font-extrabold">{store?.name ?? "My store"}</span>
+          </span>
+        )
+      }
+      subtitle={subtitle}
+      // ONE bell for every breakpoint — see the note in DashboardShell.
+      bell={<OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />}
+      items={items}
+      viewStoreHref={store ? `/store/${store.slug}` : undefined}
+      user={{ name: session.name, email: session.email, role: subtitle }}
+      notice={
+        // Owners still on a retired generated login — see lib/accounts.ts.
+        !session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed() ? (
           <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-mango-200 bg-mango-50 p-4 text-sm text-mango-900 sm:flex-row sm:items-center sm:justify-between">
             <p>
               <strong>Switch to your own email.</strong> You&apos;re signed in with{" "}
@@ -235,9 +207,10 @@ export default async function VendorLayout({
               Change my email
             </Link>
           </div>
-        )}
-        {children}
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      {children}
+    </DashboardShell>
   );
 }

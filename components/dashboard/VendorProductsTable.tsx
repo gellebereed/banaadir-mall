@@ -471,7 +471,7 @@ export default function VendorProductsTable({
 
       {/* ── Bulk bar ───────────────────────────────────────────────── */}
       {mayEdit && selectedIds.length > 0 && (
-        <div className="sticky top-20 z-30 space-y-3 rounded-2xl bg-ocean-950 p-3.5 text-white shadow-xl ring-1 ring-white/10 animate-fade-up">
+        <div className="sticky top-16 z-30 space-y-3 rounded-2xl bg-ocean-950 p-3.5 text-white shadow-xl ring-1 ring-white/10 animate-fade-up">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-ocean-800 px-1.5 font-mono text-xs font-bold text-mango-400">

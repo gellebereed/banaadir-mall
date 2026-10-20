@@ -132,7 +132,7 @@ export default function PromptSettingsForm({ settings }: { settings: RecoSetting
         </div>
       </section>
 
-      <div className="sticky bottom-4 flex justify-end">
+      <div className="sticky bottom-20 flex justify-end lg:bottom-4">
         <SubmitButton>Save prompt settings</SubmitButton>
       </div>
     </SafeForm>

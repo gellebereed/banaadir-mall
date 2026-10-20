@@ -170,7 +170,7 @@ export default function ShelfSettingsForm({
         );
       })}
 
-      <div className="sticky bottom-4 flex justify-end">
+      <div className="sticky bottom-20 flex justify-end lg:bottom-4">
         <SubmitButton>Save engine settings</SubmitButton>
       </div>
     </SafeForm>

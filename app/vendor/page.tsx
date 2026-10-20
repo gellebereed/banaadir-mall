@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import SetupChecklist from "@/components/dashboard/SetupChecklist";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import {
   AttentionPanel,
@@ -143,9 +144,6 @@ export default async function VendorDashboardPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RangeFilter basePath="/vendor" range={range} tab={tab} />
-          <Link href={`/store/${storeSlug}`} className="btn-secondary !px-4 !py-2 text-sm">
-            View store
-          </Link>
           <Link href="/vendor/products/new" className="btn-primary !px-4 !py-2 text-sm">
             + Add product
           </Link>
@@ -153,6 +151,58 @@ export default async function VendorDashboardPage({
       </div>
 
       <AttentionPanel items={attention} />
+
+
+      {/* Owners only: staff can't do most of these steps. */}
+      {!session.access && store && (
+        <SetupChecklist
+          storeSlug={storeSlug}
+          steps={[
+            {
+              key: "logo",
+              label: "Add your logo",
+              hint: "Shown on your store page, product pages and the store list.",
+              href: "/vendor/settings",
+              done: Boolean(store.logo),
+            },
+            {
+              key: "whatsapp",
+              label: "Add your WhatsApp number",
+              hint: "New orders are sent here — without it they go to the marketplace.",
+              href: "/vendor/settings",
+              done: Boolean(store.whatsapp),
+            },
+            {
+              key: "banner",
+              label: "Add a banner",
+              hint: "The first thing customers see on your store page.",
+              href: "/vendor/settings",
+              done: Boolean(store.banner),
+            },
+            {
+              key: "product",
+              label: "Add your first product",
+              hint: "Or import your whole catalogue from a spreadsheet.",
+              href: "/vendor/products/new",
+              done: products.length > 0,
+            },
+            {
+              key: "photos",
+              label: "Put photos on your products",
+              hint: `${products.filter((p) => !p.images?.length).length} product(s) still have none — they sell far better with them.`,
+              href: "/vendor/photos",
+              done: products.length > 0 && products.every((p) => (p.images?.length ?? 0) > 0),
+            },
+            {
+              key: "order",
+              label: "Get your first order",
+              hint: "Share your store link on WhatsApp, Facebook and TikTok.",
+              href: `/store/${storeSlug}`,
+              done: orders.length > 0,
+            },
+          ]}
+        />
+      )}
 
       {/* ── Headline numbers ─────────────────────────────────────── */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
