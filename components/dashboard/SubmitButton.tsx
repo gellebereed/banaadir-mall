@@ -1,6 +1,8 @@
 "use client";
 
+import { useContext } from "react";
 import { useFormStatus } from "react-dom";
+import { SafeFormPendingContext } from "./SafeForm";
 
 /**
  * Submit button that disables itself and says "Saving…" while its form's
@@ -20,7 +22,10 @@ export default function SubmitButton({
   pendingLabel?: string;
   className?: string;
 }) {
-  const { pending } = useFormStatus();
+  const { pending: actionPending } = useFormStatus();
+  // SafeForm submits through a transition, which useFormStatus can't see.
+  const safeFormPending = useContext(SafeFormPendingContext);
+  const pending = actionPending || safeFormPending;
 
   return (
     <button

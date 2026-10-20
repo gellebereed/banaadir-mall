@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
@@ -9,18 +9,59 @@ import { sellableUnits } from "@/lib/odoo/mapping";
 import { hasVariants, totalStock } from "@/lib/product-utils";
 import type { Product } from "@/lib/types";
 
-function codedUnits(product: Product): number {
-  return sellableUnits(product).filter((u) => u.barcode).length;
-}
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ *  MY PRODUCTS — find a product fast, fix it in place, act on many at once.
+ * ─────────────────────────────────────────────────────────────────────────
+ * ── What changed and why ─────────────────────────────────────────────────
+ * - Health at a glance: four tiles (live, low stock, out of stock, no
+ *   photos) that double as filters — the question "what needs me today?"
+ *   is one tap, not a scan of 34 pages.
+ * - Price and stock are edited IN the row. Changing a price used to mean
+ *   open the editor, scroll, save, come back, find your place again.
+ * - Bulk price/stock take their value from an input in the bulk bar, not
+ *   from a browser prompt() that blocked the page and lost focus.
+ * - Bulk stock skips products with variants (and says so). It used to
+ *   write the product-level number, which variant products ignore — the
+ *   seller saw "Successfully updated" and nothing changed.
+ * - Phones get cards instead of a sideways-scrolling table; a grid view
+ *   shows photos large, for catalogues that are mostly about the images.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
 
-const TABS: { id: string; label: string; icon: string }[] = [
-  { id: "all", label: "All Products", icon: "📦" },
-  { id: "live", label: "Live", icon: "🟢" },
-  { id: "hidden", label: "Hidden", icon: "👁️" },
-  { id: "featured", label: "Favorites / Featured", icon: "⭐" },
-  { id: "low_stock", label: "Low Stock", icon: "⚠" },
-  { id: "no_photos", label: "No Photos", icon: "📸" },
+const LOW_STOCK = 15;
+
+type TabId = "all" | "live" | "hidden" | "featured" | "low_stock" | "out_of_stock" | "no_photos";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "live", label: "Live" },
+  { id: "hidden", label: "Hidden" },
+  { id: "featured", label: "Featured" },
+  { id: "low_stock", label: "Low stock" },
+  { id: "out_of_stock", label: "Out of stock" },
+  { id: "no_photos", label: "No photos" },
 ];
+
+function matchesTab(p: Product, tab: TabId): boolean {
+  const stock = totalStock(p);
+  switch (tab) {
+    case "live":
+      return !p.hidden;
+    case "hidden":
+      return Boolean(p.hidden);
+    case "featured":
+      return Boolean(p.featured);
+    case "low_stock":
+      return stock > 0 && stock <= LOW_STOCK;
+    case "out_of_stock":
+      return stock <= 0;
+    case "no_photos":
+      return (p.images?.length ?? 0) === 0;
+    default:
+      return true;
+  }
+}
 
 /** Rows shown at once. An imported catalogue is thousands of products. */
 const PAGE_SIZE = 50;
@@ -54,6 +95,12 @@ function timeAgo(iso?: string): string | null {
   return new Date(then).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+function hasBarcode(product: Product): boolean {
+  return sellableUnits(product).some((u) => u.barcode);
+}
+
+const VIEW_KEY = "banaadir_products_view";
+
 export default function VendorProductsTable({
   products,
   discounts,
@@ -67,12 +114,42 @@ export default function VendorProductsTable({
   categoryNames?: Record<string, string>;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState<TabId>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("default");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [page, setPage] = useState(1);
+  const [view, setView] = useState<"list" | "grid">("list");
+  const [bulkPrice, setBulkPrice] = useState("");
+  const [bulkStock, setBulkStock] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Remembered per browser; a convenience, so failures are ignored.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(VIEW_KEY) === "grid") setView("grid");
+    } catch {}
+  }, []);
+  function changeView(next: "list" | "grid") {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {}
+  }
+
+  // "/" focuses search, as in most admin tools.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (e.key !== "/" || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   /*
    * CATEGORY is the filter this list was missing.
@@ -95,40 +172,27 @@ export default function VendorProductsTable({
   }, [products, categoryNames]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
-  // Subcategories present in dataset
-  const subcategories = Array.from(
-    new Set(products.map((p) => p.subcategory).filter(Boolean)),
-  ) as string[];
+  const subcategories = useMemo(
+    () => Array.from(new Set(products.map((p) => p.subcategory).filter(Boolean))) as string[],
+    [products],
+  );
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
 
-  const countByTab = (tabId: string) => {
-    if (tabId === "all") return products.length;
-    if (tabId === "live") return products.filter((p) => !p.hidden).length;
-    if (tabId === "hidden") return products.filter((p) => p.hidden).length;
-    if (tabId === "featured") return products.filter((p) => p.featured).length;
-    if (tabId === "low_stock") return products.filter((p) => totalStock(p) <= 15).length;
-    if (tabId === "no_photos") return products.filter((p) => (p.images?.length ?? 0) === 0).length;
-    return 0;
-  };
+  const tabCounts = useMemo(
+    () => Object.fromEntries(TABS.map((t) => [t.id, products.filter((p) => matchesTab(p, t.id)).length])),
+    [products],
+  ) as Record<TabId, number>;
 
-  // Filter products
   const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     const list = products.filter((p) => {
-      // 1. Tab filter
-      if (activeTab === "live" && p.hidden) return false;
-      if (activeTab === "hidden" && !p.hidden) return false;
-      if (activeTab === "featured" && !p.featured) return false;
-      if (activeTab === "low_stock" && totalStock(p) > 15) return false;
-      if (activeTab === "no_photos" && (p.images?.length ?? 0) > 0) return false;
-
-      // 2. Category / subcategory
+      if (!matchesTab(p, activeTab)) return false;
       if (selectedCategory !== "all" && p.category !== selectedCategory) return false;
       if (selectedSubcategory !== "all" && p.subcategory !== selectedSubcategory) return false;
 
-      // 3. Search query — matched against every code a seller might type,
-      // including the variant codes, which is what is on a scanner label.
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      // Matched against every code a seller might type, including the
+      // variant codes, which is what is on a scanner label.
+      if (q) {
         return (
           p.name.toLowerCase().includes(q) ||
           p.slug.toLowerCase().includes(q) ||
@@ -149,46 +213,50 @@ export default function VendorProductsTable({
     if (sortBy === "price_desc") return [...list].sort((a, b) => b.price - a.price);
     if (sortBy === "stock_asc") return [...list].sort((a, b) => totalStock(a) - totalStock(b));
     if (sortBy === "stock_desc") return [...list].sort((a, b) => totalStock(b) - totalStock(a));
+    if (sortBy === "sold_desc") return [...list].sort((a, b) => b.sold - a.sold);
     if (sortBy === "name_asc") return [...list].sort((a, b) => a.name.localeCompare(b.name));
     if (sortBy === "oldest") return [...list].sort((a, b) => editedAt(a) - editedAt(b));
 
     /*
-     * Default: most recently edited first.
-     *
-     * The list used to arrive in whatever order the database returned,
-     * which after a 1,688-row import is effectively arbitrary. The product
-     * you just changed is the one you are most likely to want next — to
-     * check it, to fix a typo, to add its photo — and hunting for it
-     * through 34 pages is not a search anyone should have to run.
+     * Default: most recently edited first. The product you just changed is
+     * the one you are most likely to want next — to check it, to fix a
+     * typo, to add its photo.
      */
     return [...list].sort((a, b) => editedAt(b) - editedAt(a));
   }, [products, activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
 
   /*
-   * PAGINATION.
-   *
-   * Rendering 1,688 rows put ~20,000 DOM nodes on the page: every keystroke
-   * in the search box re-rendered all of them, and the browser scrolled
-   * like treacle. The batch toolbar still works across the WHOLE filtered
-   * set, not just this page — see "select all matching" below — so paging
-   * costs nothing operationally.
+   * PAGINATION. Rendering 1,688 rows put ~20,000 DOM nodes on the page.
+   * The bulk bar still works across the WHOLE filtered set — see "select
+   * all matching" — so paging costs nothing operationally.
    */
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  // Any change to what is being filtered puts you back on page one —
-  // otherwise a search returning 3 results while you sit on page 12 shows
-  // an empty table.
+  // Any change to what is being filtered puts you back on page one.
   useEffect(() => {
     setPage(1);
   }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
 
-  // Selection handlers. "All" means every row that matches the filters,
-  // across pages — the checkbox in the header covers this page only.
+  const filtersActive =
+    activeTab !== "all" ||
+    selectedCategory !== "all" ||
+    selectedSubcategory !== "all" ||
+    searchQuery.trim() !== "";
+
+  function clearFilters() {
+    setActiveTab("all");
+    setSelectedCategory("all");
+    setSelectedSubcategory("all");
+    setSearchQuery("");
+  }
+
+  // ── Selection ─────────────────────────────────────────────────────────
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allFilteredIds = filtered.map((p) => p.id);
   const visibleIds = visible.map((p) => p.id);
-  const isAllSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const isAllSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSet.has(id));
   const selectedBeyondPage = selectedIds.length > visibleIds.length;
 
   function toggleSelectAll() {
@@ -203,515 +271,870 @@ export default function VendorProductsTable({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   }
 
-  // Batch actions
-  function handleBatchAction(action: "hide" | "show" | "feature" | "unfeature" | "delete" | "price" | "stock") {
-    if (selectedIds.length === 0) return;
+  // Leaving the selection leaves any half-armed delete.
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [selectedIds]);
 
-    let value: number | undefined = undefined;
-
-    if (action === "price") {
-      const input = prompt(`Enter new price in USD for ${selectedIds.length} selected products:`);
-      if (input === null) return;
-      const parsed = parseFloat(input);
-      if (isNaN(parsed) || parsed < 0) {
-        alert("Please enter a valid positive price.");
-        return;
-      }
-      value = parsed;
-    }
-
+  // ── Bulk actions ──────────────────────────────────────────────────────
+  function runBatch(
+    action: "hide" | "show" | "feature" | "unfeature" | "delete" | "price" | "stock",
+    value?: number,
+  ) {
+    let ids = selectedIds;
+    let skipped = 0;
     if (action === "stock") {
-      const input = prompt(`Enter new stock quantity for ${selectedIds.length} selected products:`);
-      if (input === null) return;
-      const parsed = parseInt(input, 10);
-      if (isNaN(parsed) || parsed < 0) {
-        alert("Please enter a valid non-negative integer for stock.");
-        return;
-      }
-      value = parsed;
-    }
-
-    if (action === "delete") {
-      if (!confirm(`Are you sure you want to permanently delete ${selectedIds.length} selected products?`)) {
+      const byId = new Map(products.map((p) => [p.id, p]));
+      const simple = ids.filter((id) => !hasVariants(byId.get(id)!));
+      skipped = ids.length - simple.length;
+      ids = simple;
+      if (ids.length === 0) {
+        setStatusMessage({
+          ok: false,
+          text: "All selected products have variants — set their stock per variant in the editor.",
+        });
         return;
       }
     }
 
     startTransition(async () => {
-      const res = await batchUpdateProducts(selectedIds, action, value);
-      setStatusMessage({ ok: res.ok, text: res.message });
-      if (res.ok) {
-        if (action === "delete") setSelectedIds([]);
-      }
+      const res = await batchUpdateProducts(ids, action, value);
+      setStatusMessage({
+        ok: res.ok,
+        text:
+          res.message +
+          (skipped
+            ? ` ${skipped} product${skipped === 1 ? " has" : "s have"} variants and ${
+                skipped === 1 ? "was" : "were"
+              } skipped — set stock per variant in the editor.`
+            : ""),
+      });
+      if (res.ok && action === "delete") setSelectedIds([]);
+      if (res.ok && action === "price") setBulkPrice("");
+      if (res.ok && action === "stock") setBulkStock("");
     });
   }
 
+  const bulkPriceValue = Number(bulkPrice);
+  const bulkStockValue = Number(bulkStock);
+  const bulkPriceValid = bulkPrice.trim() !== "" && Number.isFinite(bulkPriceValue) && bulkPriceValue > 0;
+  const bulkStockValid =
+    bulkStock.trim() !== "" && Number.isInteger(bulkStockValue) && bulkStockValue >= 0;
+
+  // ── Health tiles ──────────────────────────────────────────────────────
+  const tiles: { tab: TabId; label: string; value: number; tone: string; hint: string }[] = [
+    { tab: "live", label: "Live in shop", value: tabCounts.live, tone: "text-emerald-700", hint: `${tabCounts.hidden} hidden` },
+    { tab: "low_stock", label: "Low stock", value: tabCounts.low_stock, tone: "text-mango-700", hint: `${LOW_STOCK} or fewer left` },
+    { tab: "out_of_stock", label: "Out of stock", value: tabCounts.out_of_stock, tone: "text-coral-600", hint: "Can't be bought" },
+    { tab: "no_photos", label: "No photos", value: tabCounts.no_photos, tone: "text-slate-700", hint: "Sell far worse" },
+  ];
+
   return (
     <div className="mt-5 space-y-4">
-      {/* ── Status Tabs Bar ────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-1.5 rounded-2xl bg-sand-100/70 p-1.5 border border-sand-200">
-          {TABS.map((tab) => {
-            const count = countByTab(tab.id);
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all ${
-                  isActive
-                    ? "bg-white text-ocean-950 shadow-xs ring-1 ring-black/5"
-                    : "text-slate-600 hover:bg-white/60 hover:text-ocean-900"
-                }`}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-                <span
-                  className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] ${
-                    isActive ? "bg-ocean-100 text-ocean-800 font-bold" : "bg-sand-200 text-slate-600"
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+      {/* ── Health tiles ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tiles.map((tile) => {
+          const active = activeTab === tile.tab;
+          return (
+            <button
+              key={tile.tab}
+              type="button"
+              onClick={() => setActiveTab(active ? "all" : tile.tab)}
+              aria-pressed={active}
+              className={`card p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                active ? "!border-ocean-500 ring-2 ring-ocean-200" : ""
+              }`}
+            >
+              <p className="text-xs font-semibold text-slate-500">{tile.label}</p>
+              <p className={`mt-1 font-display text-2xl font-extrabold ${tile.value ? tile.tone : "text-slate-300"}`}>
+                {tile.value.toLocaleString()}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">{tile.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Search & filters ───────────────────────────────────────── */}
+      <div className="card space-y-3 p-3 sm:p-4">
+        <div className="relative">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+          <input
+            ref={searchRef}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name, SKU or barcode…"
+            aria-label="Search products"
+            className="input !pl-11 !pr-12"
+          />
+          <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-sand-200 bg-sand-50 px-1.5 text-[10px] font-semibold text-slate-400 sm:block">
+            /
+          </kbd>
         </div>
 
-        {/* ── Controls: Search, Category, Subcategory & Sort ───────── */}
-        <div className="flex flex-wrap items-center gap-2">
-          {categories.length > 1 && (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5" role="tablist" aria-label="Filter by status">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                    isActive
+                      ? "bg-ocean-900 text-white"
+                      : "bg-sand-100 text-slate-600 hover:bg-sand-200 hover:text-ocean-900"
+                  }`}
+                >
+                  {tab.label}
+                  <span
+                    className={`rounded-full px-1.5 text-[10px] ${
+                      isActive ? "bg-white/20 text-white" : "bg-white text-slate-500"
+                    }`}
+                  >
+                    {tabCounts[tab.id]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {categories.length > 1 && (
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                aria-label="Category"
+                className="max-w-52 rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
+              >
+                <option value="all">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.slug} value={category.slug}>
+                    {category.name} ({category.count})
+                  </option>
+                ))}
+              </select>
+            )}
+            {subcategories.length > 0 && (
+              <select
+                value={selectedSubcategory}
+                onChange={(e) => setSelectedSubcategory(e.target.value)}
+                aria-label="Subcategory"
+                className="max-w-44 rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
+              >
+                <option value="all">All subcategories</option>
+                {subcategories.map((sub) => (
+                  <option key={sub} value={sub}>
+                    {sub}
+                  </option>
+                ))}
+              </select>
+            )}
             <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="max-w-52 rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              aria-label="Sort"
+              className="rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
             >
-              <option value="all">All categories ({products.length})</option>
-              {categories.map((category) => (
-                <option key={category.slug} value={category.slug}>
-                  {category.name} ({category.count})
-                </option>
-              ))}
+              <option value="default">Recently edited</option>
+              <option value="oldest">Least recently edited</option>
+              <option value="sold_desc">Best selling</option>
+              <option value="name_asc">Name A–Z</option>
+              <option value="price_asc">Price: low → high</option>
+              <option value="price_desc">Price: high → low</option>
+              <option value="stock_asc">Stock: low → high</option>
+              <option value="stock_desc">Stock: high → low</option>
             </select>
-          )}
-
-          {subcategories.length > 0 && (
-            <select
-              value={selectedSubcategory}
-              onChange={(e) => setSelectedSubcategory(e.target.value)}
-              className="rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none"
-            >
-              <option value="all">All Subcategories</option>
-              {subcategories.map((sub) => (
-                <option key={sub} value={sub}>
-                  {sub}
-                </option>
+            <div className="flex rounded-xl border border-sand-200 bg-white p-0.5" role="group" aria-label="View">
+              {(["list", "grid"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => changeView(v)}
+                  aria-pressed={view === v}
+                  title={v === "list" ? "List view" : "Grid view"}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                    view === v ? "bg-ocean-900 text-white" : "text-slate-500 hover:text-ocean-900"
+                  }`}
+                >
+                  {v === "list" ? "☰" : "▦"}
+                </button>
               ))}
-            </select>
-          )}
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none"
-          >
-            <option value="default">Sort: Recently edited</option>
-            <option value="oldest">Least recently edited</option>
-            <option value="name_asc">Name: A to Z</option>
-            <option value="price_asc">Price: Low to High</option>
-            <option value="price_desc">Price: High to Low</option>
-            <option value="stock_asc">Stock: Low to High</option>
-            <option value="stock_desc">Stock: High to Low</option>
-          </select>
-
-          <div className="relative shrink-0 sm:w-60">
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search product, SKU, barcode…"
-              className="input !py-1.5 text-xs pl-8"
-            />
-            <span className="absolute left-2.5 top-2 text-xs text-slate-400">🔍</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Floating Batch Action Toolbar ──────────────────────────── */}
+      {/* ── Bulk bar ───────────────────────────────────────────────── */}
       {mayEdit && selectedIds.length > 0 && (
-        <div className="sticky top-4 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-ocean-950 p-3.5 text-white shadow-xl ring-1 ring-white/10 animate-fade-up">
-          <div className="flex items-center gap-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ocean-800 font-mono text-xs font-bold text-mango-400">
-              {selectedIds.length}
-            </span>
-            <span className="text-xs font-bold">
-              {selectedIds.length === 1 ? "1 product" : `${selectedIds.length} products`} selected
-            </span>
-            {/*
-              Batch actions have to be able to reach the whole result set.
-              Publishing 1,688 imported products 50 at a time is not a
-              workflow anyone would finish.
-            */}
-            {!selectedBeyondPage && filtered.length > visibleIds.length && (
-              <button
-                type="button"
-                onClick={() => setSelectedIds(allFilteredIds)}
-                className="text-xs font-bold text-mango-400 underline hover:text-mango-300"
-              >
-                Select all {filtered.length} matching
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("show")}
-              className="rounded-lg bg-emerald-600/90 px-3 py-1 text-xs font-bold transition hover:bg-emerald-600 disabled:opacity-50"
-            >
-              🟢 Make Live
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("hide")}
-              className="rounded-lg bg-slate-800 px-3 py-1 text-xs font-bold transition hover:bg-slate-700 disabled:opacity-50"
-            >
-              👁️ Hide
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("feature")}
-              className="rounded-lg bg-mango-500/90 px-3 py-1 text-xs font-bold text-ocean-950 transition hover:bg-mango-500 disabled:opacity-50"
-            >
-              ⭐ Feature on Brand Page
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("unfeature")}
-              className="rounded-lg bg-ocean-800 px-3 py-1 text-xs font-bold transition hover:bg-ocean-700 disabled:opacity-50"
-            >
-              ☆ Unfeature
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("price")}
-              className="rounded-lg bg-ocean-800 px-3 py-1 text-xs font-bold transition hover:bg-ocean-700 disabled:opacity-50"
-            >
-              💲 Set Price
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("stock")}
-              className="rounded-lg bg-ocean-800 px-3 py-1 text-xs font-bold transition hover:bg-ocean-700 disabled:opacity-50"
-            >
-              🏷️ Set Stock
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => handleBatchAction("delete")}
-              className="rounded-lg bg-rose-600/90 px-3 py-1 text-xs font-bold transition hover:bg-rose-600 disabled:opacity-50"
-            >
-              🗑️ Delete
-            </button>
+        <div className="sticky top-20 z-30 space-y-3 rounded-2xl bg-ocean-950 p-3.5 text-white shadow-xl ring-1 ring-white/10 animate-fade-up">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-ocean-800 px-1.5 font-mono text-xs font-bold text-mango-400">
+                {selectedIds.length}
+              </span>
+              <span className="text-xs font-bold">selected</span>
+              {!selectedBeyondPage && filtered.length > visibleIds.length && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(allFilteredIds)}
+                  className="text-xs font-bold text-mango-400 underline hover:text-mango-300"
+                >
+                  Select all {filtered.length} matching
+                </button>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setSelectedIds([])}
-              className="ml-2 text-xs text-ocean-300 hover:text-white underline"
+              className="text-xs text-ocean-300 underline hover:text-white"
             >
-              Clear
+              Clear selection
             </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <BulkButton disabled={isPending} onClick={() => runBatch("show")} className="bg-emerald-600 hover:bg-emerald-500">
+              Make live
+            </BulkButton>
+            <BulkButton disabled={isPending} onClick={() => runBatch("hide")}>
+              Hide
+            </BulkButton>
+            <BulkButton disabled={isPending} onClick={() => runBatch("feature")}>
+              ★ Feature
+            </BulkButton>
+            <BulkButton disabled={isPending} onClick={() => runBatch("unfeature")}>
+              Unfeature
+            </BulkButton>
+
+            <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />
+
+            <form
+              className="flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (bulkPriceValid) runBatch("price", bulkPriceValue);
+              }}
+            >
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={bulkPrice}
+                onChange={(e) => setBulkPrice(e.target.value)}
+                placeholder="Price $"
+                aria-label="New price for selected products"
+                className="w-24 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs text-white placeholder-white/40 outline-none focus:border-mango-400"
+              />
+              <BulkButton type="submit" disabled={isPending || !bulkPriceValid}>
+                Set
+              </BulkButton>
+            </form>
+            <form
+              className="flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (bulkStockValid) runBatch("stock", bulkStockValue);
+              }}
+            >
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={bulkStock}
+                onChange={(e) => setBulkStock(e.target.value)}
+                placeholder="Stock"
+                aria-label="New stock for selected products"
+                className="w-20 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs text-white placeholder-white/40 outline-none focus:border-mango-400"
+              />
+              <BulkButton type="submit" disabled={isPending || !bulkStockValid}>
+                Set
+              </BulkButton>
+            </form>
+
+            <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />
+
+            {/* Two clicks, no browser dialog: the second one is the confirm. */}
+            <BulkButton
+              disabled={isPending}
+              onClick={() => (confirmDelete ? runBatch("delete") : setConfirmDelete(true))}
+              className={confirmDelete ? "bg-rose-600 hover:bg-rose-500" : "hover:bg-rose-600"}
+            >
+              {confirmDelete ? `Confirm delete ${selectedIds.length}?` : "Delete"}
+            </BulkButton>
+            {isPending && <span className="text-xs text-ocean-300 animate-pulse">Working…</span>}
           </div>
         </div>
       )}
 
       {statusMessage && (
         <div
-          className={`rounded-xl p-3 text-xs font-bold flex items-center justify-between ${
-            statusMessage.ok ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"
+          role="status"
+          className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs font-semibold ${
+            statusMessage.ok
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-rose-200 bg-rose-50 text-rose-800"
           }`}
         >
-          <span>{statusMessage.ok ? "✓ " : "⚠ "}{statusMessage.text}</span>
-          <button type="button" onClick={() => setStatusMessage(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+          <span>
+            {statusMessage.ok ? "✓ " : "⚠ "}
+            {statusMessage.text}
+          </span>
+          <button type="button" onClick={() => setStatusMessage(null)} aria-label="Dismiss" className="text-slate-400 hover:text-slate-600">
+            ✕
+          </button>
         </div>
       )}
 
-      {/* ── Main Products Table ────────────────────────────────────── */}
-      <div className="card overflow-hidden border border-sand-200 shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b border-sand-200 bg-sand-50/80 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                {mayEdit && (
-                  <th className="px-4 py-3 w-10 text-center">
-                    <input
-                      type="checkbox"
-                      checked={isAllSelected}
-                      onChange={toggleSelectAll}
-                      className="h-4 w-4 accent-ocean-700 rounded cursor-pointer"
-                      title="Select all products"
-                    />
-                  </th>
-                )}
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Reference / Barcode</th>
-                <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3">Stock</th>
-                <th className="px-4 py-3">Sold</th>
-                <th className="px-4 py-3">Storefront &amp; Favorites</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-sand-100">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={mayEdit ? 8 : 7} className="px-4 py-10 text-center text-slate-400">
-                    <span className="text-2xl block mb-1">🔍</span>
-                    No products found matching your filter.
-                  </td>
-                </tr>
-              ) : (
-                visible.map((p) => {
-                  const isSelected = selectedIds.includes(p.id);
-                  return (
-                    <tr
-                      key={p.id}
-                      className={`transition-colors align-middle ${
-                        isSelected
-                          ? "bg-ocean-50/60"
-                          : p.featured
-                            ? "bg-amber-50/20 hover:bg-amber-50/40"
-                            : "hover:bg-sand-50/60"
-                      }`}
-                    >
-                      {mayEdit && (
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectOne(p.id)}
-                            className="h-4 w-4 accent-ocean-700 rounded cursor-pointer"
-                          />
-                        </td>
-                      )}
+      {/* ── Results ────────────────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <div className="card flex flex-col items-center px-6 py-14 text-center">
+          <span className="text-4xl">{products.length === 0 ? "📦" : "🔍"}</span>
+          <p className="mt-3 font-display text-lg font-bold text-ocean-950">
+            {products.length === 0 ? "No products yet" : "Nothing matches these filters"}
+          </p>
+          <p className="mt-1 max-w-sm text-sm text-slate-500">
+            {products.length === 0
+              ? "Add your first product, or import a whole catalogue from a spreadsheet."
+              : "Try a different search, or clear the filters to see everything."}
+          </p>
+          {products.length === 0 && mayEdit ? (
+            <Link href="/vendor/products/new" className="btn-primary mt-5 !py-2.5 text-sm">
+              + Add your first product
+            </Link>
+          ) : (
+            filtersActive && (
+              <button type="button" onClick={clearFilters} className="btn-secondary mt-5 !py-2 text-sm">
+                Clear filters
+              </button>
+            )
+          )}
+        </div>
+      ) : view === "grid" ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {visible.map((p) => (
+            <ProductTile
+              key={p.id}
+              product={p}
+              discount={discounts[p.id]}
+              mayEdit={mayEdit}
+              selected={selectedSet.has(p.id)}
+              onToggle={() => toggleSelectOne(p.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          {/* Header — desktop only; phones get stacked cards. */}
+          <div className="hidden grid-cols-[32px_minmax(0,2.4fr)_minmax(0,1fr)_110px_110px_70px_120px] items-center gap-4 border-b border-sand-200 bg-sand-50/80 px-4 py-2.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 md:grid">
+            {mayEdit ? (
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 cursor-pointer rounded accent-ocean-700"
+                aria-label="Select all on this page"
+              />
+            ) : (
+              <span />
+            )}
+            <span>Product</span>
+            <span>Status</span>
+            <span>Price</span>
+            <span>Stock</span>
+            <span>Sold</span>
+            <span className="text-right">Actions</span>
+          </div>
 
-                      {/* Product Name & Artwork */}
-                      <td className="max-w-72 px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <ProductImage
-                            product={p}
-                            iconClass="text-lg"
-                            className="h-10 w-10 shrink-0 rounded-lg border border-sand-200"
-                            sizes="40px"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p
-                                className={`truncate font-semibold ${
-                                  p.hidden ? "text-slate-400 line-through" : "text-slate-900"
-                                }`}
-                              >
-                                {p.name}
-                              </p>
-                              {p.featured && (
-                                <span
-                                  title="Pinned as Storefront Favorite"
-                                  className="shrink-0 text-mango-500 font-extrabold text-xs"
-                                >
-                                  ⭐
-                                </span>
-                              )}
-                            </div>
-                            {(p.images?.length ?? 0) === 0 && (
-                              <p className="text-[10px] font-bold text-mango-600 flex items-center gap-1">
-                                ⚠ No photos yet
-                              </p>
-                            )}
-                            {/* Makes the default sort legible — a list
-                                ordered by something invisible reads as
-                                unordered. */}
-                            {timeAgo(p.updatedAt) && (
-                              <p className="text-[10px] text-slate-400">
-                                Edited {timeAgo(p.updatedAt)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
+          <ul className="divide-y divide-sand-100">
+            {visible.map((p) => (
+              <ProductRow
+                key={p.id}
+                product={p}
+                categoryName={categoryNames[p.category] ?? p.category}
+                discount={discounts[p.id]}
+                mayEdit={mayEdit}
+                selected={selectedSet.has(p.id)}
+                onToggle={() => toggleSelectOne(p.id)}
+                onResult={setStatusMessage}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
 
-                      {/* Reference / Barcode */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {p.internalReference ? (
-                          <p className="font-mono text-xs font-semibold text-slate-700">
-                            {p.internalReference}
-                          </p>
-                        ) : (
-                          <p className="text-[10px] font-bold text-amber-700">No reference</p>
-                        )}
-                        {codedUnits(p) > 0 ? (
-                          <p className="font-mono text-[10px] text-slate-400">
-                            {p.barcode ?? `${codedUnits(p)}/${sellableUnits(p).length} variants coded`}
-                          </p>
-                        ) : (
-                          <p className="text-[10px] text-slate-400">No barcode</p>
-                        )}
-                      </td>
+      {/* ── Pager ──────────────────────────────────────────────────── */}
+      {filtered.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+          <p className="text-xs text-slate-500">
+            Showing{" "}
+            <strong className="text-slate-700">
+              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)}
+            </strong>{" "}
+            of <strong className="text-slate-700">{filtered.length.toLocaleString()}</strong>
+            {filtered.length !== products.length && (
+              <>
+                {" "}
+                (filtered from {products.length.toLocaleString()}){" "}
+                <button type="button" onClick={clearFilters} className="font-bold text-ocean-700 hover:underline">
+                  Clear filters
+                </button>
+              </>
+            )}
+          </p>
 
-                      {/* Selling Price */}
-                      <td className="px-4 py-3 font-semibold whitespace-nowrap">
-                        {money(p.price)}
-                        {p.compareAt && (
-                          <span className="ml-1.5 text-xs text-slate-400 line-through">
-                            {money(p.compareAt)}
-                          </span>
-                        )}
-                        {discounts[p.id] && (
-                          <span className="ml-1.5 rounded-full bg-coral-100 px-1.5 py-0.5 text-[10px] font-extrabold text-coral-600">
-                            −{discounts[p.id]}%
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Stock Quantity */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={totalStock(p) <= 15 ? "font-bold text-coral-600" : "text-slate-700"}>
-                          {totalStock(p)}
-                          {totalStock(p) <= 15 && " ⚠"}
-                        </span>
-                        {hasVariants(p) && (
-                          <span className="ml-1 text-[10px] text-slate-400">
-                            ({p.variants!.length} variants)
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Units Sold */}
-                      <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                        {compact(p.sold)}
-                      </td>
-
-                      {/* Visibility & Storefront Favorite Toggles */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {mayEdit ? (
-                            <>
-                              {/* Live vs Hidden Toggle */}
-                              <form action={toggleProductHidden.bind(null, p.id)}>
-                                <button
-                                  type="submit"
-                                  title={
-                                    p.hidden
-                                      ? "Click to show on storefront"
-                                      : "Click to hide from storefront"
-                                  }
-                                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold transition-all shadow-2xs ${
-                                    p.hidden
-                                      ? "bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-800"
-                                      : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300/80 hover:bg-slate-100 hover:text-slate-600"
-                                  }`}
-                                >
-                                  {p.hidden ? "Hidden" : "🟢 Live"}
-                                </button>
-                              </form>
-
-                              {/* Star / Storefront Favorite Toggle */}
-                              <form action={toggleProductFeatured.bind(null, p.id)}>
-                                <button
-                                  type="submit"
-                                  title={
-                                    p.featured
-                                      ? "Remove from Brand Page Favorites"
-                                      : "Pin to Brand Page Favorites"
-                                  }
-                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold transition-all shadow-2xs ${
-                                    p.featured
-                                      ? "bg-amber-100 text-amber-900 ring-1 ring-amber-300 hover:bg-slate-100 hover:text-slate-600"
-                                      : "bg-slate-100 text-slate-400 hover:bg-amber-100 hover:text-amber-900"
-                                  }`}
-                                >
-                                  <span>{p.featured ? "⭐ Favorite" : "☆ Pin"}</span>
-                                </button>
-                              </form>
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-400">
-                              {p.hidden ? "Hidden" : "Live"}
-                              {p.featured ? " · ⭐ Favorite" : ""}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Edit / View Links */}
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {mayEdit && (
-                          <Link
-                            href={`/vendor/products/${p.id}/edit`}
-                            className="mr-3 text-xs font-bold text-ocean-700 hover:underline"
-                          >
-                            Edit
-                          </Link>
-                        )}
-                        <Link
-                          href={`/product/${p.slug}`}
-                          className="text-xs font-bold text-slate-400 hover:underline"
-                        >
-                          View →
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })
+          {pageCount > 1 && (
+            <div className="flex items-center gap-1">
+              <PagerButton onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1}>
+                ←
+              </PagerButton>
+              {pageNumbers(currentPage, pageCount).map((n, i) =>
+                n === null ? (
+                  <span key={`gap${i}`} className="px-1 text-xs text-slate-400">
+                    …
+                  </span>
+                ) : (
+                  <PagerButton key={n} onClick={() => setPage(n)} active={n === currentPage}>
+                    {n}
+                  </PagerButton>
+                ),
               )}
-            </tbody>
-          </table>
+              <PagerButton onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount}>
+                →
+              </PagerButton>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 1 … 4 5 [6] 7 8 … 34 */
+function pageNumbers(current: number, count: number): (number | null)[] {
+  const pages = new Set([1, count, current - 1, current, current + 1]);
+  const sorted = [...pages].filter((n) => n >= 1 && n <= count).sort((a, b) => a - b);
+  const out: (number | null)[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) out.push(null);
+    out.push(n);
+  });
+  return out;
+}
+
+function PagerButton({
+  children,
+  onClick,
+  disabled,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-current={active ? "page" : undefined}
+      className={`min-w-8 rounded-lg px-2.5 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-30 ${
+        active ? "bg-ocean-900 text-white" : "border border-sand-200 bg-white text-slate-700 hover:bg-sand-100"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function BulkButton({
+  children,
+  onClick,
+  disabled,
+  type = "button",
+  className = "hover:bg-ocean-700",
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: "button" | "submit";
+  className?: string;
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-lg bg-ocean-800 px-3 py-1.5 text-xs font-bold transition disabled:opacity-40 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StockBadge({ stock }: { stock: number }) {
+  const tone =
+    stock <= 0
+      ? "bg-coral-100 text-coral-700"
+      : stock <= LOW_STOCK
+        ? "bg-mango-100 text-mango-800"
+        : "bg-emerald-50 text-emerald-700";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${tone}`}>
+      {stock <= 0 ? "Out" : stock.toLocaleString()}
+    </span>
+  );
+}
+
+/** Live/Hidden and Featured toggles — real forms, so they work without JS. */
+function StatusToggles({ product: p, mayEdit }: { product: Product; mayEdit: boolean }) {
+  if (!mayEdit) {
+    return (
+      <span className="text-xs text-slate-500">
+        {p.hidden ? "Hidden" : "Live"}
+        {p.featured ? " · ★" : ""}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <form action={toggleProductHidden.bind(null, p.id)}>
+        <button
+          type="submit"
+          title={p.hidden ? "Hidden — click to put it in the shop" : "Live — click to hide it from the shop"}
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
+            p.hidden
+              ? "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+              : "bg-emerald-50 text-emerald-700 hover:bg-slate-100 hover:text-slate-500"
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${p.hidden ? "bg-slate-400" : "bg-emerald-500"}`} />
+          {p.hidden ? "Hidden" : "Live"}
+        </button>
+      </form>
+      <form action={toggleProductFeatured.bind(null, p.id)}>
+        <button
+          type="submit"
+          title={p.featured ? "Featured on your brand page — click to remove" : "Feature on your brand page"}
+          aria-label={p.featured ? "Unfeature" : "Feature"}
+          className={`flex h-7 w-7 items-center justify-center rounded-full text-sm transition ${
+            p.featured ? "bg-mango-100 text-mango-600" : "text-slate-300 hover:bg-mango-50 hover:text-mango-500"
+          }`}
+        >
+          {p.featured ? "★" : "☆"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * A number that becomes an input on click, and saves on Enter or blur.
+ * Escape puts it back. Used for price and (simple products') stock.
+ */
+function QuickEdit({
+  productId,
+  kind,
+  value,
+  display,
+  onResult,
+}: {
+  productId: string;
+  kind: "price" | "stock";
+  value: number;
+  display: React.ReactNode;
+  onResult: (result: { ok: boolean; text: string }) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const [saved, setSaved] = useState<number | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  // Fresh server data wins over the optimistic value.
+  useEffect(() => {
+    setSaved(null);
+  }, [value]);
+
+  function commit() {
+    setEditing(false);
+    const next = Number(draft);
+    const valid = kind === "price" ? Number.isFinite(next) && next > 0 : Number.isInteger(next) && next >= 0;
+    if (!valid || next === (saved ?? value)) {
+      setDraft(String(saved ?? value));
+      return;
+    }
+    setSaved(next);
+    startTransition(async () => {
+      const res = await batchUpdateProducts([productId], kind, next);
+      if (!res.ok) {
+        setSaved(null);
+        onResult({ ok: false, text: res.message });
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min={kind === "price" ? "0.01" : "0"}
+        step={kind === "price" ? "0.01" : "1"}
+        inputMode={kind === "price" ? "decimal" : "numeric"}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") {
+            setDraft(String(saved ?? value));
+            setEditing(false);
+          }
+        }}
+        aria-label={kind === "price" ? "Price" : "Stock"}
+        className="w-24 rounded-lg border border-ocean-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-ocean-100"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraft(String(saved ?? value));
+        setEditing(true);
+      }}
+      title={`Click to change the ${kind}`}
+      className={`group/qe inline-flex items-center gap-1 rounded-lg px-1.5 py-1 -mx-1.5 transition hover:bg-sand-100 ${
+        isPending ? "opacity-50" : ""
+      }`}
+    >
+      {saved !== null ? (kind === "price" ? money(saved) : <StockBadge stock={saved} />) : display}
+      <span className="text-[10px] text-slate-300 opacity-0 transition group-hover/qe:opacity-100">✎</span>
+    </button>
+  );
+}
+
+function ProductRow({
+  product: p,
+  categoryName,
+  discount,
+  mayEdit,
+  selected,
+  onToggle,
+  onResult,
+}: {
+  product: Product;
+  categoryName: string;
+  discount?: number;
+  mayEdit: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onResult: (result: { ok: boolean; text: string }) => void;
+}) {
+  const stock = totalStock(p);
+  const variants = hasVariants(p);
+  const noPhotos = (p.images?.length ?? 0) === 0;
+  const edited = timeAgo(p.updatedAt);
+
+  const price = (
+    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">
+      {money(p.price)}
+      {p.compareAt && p.compareAt > p.price && (
+        <span className="ml-1 text-xs font-normal text-slate-400 line-through">{money(p.compareAt)}</span>
+      )}
+    </span>
+  );
+
+  return (
+    <li
+      className={`grid grid-cols-[32px_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-3 transition-colors md:grid-cols-[32px_minmax(0,2.4fr)_minmax(0,1fr)_110px_110px_70px_120px] md:items-center md:gap-4 ${
+        selected ? "bg-ocean-50/60" : "hover:bg-sand-50/60"
+      }`}
+    >
+      <div className="pt-3 md:pt-0">
+        {mayEdit && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            aria-label={`Select ${p.name}`}
+            className="h-4 w-4 cursor-pointer rounded accent-ocean-700"
+          />
+        )}
+      </div>
+
+      {/* Product */}
+      <div className="flex min-w-0 items-center gap-3">
+        <Link href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`} className="shrink-0">
+          <ProductImage
+            product={p}
+            iconClass="text-xl"
+            className="h-12 w-12 rounded-xl border border-sand-200"
+            sizes="48px"
+          />
+        </Link>
+        <div className="min-w-0">
+          <Link
+            href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`}
+            className={`block truncate text-sm font-semibold hover:text-ocean-700 ${
+              p.hidden ? "text-slate-400" : "text-slate-900"
+            }`}
+          >
+            {p.name}
+          </Link>
+          <p className="truncate text-[11px] text-slate-400">
+            {[
+              categoryName,
+              variants ? `${p.variants!.length} variants` : null,
+              p.internalReference,
+              edited ? `edited ${edited}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          {(noPhotos || !hasBarcode(p) || discount) && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {discount ? (
+                <span className="rounded-full bg-coral-100 px-1.5 py-0.5 text-[10px] font-bold text-coral-600">
+                  −{discount}% promo
+                </span>
+              ) : null}
+              {noPhotos && (
+                <span className="rounded-full bg-mango-50 px-1.5 py-0.5 text-[10px] font-bold text-mango-700">
+                  No photos
+                </span>
+              )}
+              {!hasBarcode(p) && (
+                <span className="rounded-full bg-sand-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                  No barcode
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile: the rest wraps under the product, in one compact line. */}
+      <div className="col-start-2 flex flex-wrap items-center gap-x-4 gap-y-2 md:contents">
+        <div className="md:order-none">
+          <StatusToggles product={p} mayEdit={mayEdit} />
         </div>
 
-        {/* ── Pager ──────────────────────────────────────────────── */}
-        {filtered.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sand-200 bg-sand-50/60 px-4 py-3">
-            <p className="text-xs text-slate-500">
-              Showing{" "}
-              <strong className="text-slate-700">
-                {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, filtered.length)}
-              </strong>{" "}
-              of <strong className="text-slate-700">{filtered.length}</strong>
-              {filtered.length !== products.length && ` (filtered from ${products.length})`}
-            </p>
+        <div>
+          {mayEdit ? (
+            <QuickEdit productId={p.id} kind="price" value={p.price} display={price} onResult={onResult} />
+          ) : (
+            price
+          )}
+        </div>
 
-            {pageCount > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  ← Previous
-                </button>
-                <span className="text-xs font-semibold text-slate-600">
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(currentPage + 1)}
-                  disabled={currentPage === pageCount}
-                  className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next →
-                </button>
-              </div>
-            )}
-          </div>
+        <div className="flex items-center gap-1.5">
+          {mayEdit && !variants ? (
+            <QuickEdit
+              productId={p.id}
+              kind="stock"
+              value={stock}
+              display={<StockBadge stock={stock} />}
+              onResult={onResult}
+            />
+          ) : (
+            <span title={variants ? "Sum of all variants — edit per variant" : undefined}>
+              <StockBadge stock={stock} />
+            </span>
+          )}
+        </div>
+
+        <div className="text-xs text-slate-500">
+          <span className="md:hidden">Sold </span>
+          {compact(p.sold)}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 md:ml-0 md:justify-end">
+          {mayEdit && (
+            <Link
+              href={`/vendor/products/${p.id}/edit`}
+              className="rounded-full border border-sand-200 bg-white px-3 py-1 text-xs font-bold text-ocean-800 transition hover:border-ocean-400"
+            >
+              Edit
+            </Link>
+          )}
+          <Link
+            href={`/product/${p.slug}`}
+            target="_blank"
+            title="View in shop"
+            aria-label="View in shop"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-xs text-slate-400 transition hover:bg-sand-100 hover:text-ocean-700"
+          >
+            ↗
+          </Link>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function ProductTile({
+  product: p,
+  discount,
+  mayEdit,
+  selected,
+  onToggle,
+}: {
+  product: Product;
+  discount?: number;
+  mayEdit: boolean;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const stock = totalStock(p);
+  return (
+    <div
+      className={`card group relative overflow-hidden transition hover:shadow-md ${
+        selected ? "!border-ocean-500 ring-2 ring-ocean-200" : ""
+      }`}
+    >
+      <Link href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`} className="block">
+        <ProductImage
+          product={p}
+          iconClass="text-4xl"
+          className={`aspect-square w-full ${p.hidden ? "opacity-50" : ""}`}
+          sizes="(min-width: 1280px) 20vw, (min-width: 640px) 33vw, 50vw"
+        />
+      </Link>
+      {mayEdit && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          aria-label={`Select ${p.name}`}
+          className="absolute left-2 top-2 h-5 w-5 cursor-pointer rounded accent-ocean-700"
+        />
+      )}
+      <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
+        {p.hidden && (
+          <span className="rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-bold text-white">Hidden</span>
         )}
+        {p.featured && (
+          <span className="rounded-full bg-mango-500 px-2 py-0.5 text-[10px] font-bold text-white">★ Featured</span>
+        )}
+        {discount ? (
+          <span className="rounded-full bg-coral-500 px-2 py-0.5 text-[10px] font-bold text-white">−{discount}%</span>
+        ) : null}
+      </div>
+      <div className="p-3">
+        <p className="truncate text-sm font-semibold text-slate-900">{p.name}</p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="text-sm font-bold text-ocean-950">{money(p.price)}</span>
+          <StockBadge stock={stock} />
+        </div>
       </div>
     </div>
   );

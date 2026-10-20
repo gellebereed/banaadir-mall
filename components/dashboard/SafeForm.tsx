@@ -1,6 +1,15 @@
 "use client";
 
-import React, { useTransition, useState, useEffect, useRef } from "react";
+import React, { createContext, useTransition, useState, useEffect, useRef } from "react";
+
+/**
+ * Whether the enclosing SafeForm is submitting.
+ *
+ * SafeForm submits through a transition rather than a form action, so
+ * React's useFormStatus never reports it as pending — every SubmitButton
+ * inside one stayed clickable and never said "Saving…". This fills the gap.
+ */
+export const SafeFormPendingContext = createContext(false);
 
 interface SafeFormProps extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "action"> {
   /**
@@ -25,7 +34,7 @@ export default function SafeForm({
   className,
   ...props
 }: SafeFormProps) {
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -145,7 +154,7 @@ export default function SafeForm({
           {errorMessage}
         </div>
       )}
-      {children}
+      <SafeFormPendingContext.Provider value={isPending}>{children}</SafeFormPendingContext.Provider>
     </form>
   );
 }

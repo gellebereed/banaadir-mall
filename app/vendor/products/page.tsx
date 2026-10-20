@@ -2,17 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import VendorProductsTable from "@/components/dashboard/VendorProductsTable";
 import { getBaseProductsByStore, getCategories, getDiscountMap } from "@/lib/api";
+import { money } from "@/lib/format";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { may } from "@/lib/auth";
+import { totalStock } from "@/lib/product-utils";
 import { requireVendor } from "@/lib/session";
-import type { Product } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Products" };
-
-/** How many of a product's sellable units carry a barcode. */
-function codedUnits(product: Product): number {
-  return sellableUnits(product).filter((u) => u.barcode).length;
-}
 
 /** Seller product management: edit, hide/show, add. */
 export default async function VendorProductsPage() {
@@ -36,28 +32,32 @@ export default async function VendorProductsPage() {
   const units = products.flatMap(sellableUnits);
   const unitsWithoutBarcode = units.filter((u) => !u.barcode).length;
 
+  // What the shelf is worth at the seller's own prices — the number a
+  // shop owner actually asks about their stock.
+  const stockValue = products.reduce((sum, p) => sum + p.price * Math.max(0, totalStock(p)), 0);
+
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-extrabold text-ocean-950">
-            My Products ({products.length})
+          <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
+            Products
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Edit prices, stock and sales. Hidden products stay here but leave
-            the storefront.
+            {products.length.toLocaleString()} product{products.length === 1 ? "" : "s"} ·{" "}
+            {money(stockValue)} of stock at your prices
           </p>
         </div>
         {mayEdit && (
           <div className="flex flex-wrap gap-2">
             <Link
               href="/vendor/products/import"
-              className="btn-secondary !px-4 !py-2 text-sm"
+              className="rounded-full border border-sand-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-ocean-400 hover:text-ocean-800"
             >
-              ⬆ Import from file
+              ⬆ Import
             </Link>
-            <Link href="/vendor/products/new" className="btn-primary !px-4 !py-2 text-sm">
-              + Add Product
+            <Link href="/vendor/products/new" className="btn-primary !px-5 !py-2.5 text-sm">
+              + Add product
             </Link>
           </div>
         )}
