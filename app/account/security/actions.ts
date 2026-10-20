@@ -22,10 +22,17 @@
  */
 
 import { headers } from "next/headers";
-import { isReservedEmail, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
+import {
+  accountsEnabled,
+  findAuthUser,
+  isReservedEmail,
+  isRetiredStoreLogin,
+  MIN_PASSWORD_LENGTH,
+} from "@/lib/accounts";
 import { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } from "@/lib/rate-limit";
 import { requestOrigin } from "@/lib/request-origin";
-import { getSession } from "@/lib/session";
+import { getSession, setSessionCookie } from "@/lib/session";
+import { getServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
@@ -88,12 +95,35 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
   const email = String(formData.get("newEmail") ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
   if (email === session.email) return { error: "That's already your email." };
+  if (email !== String(formData.get("confirmEmail") ?? "").trim().toLowerCase()) {
+    return { error: "The two email addresses don't match." };
+  }
   if (await isReservedEmail(email)) {
     return { error: "That address belongs to a marketplace, staff or store login." };
   }
 
   const proof = await proveCurrentPassword(String(formData.get("currentPassword") ?? ""));
   if ("error" in proof) return { error: proof.error };
+
+  /*
+   * A retired `<store>@seller…` login can't take the normal route: by
+   * default Supabase confirms an email change from the OLD address too,
+   * and nobody receives mail there — the switch would never complete. Its
+   * password has just been proven, so the change is applied directly
+   * (the address was typed twice to catch typos) and they stay signed in.
+   */
+  if (isRetiredStoreLogin(session.email) && accountsEnabled()) {
+    const user = await findAuthUser(session.email);
+    if (!user) return { error: "Your account could not be found. Please sign in again." };
+    if (await findAuthUser(email)) return { error: "Another account already uses that email." };
+    const { error } = await getServiceClient().auth.admin.updateUserById(user.id, {
+      email,
+      email_confirm: true,
+    });
+    if (error) return { error: error.message };
+    await setSessionCookie({ ...session, email });
+    return { ok: `Done — your login email is now ${email}. Use it with your current password from now on.` };
+  }
 
   const origin = await requestOrigin();
   const { error } = await proof.supabase.auth.updateUser(

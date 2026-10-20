@@ -11,8 +11,9 @@
  * Accounts:
  *   Admin:     ADMIN_EMAIL env var, else ahgbered10@gmail.com / Admin@2026
  *   Sellers:   <store-slug>@seller.banaadirmall.com / Seller@2026
- *              generated from the active stores, so a store added through
- *              the dashboard gets a login without any code change.
+ *              generated from the active stores. DEMO INSTALLS ONLY — on a
+ *              live site these are retired (isRetiredStoreLogin in
+ *              lib/accounts.ts) and owners sign in with their own email.
  *   Customer:  ayaan@banaadirmall.com            / Customer@2026
  *
  * These shared passwords now only open an email that has no Supabase

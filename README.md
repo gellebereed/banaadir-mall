@@ -63,8 +63,11 @@ Do these in order — step 3 before step 1–2 takes the site offline.
    customers.
 5. **Supabase → Authentication → Sign In / Providers → Email:** turn ON
    "Confirm email", so nobody can register an address they don't own.
-6. Built-in `<store>@seller.banaadirmall.com` logins: set each one's password
-   (or send a reset link) from `/admin/accounts`.
+6. The generated `<store>@seller.banaadirmall.com` logins are **retired** on a
+   live site: no new ones can be created, and an address alone never makes
+   anyone an owner. Owners still using one see a banner asking them to switch
+   to their own email (My account → Password & email) — they keep their store.
+   Confirm owners in `/admin/accounts` → Store owners.
 
 ## Account emails (forgot password, change email)
 

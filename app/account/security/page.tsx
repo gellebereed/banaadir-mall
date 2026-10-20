@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import SignOutButton from "@/components/SignOutButton";
-import { MIN_PASSWORD_LENGTH } from "@/lib/accounts";
+import { isRetiredStoreLogin, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
 import { getSession } from "@/lib/session";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import { EmailForm, PasswordForm } from "./SecurityForms";
@@ -54,6 +54,17 @@ export default async function SecurityPage({
         <SignOutButton />
       </div>
 
+      {live && !isStaff && session.role === "seller" && isRetiredStoreLogin(session.email) && (
+        <div className="mt-5 rounded-2xl border border-mango-200 bg-mango-50 p-4 text-sm text-mango-900">
+          <p className="font-bold">Please switch to your own email</p>
+          <p className="mt-1">
+            {session.email} is an old shared store login. Nobody receives mail there, so a
+            forgotten password couldn&apos;t be reset. Enter your own email below — your store,
+            products and orders stay exactly as they are.
+          </p>
+        </div>
+      )}
+
       {emailParam === "confirmed" && (
         <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           <p className="font-bold">✓ Email confirmed</p>
@@ -98,11 +109,13 @@ export default async function SecurityPage({
             ) : (
               <>
                 <p className="mt-1 mb-4 text-sm text-slate-500">
-                  We&apos;ll email a link to the new address; your email changes when you open it.
+                  {isRetiredStoreLogin(session.email)
+                    ? "Your new email takes effect straight away — sign in with it and your current password."
+                    : "We'll email a link to the new address; your email changes when you open it."}
                   {session.role === "customer" &&
                     " Orders you placed under your current email stay linked to it."}
                 </p>
-                <EmailForm currentEmail={session.email} />
+                <EmailForm currentEmail={session.email} immediate={isRetiredStoreLogin(session.email)} />
               </>
             )}
           </section>

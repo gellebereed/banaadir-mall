@@ -28,6 +28,7 @@ export default function StoreOwnersPanel({ stores }: { stores: StoreOwnership[] 
   const [typed, setTyped] = useState<Record<string, string>>({});
 
   const unowned = stores.filter((s) => s.owners.length === 0).length;
+  const onRetired = stores.filter((s) => s.owners.some((o) => o.retired)).length;
 
   function run(slug: string, key: string, action: () => Promise<AccountActionResult>) {
     setBusy(key);
@@ -61,6 +62,15 @@ export default function StoreOwnersPanel({ stores }: { stores: StoreOwnership[] 
         </span>
       </div>
 
+      {onRetired > 0 && (
+        <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
+          {onRetired} store{onRetired === 1 ? " is" : "s are"} still run from an old{" "}
+          <code className="font-semibold">@seller.banaadirmall.com</code> login. Those addresses are
+          retired: ask each owner to open <strong>My account → Password &amp; email</strong> and
+          switch to their own email — they keep their store.
+        </p>
+      )}
+
       <ul className="mt-5 space-y-3">
         {stores.map((store) => {
           const res = result[store.slug];
@@ -88,9 +98,17 @@ export default function StoreOwnersPanel({ stores }: { stores: StoreOwnership[] 
                   </p>
                 ) : (
                   <ul className="mt-1 space-y-1">
-                    {store.owners.map((email) => (
+                    {store.owners.map(({ email, retired }) => (
                       <li key={email} className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="font-semibold text-emerald-700">✓ {email}</span>
+                        {retired && (
+                          <span
+                            title="Nobody receives mail at this address, so a forgotten password can't be reset. They can switch to their own email from My account → Password & email and keep the store."
+                            className="rounded-full bg-mango-100 px-2 py-0.5 text-[10px] font-bold text-mango-800"
+                          >
+                            Retired login — ask them to switch to their own email
+                          </span>
+                        )}
                         <button
                           type="button"
                           disabled={pending}

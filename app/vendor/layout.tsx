@@ -4,6 +4,8 @@ import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import OrderNotifications from "@/components/dashboard/OrderNotifications";
 import StoreSwitcher, { type SwitchableStore } from "@/components/dashboard/StoreSwitcher";
 import { getAllStores, getEmployeeMemberships, getOrdersByStore, getStore } from "@/lib/api";
+import Link from "next/link";
+import { isRetiredStoreLogin, sharedPasswordsAllowed } from "@/lib/accounts";
 import { may } from "@/lib/auth";
 import { requireVendor } from "@/lib/session";
 
@@ -217,7 +219,25 @@ export default async function VendorLayout({
           />
         </div>
       </aside>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {/* Owners still on a retired generated login — see lib/accounts.ts. */}
+        {!session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed() && (
+          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-mango-200 bg-mango-50 p-4 text-sm text-mango-900 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              <strong>Switch to your own email.</strong> You&apos;re signed in with{" "}
+              {session.email}, an old shared store login that can&apos;t receive a password
+              reset. Your store stays yours.
+            </p>
+            <Link
+              href="/account/security"
+              className="shrink-0 rounded-full bg-mango-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-mango-600"
+            >
+              Change my email
+            </Link>
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   );
 }

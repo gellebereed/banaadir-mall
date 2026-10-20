@@ -304,7 +304,8 @@ export async function listAccounts(): Promise<AccountRow[]> {
         .join(", ");
       return { ...base, name: team[0].name, label: `Staff · ${where}`, kind: "staff" };
     }
-    const slug = parseSellerEmail(clean) ?? storeOfAuthUser(user);
+    const slug =
+      storeOfAuthUser(user) ?? (sharedPasswordsAllowed() ? parseSellerEmail(clean) : undefined);
     if (slug) {
       const name = storeName.get(slug) ?? slug;
       return { ...base, name, label: `Seller · ${name}`, kind: "seller" };
@@ -316,9 +317,12 @@ export async function listAccounts(): Promise<AccountRow[]> {
     if (user.email) rows.set(user.email.toLowerCase(), describe(user.email, user));
   }
 
+  // The generated `<store>@seller…` logins are retired on a live site
+  // (see isRetiredStoreLogin): only listed when one already has an
+  // account, which the loop above covers. A demo install still lists them.
   const handedOut = [
     ADMIN_EMAIL,
-    ...stores.map((s) => `${s.slug}${SELLER_EMAIL_SUFFIX}`),
+    ...(sharedPasswordsAllowed() ? stores.map((s) => `${s.slug}${SELLER_EMAIL_SUFFIX}`) : []),
     ...employees.map((e) => e.email),
   ];
   for (const email of handedOut) {
@@ -333,11 +337,28 @@ export async function listAccounts(): Promise<AccountRow[]> {
 }
 
 /**
- * What an account handed out by the marketplace must carry: a store
- * owner login (`<store>@seller…`) is bound to its store, since the
- * address alone no longer proves anything (see resolveSession).
+ * ── The generated store logins are retired ──────────────────────────────
+ * Every store used to get `<store-slug>@seller.banaadirmall.com` with the
+ * shared password Seller@2026 — a demo convenience from before real
+ * accounts. Nobody receives mail there (so no password reset), and the
+ * address belongs to no person. On a live site:
+ *   · no new account can be created for one (setAccountPassword refuses)
+ *   · an existing one is NOT made an owner just by its address — the admin
+ *     confirms owners explicitly in the Store owners panel
+ *   · an owner still signing in with one is asked to switch to their own
+ *     email (/account/security), keeping their store
+ * Demo installs (no Supabase) keep them, so the demo still has logins.
+ */
+export function isRetiredStoreLogin(email: string): boolean {
+  return Boolean(parseSellerEmail(email));
+}
+
+/**
+ * Demo installs only: a generated store login is bound to its store.
+ * Live, ownership is only ever confirmed by the admin.
  */
 async function bindingFor(email: string, user: User | null): Promise<Record<string, unknown> | undefined> {
+  if (!sharedPasswordsAllowed()) return undefined;
   const slug = parseSellerEmail(email);
   if (!slug || !(await getStore(slug))) return undefined;
   return { ...(user?.app_metadata ?? {}), role: "seller", store: slug };
@@ -347,6 +368,11 @@ async function bindingFor(email: string, user: User | null): Promise<Record<stri
 export async function setAccountPassword(email: string, password: string): Promise<void> {
   const admin = adminClient().auth.admin;
   const user = await findAuthUser(email);
+  if (!user && isRetiredStoreLogin(email) && !sharedPasswordsAllowed()) {
+    throw new Error(
+      "Store logins ending in @seller.banaadirmall.com are retired. Give the owner an account under their own email instead, then confirm them in Store owners.",
+    );
+  }
   const app_metadata = await bindingFor(email, user);
   const { error } = user
     ? await admin.updateUserById(user.id, { password, ...(app_metadata && { app_metadata }) })
@@ -368,6 +394,9 @@ export async function setAccountPassword(email: string, password: string): Promi
 export async function createResetLink(email: string, origin: string): Promise<string> {
   const admin = adminClient().auth.admin;
   const user = await findAuthUser(email);
+  if (!user && isRetiredStoreLogin(email) && !sharedPasswordsAllowed()) {
+    throw new Error("Store logins ending in @seller.banaadirmall.com are retired — nobody receives mail there.");
+  }
   const app_metadata = await bindingFor(email, user);
   if (!user) {
     const { error } = await admin.createUser({
@@ -449,7 +478,7 @@ export interface StoreOwnership {
   name: string;
   status: string;
   /** Accounts already bound as owner (app_metadata). */
-  owners: string[];
+  owners: { email: string; retired: boolean }[];
   /** Unbound accounts that claim this store, for the admin to confirm. */
   claims: OwnerClaim[];
 }
@@ -474,13 +503,13 @@ export async function listStoreOwnership(): Promise<StoreOwnership[]> {
     if (!email) continue;
     const bound = storeOfAuthUser(user);
     if (bound) {
-      rows.get(bound)?.owners.push(email);
+      rows.get(bound)?.owners.push({ email, retired: isRetiredStoreLogin(email) });
       continue;
     }
     const meta = user.user_metadata ?? {};
     const claims: [string, string][] = [];
     const login = parseSellerEmail(email);
-    if (login) claims.push([login, "Store owner login address"]);
+    if (login) claims.push([login, "Old generated store login (retired — confirm only if the owner still uses it)"]);
     if (typeof user.app_metadata?.applied_store === "string") {
       claims.push([user.app_metadata.applied_store, "Applied for this store (verified)"]);
     }

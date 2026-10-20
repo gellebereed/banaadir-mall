@@ -56,7 +56,7 @@ export function PasswordForm({ minLength }: { minLength: number }) {
   );
 }
 
-export function EmailForm({ currentEmail }: { currentEmail: string }) {
+export function EmailForm({ currentEmail, immediate }: { currentEmail: string; immediate: boolean }) {
   const [state, action, pending] = useActionState(changeEmail, INITIAL);
   const ref = useResetOnSuccess(state);
   return (
@@ -67,13 +67,17 @@ export function EmailForm({ currentEmail }: { currentEmail: string }) {
           <input id="newEmail" name="newEmail" type="email" required autoComplete="email" placeholder={currentEmail} className="input" />
         </div>
         <div>
-          <label htmlFor="emailPassword" className="label">Current password</label>
-          <input id="emailPassword" name="currentPassword" type="password" required autoComplete="current-password" className="input" />
+          <label htmlFor="confirmEmail" className="label">New email again</label>
+          <input id="confirmEmail" name="confirmEmail" type="email" required autoComplete="off" className="input" />
         </div>
+      </div>
+      <div className="sm:max-w-[calc(50%-0.5rem)]">
+        <label htmlFor="emailPassword" className="label">Current password</label>
+        <input id="emailPassword" name="currentPassword" type="password" required autoComplete="current-password" className="input" />
       </div>
       <Result state={state} />
       <button type="submit" disabled={pending} className="btn-secondary !py-2.5 text-sm disabled:opacity-60">
-        {pending ? "Sending…" : "Send confirmation link"}
+        {pending ? "Saving…" : immediate ? "Change my email" : "Send confirmation link"}
       </button>
     </form>
   );
