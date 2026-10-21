@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
-import ShareButton from "./ShareButton";
+import ShareButton from "@/components/ShareButton";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
@@ -254,7 +254,12 @@ export default function ProductView({
           <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
             {product.name}
           </h1>
-          <ShareButton slug={product.slug} name={product.name} price={money(price)} />
+          <ShareButton
+            path={`/product/${product.slug}`}
+            title={product.name}
+            text={`${product.name} — ${money(price)} on Banaadir Mall`}
+            label="Share this product"
+          />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
           {product.reviewCount > 0 ? (

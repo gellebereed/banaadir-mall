@@ -3,13 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Share a product. On phones this opens the phone's own share sheet, which
- * already lists WhatsApp, Messenger, SMS and the rest; on a computer (or a
- * browser without one) a small menu offers the usual places plus "Copy
- * link". The link preview — photo, name, price — comes from the product
- * page's Open Graph tags (app/product/[slug]/opengraph-image.tsx).
+ * Share a product or a store. On phones this opens the phone's own share
+ * sheet, which already lists WhatsApp, Messenger, SMS and the rest; on a
+ * computer (or a browser without one) a small menu offers the usual places
+ * plus "Copy link". The link preview — photo, name, price — comes from the
+ * page's Open Graph tags (lib/seo.ts and each route's opengraph-image).
  */
-export default function ShareButton({ slug, name, price }: { slug: string; name: string; price: string }) {
+export default function ShareButton({
+  path,
+  title,
+  text,
+  label = "Share",
+}: {
+  /** Site path to share, e.g. "/product/amal-maxi-dress". */
+  path: string;
+  title: string;
+  /** The message that goes with the link. */
+  text: string;
+  /** For screen readers: "Share this product", "Share this store". */
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -27,13 +40,12 @@ export default function ShareButton({ slug, name, price }: { slug: string; name:
     };
   }, [open]);
 
-  const url = () => `${window.location.origin}/product/${slug}`;
-  const text = `${name} — ${price} on Banaadir Mall`;
+  const url = () => `${window.location.origin}${path}`;
 
   const share = async () => {
     if (typeof navigator.share === "function") {
       try {
-        await navigator.share({ title: name, text, url: url() });
+        await navigator.share({ title, text, url: url() });
         return;
       } catch (err) {
         // Closing the sheet is not an error; anything else falls back to the menu.
@@ -71,7 +83,7 @@ export default function ShareButton({ slug, name, price }: { slug: string; name:
     <div ref={box} className="relative shrink-0">
       <button
         type="button"
-        aria-label="Share this product"
+        aria-label={label}
         aria-expanded={open}
         title="Share"
         onClick={share}

@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
+import ShareButton from "@/components/ShareButton";
 import Rating from "@/components/Rating";
 import StoreAvatar from "@/components/StoreAvatar";
 import { getProductsByStore, getStore, getStores } from "@/lib/api";
@@ -87,7 +88,7 @@ export default async function StorePage({ params, searchParams }: Props) {
             className="h-20 w-20 shrink-0 rounded-3xl border-4 border-white text-4xl shadow-md"
           />
           <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 font-display text-2xl font-extrabold text-ocean-950">
+            <h1 className="flex flex-wrap items-center gap-2 pr-12 font-display text-2xl font-extrabold text-ocean-950 sm:pr-0">
               {store.name}
               {store.official && (
                 <span className="rounded-full bg-mango-100 px-2 py-0.5 text-xs font-bold text-mango-800">
@@ -109,6 +110,15 @@ export default async function StorePage({ params, searchParams }: Props) {
               <span>📍 {store.city}</span>
               <span>Since {store.joinedYear}</span>
             </div>
+          </div>
+          {/* Top-right on phones; beside the counts from sm up. */}
+          <div className="absolute right-4 top-4 sm:static sm:order-last">
+            <ShareButton
+              path={`/store/${store.slug}`}
+              title={store.name}
+              text={`Shop ${store.name} on Banaadir Mall${store.tagline ? ` — ${store.tagline}` : ""}`}
+              label="Share this store"
+            />
           </div>
           <div className="flex shrink-0 gap-6 sm:flex-col sm:gap-2 sm:text-right">
             <div>
