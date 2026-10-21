@@ -216,6 +216,9 @@ Run **`supabase/migration-reco-learning.sql`** after the metrics migration.
   signed-in shoppers. Stores the same raw history the browser holds, keyed
   by a hash of the account. Turning it off on any device deletes the copy
   and stops sync everywhere; reset clears it on every synced device.
+- **Cleanup**: run **`supabase/migration-reco-cleanup.sql`** once. Events
+  older than 90 days are then deleted automatically a few times a day
+  (nothing reads past 60), so the table holds about 3 months at most.
 - Caveat: view and shelf events come from the browser and are not
   authenticated, so a determined person can inflate them. Pairs need 2+
   visits and tuning is clamped, which limits the damage.

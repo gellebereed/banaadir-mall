@@ -48,6 +48,31 @@ export interface RecoMetricEvent {
 /** Most local events kept in demo mode, oldest dropped first. */
 const LOCAL_CAP = 20_000;
 
+/**
+ * Events older than this are deleted. Nothing reads further back: results
+ * and tuning use 30 days, co-views 60. Without it the table grows by every
+ * page view, forever.
+ */
+export const KEEP_DAYS = 90;
+/** How often one server instance runs the cleanup. */
+const PRUNE_EVERY_MS = 6 * 3_600_000;
+let lastPrune = 0;
+
+/**
+ * Delete old events, at most once per PRUNE_EVERY_MS per server instance.
+ * Runs as part of an ordinary save, so it needs no scheduled job; it is a
+ * single indexed DELETE on `day`, and a failure (e.g. before
+ * migration-reco-cleanup.sql) is only logged.
+ */
+async function pruneOldEvents(now = Date.now()): Promise<void> {
+  if (now - lastPrune < PRUNE_EVERY_MS) return;
+  lastPrune = now;
+  const { error } = await getDataClient().rpc("reco_events_prune", { keep_days: KEEP_DAYS });
+  if (error) console.warn("[reco metrics] cleanup skipped:", error.message);
+}
+
+const cutoffDay = (now = Date.now()) => new Date(now - KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
+
 /** Validate whatever a browser sent; anything odd is dropped, not stored. */
 export function cleanEvents(raw: unknown): RecoMetricEvent[] {
   if (!Array.isArray(raw)) return [];
@@ -109,10 +134,12 @@ export async function recordEvents(events: RecoMetricEvent[]): Promise<void> {
       );
     // Before migration-reco-metrics.sql, metrics are simply not kept.
     if (error) console.warn("[reco metrics] not stored:", error.message);
+    await pruneOldEvents();
     return;
   }
+  const cutoff = cutoffDay();
   await mutateDB((db) => {
-    db.recoEvents = [...(db.recoEvents ?? []), ...events].slice(-LOCAL_CAP);
+    db.recoEvents = [...(db.recoEvents ?? []), ...events].filter((e) => e.day >= cutoff).slice(-LOCAL_CAP);
   });
 }
 
