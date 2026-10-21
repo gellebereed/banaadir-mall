@@ -166,7 +166,13 @@ const DEFAULT_DB: DB = {
     banners: [],
     promoTiles: [],
     campaign: { active: false, name: "Eid Mega Sale", pct: 10 },
-    delivery: { fee: 3, freeThreshold: 25, estimate: "Same-day in Mogadishu · 2–4 days nationwide" },
+    delivery: {
+      fee: 3,
+      freeThreshold: 25,
+      estimate: "Same-day in Mogadishu · 2–4 days nationwide",
+      localTime: "Same day",
+      nationalTime: "2–4 days",
+    },
     promo: { code: "BANAADIR10", pct: 10 },
     // Off until an admin sets it up. A marketplace that starts charging a
     // commission the day it is upgraded, without anyone deciding to, would

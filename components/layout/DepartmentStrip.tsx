@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ export default function DepartmentStrip({
   showSell: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   // Until measured, a conservative guess — avoids a two-line flash.
   const [fit, setFit] = useState(Math.min(departments.length, 6));
   const row = useRef<HTMLDivElement>(null);
@@ -91,21 +93,21 @@ export default function DepartmentStrip({
           onClick={() => setOpen((o) => !o)}
           className={`${linkClass} flex items-center gap-1.5 ${open ? "bg-ocean-800 text-white" : "bg-ocean-50 text-ocean-900 hover:bg-ocean-100"}`}
         >
-          <span aria-hidden>☰</span> All departments
+          <span aria-hidden>☰</span> {t("nav.allDepartments")}
         </button>
         {departments.slice(0, fit).map((c) => (
           <CategoryMenu key={c.slug} category={c} subcategories={childrenOf.get(c.slug) ?? []} grandchildrenOf={childrenOf} />
         ))}
         <div ref={fixed} className="ml-auto flex items-center gap-1">
           <Link href="/products" className={`${linkClass} text-ocean-800 hover:bg-ocean-50`}>
-            All Products
+            {t("nav.allProducts")}
           </Link>
           <Link href="/stores" className={`${linkClass} text-mango-600 hover:bg-mango-50`}>
-            ✦ All Stores
+            ✦ {t("nav.allStores")}
           </Link>
           {showSell && (
             <Link href="/sell" className={`${linkClass} font-bold text-emerald-700 hover:bg-emerald-50`}>
-              🏪 Sell on Banaadir
+              🏪 {t("nav.sell")}
             </Link>
           )}
         </div>

@@ -1,20 +1,22 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 
 const TABS = [
-  { href: "/", label: "Home", icon: "🏠" },
-  { href: "/products", label: "Shop", icon: "🛍️" },
-  { href: "/cart", label: "Cart", icon: "🛒" },
-  { href: "/wishlist", label: "Saved", icon: "♡" },
-  { href: "/account", label: "Account", icon: "👤" },
-];
+  { href: "/", label: "tab.home", icon: "🏠" },
+  { href: "/products", label: "tab.shop", icon: "🛍️" },
+  { href: "/cart", label: "tab.cart", icon: "🛒" },
+  { href: "/wishlist", label: "tab.saved", icon: "♡" },
+  { href: "/account", label: "tab.account", icon: "👤" },
+] as const;
 
 /** App-style bottom navigation, visible only on mobile. */
 export default function BottomNav() {
   const pathname = usePathname();
+  const t = useT();
   const { count } = useCart();
 
   return (
@@ -42,7 +44,7 @@ export default function BottomNav() {
                   </span>
                 )}
               </span>
-              {tab.label}
+              {t(tab.label)}
               {active && (
                 <span className="absolute -top-px h-0.5 w-8 rounded-full bg-ocean-700" />
               )}

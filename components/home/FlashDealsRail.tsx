@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import Link from "next/link";
 import CountdownTimer from "@/components/CountdownTimer";
+import { useT } from "@/components/prefs/PrefsProvider";
 import ProductCard from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
 
@@ -16,6 +17,7 @@ export default function FlashDealsRail({
   endsAt: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   function scroll(direction: "left" | "right") {
     if (!scrollRef.current) return;
@@ -42,7 +44,7 @@ export default function FlashDealsRail({
               href="/flash"
               className="text-sm font-semibold text-coral-600 hover:text-coral-700 transition mr-2"
             >
-              See all deals →
+              {t("section.flash.all")}
             </Link>
 
             {/* Desktop Navigation Scroll Buttons */}

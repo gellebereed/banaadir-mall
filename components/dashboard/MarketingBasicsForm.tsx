@@ -244,6 +244,20 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
               defaultValue={marketing.delivery.estimate} className="input" />
           </div>
           <div>
+            <label htmlFor="deliveryLocalTime" className="label">
+              Delivery time · Mogadishu <span className="font-normal text-slate-400">(header)</span>
+            </label>
+            <input id="deliveryLocalTime" name="deliveryLocalTime" placeholder="e.g. Same day"
+              defaultValue={marketing.delivery.localTime ?? ""} className="input" />
+          </div>
+          <div>
+            <label htmlFor="deliveryNationalTime" className="label">
+              Delivery time · rest of Somalia <span className="font-normal text-slate-400">(header)</span>
+            </label>
+            <input id="deliveryNationalTime" name="deliveryNationalTime" placeholder="e.g. 2–4 days"
+              defaultValue={marketing.delivery.nationalTime ?? ""} className="input" />
+          </div>
+          <div>
             <label htmlFor="promoCode" className="label">
               Promo code <span className="font-normal text-slate-400">(blank = off)</span>
             </label>

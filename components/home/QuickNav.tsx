@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { Category } from "@/lib/types";
+import type { MessageKey } from "@/lib/i18n";
+import { getT } from "@/lib/prefs-server";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ interface QuickLink {
   to: string;
   /** Small corner flag, e.g. "Hot". */
   flag?: string;
+  /** Translated label for the fixed tiles (lib/i18n.ts); departments keep their own name. */
+  labelKey?: MessageKey;
 }
 
 /**
@@ -51,6 +55,7 @@ const MERCHANDISING: QuickLink[] = [
   {
     href: "/products?sort=new",
     label: "New In",
+    labelKey: "quick.new",
     icon: "✨",
     from: "#d7f2f2",
     to: "#b0e4e6",
@@ -58,6 +63,7 @@ const MERCHANDISING: QuickLink[] = [
   {
     href: "/products?sort=sold",
     label: "Best Sellers",
+    labelKey: "quick.best",
     icon: "🔥",
     from: "#ffeecd",
     to: "#ffdb9b",
@@ -66,6 +72,7 @@ const MERCHANDISING: QuickLink[] = [
   {
     href: "/flash",
     label: "Daily Deals",
+    labelKey: "quick.deals",
     icon: "⚡",
     from: "#ffe4e4",
     to: "#ffc9c9",
@@ -77,6 +84,7 @@ const UTILITY: QuickLink[] = [
   {
     href: "/products?sort=discount",
     label: "Big Savings",
+    labelKey: "quick.savings",
     icon: "🏷️",
     from: "#ffeecd",
     to: "#ffc25e",
@@ -84,13 +92,15 @@ const UTILITY: QuickLink[] = [
   {
     href: "/stores",
     label: "All Stores",
+    labelKey: "quick.stores",
     icon: "🏪",
     from: "#d7f2f2",
     to: "#7bcfd4",
   },
 ];
 
-export default function QuickNav({ categories }: { categories: Category[] }) {
+export default async function QuickNav({ categories }: { categories: Category[] }) {
+  const t = await getT();
   /*
    * Top-level departments only, and only the ones that are actually shown
    * on the storefront. A supplier import can create thirty child
@@ -142,7 +152,7 @@ export default function QuickNav({ categories }: { categories: Category[] }) {
 
                 {link.flag && (
                   <span className="absolute -right-1 -top-1 rounded-full bg-coral-500 px-1.5 py-px text-[9px] font-extrabold uppercase tracking-wide text-white shadow-sm">
-                    {link.flag}
+                    {link.flag === "Hot" ? t("quick.hot") : link.flag}
                   </span>
                 )}
               </span>
@@ -153,7 +163,7 @@ export default function QuickNav({ categories }: { categories: Category[] }) {
                 label below it stops lining up.
               */}
               <span className="line-clamp-2 text-[11px] font-semibold leading-tight text-slate-700 transition group-hover:text-ocean-700 sm:text-xs">
-                {link.label}
+                {link.labelKey ? t(link.labelKey) : link.label}
               </span>
             </Link>
           </li>

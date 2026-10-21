@@ -6,6 +6,7 @@
  * auto-location detection, and address memory.
  */
 
+import { readDeliveryCity } from "@/components/layout/DeliveryCity";
 import { attributePurchase } from "@/lib/reco/metrics-client";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -168,7 +169,14 @@ export default function CheckoutClient({
       applyAddress(sorted[0]);
     } else {
       setEditingAddress(true);
+      // No saved address: start from the city picked in the header's
+      // "Deliver to" (components/layout/DeliveryCity), unless the account
+      // already supplied one.
+      const preferred = readDeliveryCity();
+      if (preferred && !defaults?.city && (defaults?.countryCode || "SO") === "SO") setCity(preferred);
     }
+    // `defaults` is server-provided and fixed for the page's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, addressKey, applyAddress]);
 
   /**

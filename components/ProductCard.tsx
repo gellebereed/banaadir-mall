@@ -4,6 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { useCart } from "@/lib/cart-context";
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
+import { LITE_CARD_SIZES, LITE_QUALITY } from "@/lib/lite";
+import type { MessageKey } from "@/lib/i18n";
 import { compact, discountPct, money } from "@/lib/format";
 import {
   colorOptions,
@@ -58,6 +61,8 @@ export default function ProductCard({
   footer?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const t = useT();
+  const { lite } = usePrefs();
   const wished = isWishlisted(product.id);
 
   // With variants the card shows the cheapest option ("from $X").
@@ -139,7 +144,8 @@ export default function ProductCard({
               src={mainImage}
               alt={product.name}
               fill
-              sizes="(max-width: 768px) 50vw, 25vw"
+              sizes={lite ? LITE_CARD_SIZES : "(max-width: 768px) 50vw, 25vw"}
+              quality={lite ? LITE_QUALITY : undefined}
               className="object-cover transition-opacity duration-300"
             />
 
@@ -180,14 +186,14 @@ export default function ProductCard({
             >
               {product.badge === "Sale" && product.compareAt
                 ? `-${discountPct(price, product.compareAt)}%`
-                : product.badge}
+                : t(`badge.${product.badge}` as MessageKey)}
             </span>
           )}
         </div>
       )}
 
       <button
-        aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
+        aria-label={wished ? t("product.wishRemove") : t("product.wishAdd")}
         onClick={() =>
           toggleWishlist(product.id, {
             name: product.name,
@@ -247,14 +253,14 @@ export default function ProductCard({
               )}
               {sizes.length > 0 && (
                 <span className="ml-auto text-[10px] font-medium text-slate-400">
-                  {sizes.length} size{sizes.length === 1 ? "" : "s"}
+                  {t("product.sizes", { n: sizes.length })}
                 </span>
               )}
             </>
           )}
           {withVariants && colors.length === 0 && sizes.length > 0 && (
             <p className="text-[10px] font-medium text-slate-400">
-              {sizes.length} size{sizes.length === 1 ? "" : "s"} available
+              {t("product.sizes", { n: sizes.length })}
             </p>
           )}
         </div>
@@ -265,7 +271,7 @@ export default function ProductCard({
         <div className="mt-auto flex items-end justify-between gap-2 border-t border-sand-100 pt-2.5">
           <div>
             <div className="flex items-baseline gap-1.5">
-              {showFrom && <span className="text-[11px] text-slate-400">from</span>}
+              {showFrom && <span className="text-[11px] text-slate-400">{t("product.from")}</span>}
               <span className="font-display text-lg font-bold text-ocean-950">
                 {money(price)}
               </span>
@@ -277,9 +283,9 @@ export default function ProductCard({
             </div>
             <p className="text-[11px] text-slate-400">
               {soldOut ? (
-                <span className="font-semibold text-coral-600">Out of stock</span>
+                <span className="font-semibold text-coral-600">{t("product.outOfStock")}</span>
               ) : (
-                `${compact(product.sold)} sold`
+                t("product.sold", { n: compact(product.sold) })
               )}
             </p>
           </div>
@@ -291,7 +297,7 @@ export default function ProductCard({
               aria-label={`Choose options for ${product.name}`}
               className="flex h-9 items-center rounded-full bg-ocean-700 px-3 text-[11px] font-bold text-white shadow-md transition hover:bg-mango-500"
             >
-              Options
+              {t("product.options")}
             </Link>
           ) : (
             <button

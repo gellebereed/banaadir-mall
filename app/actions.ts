@@ -2025,6 +2025,8 @@ export async function updateMarketing(
       fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
       freeThreshold: Math.max(0, Number(formData.get("freeThreshold")) || 0),
       estimate: String(formData.get("deliveryEstimate") ?? "").trim(),
+      localTime: String(formData.get("deliveryLocalTime") ?? "").trim().slice(0, 40),
+      nationalTime: String(formData.get("deliveryNationalTime") ?? "").trim().slice(0, 40),
     },
     promo: {
       // Blank code disables the promo field on the cart entirely.

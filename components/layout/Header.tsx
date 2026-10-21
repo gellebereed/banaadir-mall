@@ -8,21 +8,25 @@ import AnnouncementBar from "./AnnouncementBar";
 import AccountMenu from "./AccountMenu";
 import DepartmentStrip from "./DepartmentStrip";
 import SearchBox from "./SearchBox";
+import DeliveryCity from "./DeliveryCity";
+import LiteToggle from "@/components/prefs/LiteToggle";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
-import type { Category } from "@/lib/types";
+import type { Category, MarketingSettings } from "@/lib/types";
 import type { Session } from "@/lib/auth";
 import { loginHref } from "@/lib/safe-next";
+import { LanguageToggle, useT } from "@/components/prefs/PrefsProvider";
+import type { T } from "@/lib/i18n";
 
 /** The main call-to-action changes with who is signed in. */
-function primaryAction(session: Session | null, storeName?: string) {
+function primaryAction(session: Session | null, t: T, storeName?: string) {
   if (session?.role === "admin") {
     return { href: "/admin", label: "🛡️ Control Panel" };
   }
   if (session?.role === "seller") {
     return { href: "/vendor", label: `🏪 ${storeName ?? "My Store"}` };
   }
-  return { href: "/products?sort=discount", label: "⚡ Daily Deals" };
+  return { href: "/products?sort=discount", label: t("nav.dailyDeals") };
 }
 
 export default function Header({
@@ -34,6 +38,7 @@ export default function Header({
   session,
   storeName,
   categories: dynamicCategories,
+  delivery,
 }: {
   announcement: string;
   announcementBgColor?: string;
@@ -43,11 +48,13 @@ export default function Header({
   session: Session | null;
   storeName?: string;
   categories?: Category[];
+  delivery: MarketingSettings["delivery"];
 }) {
   const { count, wishlist } = useCart();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const action = primaryAction(session, storeName);
+  const t = useT();
+  const action = primaryAction(session, t, storeName);
   /**
    * Departments only. The category list is the whole tree flattened, so
    * without this filter a menswear import puts "Socks" and "Bracelets" in
@@ -86,7 +93,7 @@ export default function Header({
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:gap-5">
           {/* Mobile menu toggle */}
           <button
-            aria-label="Open menu"
+            aria-label={t("nav.openMenu")}
             onClick={() => setMenuOpen((o) => !o)}
             className="flex h-10 w-10 items-center justify-center rounded-full text-xl hover:bg-sand-100 lg:hidden"
           >
@@ -105,6 +112,9 @@ export default function Header({
             />
           </Link>
 
+          {/* Where it's going, and how long it takes — like a shop's door sign. */}
+          <DeliveryCity delivery={delivery} variant="compact" />
+
           {/* Search (desktop) — with suggestions as you type */}
           <div className="hidden flex-1 md:block">
             <SearchBox variant="desktop" onNavigate={() => setMenuOpen(false)} />
@@ -116,7 +126,7 @@ export default function Header({
               href="/products?sort=discount"
               className="hidden items-center rounded-full bg-mango-100 px-3.5 py-2 text-sm font-bold text-mango-900 transition hover:bg-mango-200 lg:flex"
             >
-              ⚡ Daily Deals
+              {t("nav.dailyDeals")}
             </Link>
             {/*
               "Sell on Banaadir" has moved to the footer. The header is the
@@ -141,15 +151,21 @@ export default function Header({
                 🏪 {storeName ?? "My Store"}
               </Link>
             )}
-            <HeaderIcon href="/wishlist" label="Wishlist" icon="♡" badge={wishlist.length} />
-            <HeaderIcon href="/cart" label="Cart" icon="🛒" badge={count} />
+            <span className="hidden lg:block">
+              <LanguageToggle />
+            </span>
+            <HeaderIcon href="/wishlist" label={t("nav.wishlist")} icon="♡" badge={wishlist.length} />
+            <HeaderIcon href="/cart" label={t("nav.cart")} icon="🛒" badge={count} />
             <AccountMenu session={session} storeName={storeName} />
           </nav>
         </div>
 
         {/* Search (mobile) */}
-        <div className="px-4 pb-3 md:hidden">
+        <div className="px-4 pb-2 md:hidden">
           <SearchBox variant="mobile" onNavigate={() => setMenuOpen(false)} />
+        </div>
+        <div className="px-4 pb-2 lg:hidden">
+          <DeliveryCity delivery={delivery} variant="bar" />
         </div>
 
         {/* Category strip (desktop) */}
@@ -193,7 +209,7 @@ export default function Header({
                       onClick={() => setMenuOpen(false)}
                       className="block rounded-lg px-3 py-1.5 text-xs font-bold text-ocean-700 hover:bg-ocean-50"
                     >
-                      All of {c.name} →
+                      {t("nav.allOf", { name: c.name })}
                     </Link>
                     {/*
                       Groups are headings with their leaves indented under
@@ -234,9 +250,15 @@ export default function Header({
               );
             })}
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sand-100 px-4 py-2.5 text-sm font-semibold text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              {t("pref.language")} <LanguageToggle />
+            </span>
+            <LiteToggle />
+          </div>
           <div className="flex gap-2 border-t border-sand-100 p-3">
             <Link href="/stores" onClick={() => setMenuOpen(false)} className="btn-secondary flex-1 !py-2 text-sm">
-              Browse Stores
+              {t("nav.browseStores")}
             </Link>
             {session ? (
               <Link
@@ -252,7 +274,7 @@ export default function Header({
                 onClick={() => setMenuOpen(false)}
                 className="btn-primary flex-1 !py-2 text-sm"
               >
-                Sign in
+                {t("nav.signIn")}
               </Link>
             )}
           </div>

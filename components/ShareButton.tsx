@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -24,6 +25,7 @@ export default function ShareButton({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
@@ -85,7 +87,7 @@ export default function ShareButton({
         type="button"
         aria-label={label}
         aria-expanded={open}
-        title="Share"
+        title={t("share.title")}
         onClick={share}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-sand-200 bg-white text-slate-500 transition hover:border-ocean-600 hover:text-ocean-700"
       >
@@ -102,7 +104,7 @@ export default function ShareButton({
           role="menu"
           className="absolute right-0 top-12 z-30 w-52 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-sand-200"
         >
-          <p className="px-3 pb-1 pt-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Share</p>
+          <p className="px-3 pb-1 pt-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{t("share.title")}</p>
           {targets().map((t) => (
             <a
               key={t.label}
@@ -132,7 +134,7 @@ export default function ShareButton({
             <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full bg-sand-100 text-xs">
               🔗
             </span>
-            {copied ? "✓ Link copied" : "Copy link"}
+            {copied ? t("share.copied") : t("share.copy")}
           </button>
         </div>
       )}

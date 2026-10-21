@@ -657,6 +657,14 @@ export interface MarketingSettings {
     freeThreshold: number;
     /** Shown on the cart and checkout, e.g. "2–4 days nationwide". */
     estimate: string;
+    /**
+     * Shown by the header's "Deliver to" picker (components/layout/DeliveryCity).
+     * `localTime` for Banaadir (Mogadishu), `nationalTime` for the rest of
+     * Somalia. Absent on settings saved before they existed, when the
+     * picker falls back to `estimate`.
+     */
+    localTime?: string;
+    nationalTime?: string;
   };
   /** Single promo code accepted at checkout. Empty disables the field. */
   promo: { code: string; pct: number };

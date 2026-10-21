@@ -1,5 +1,6 @@
 "use client";
 
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -40,6 +41,7 @@ export default function ProductView({
   children?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const t = useT();
 
   const withVariants = hasVariants(product);
 
@@ -199,7 +201,7 @@ export default function ProductView({
             disabled={soldOut}
             className="btn-primary !px-5 !py-2.5 text-sm disabled:opacity-50"
           >
-            {added ? "✓ Added" : soldOut ? "Out of stock" : "Add to Cart"}
+            {added ? "✓" : soldOut ? t("product.outOfStock") : t("product.addToCart")}
           </button>
         </div>
       </div>
@@ -258,7 +260,7 @@ export default function ProductView({
             path={`/product/${product.slug}`}
             title={product.name}
             text={`${product.name} — ${money(price)} on Banaadir Mall`}
-            label="Share this product"
+            label={t("product.share")}
           />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -268,10 +270,10 @@ export default function ProductView({
             </a>
           ) : (
             <a href="#reviews" className="text-sm text-slate-400 hover:text-ocean-700 hover:underline">
-              No reviews yet
+              {t("product.noReviews")}
             </a>
           )}
-          <span className="text-sm text-slate-400">{compact(product.sold)} sold</span>
+          <span className="text-sm text-slate-400">{t("product.sold", { n: compact(product.sold) })}</span>
         </div>
 
         {/*
@@ -297,7 +299,7 @@ export default function ProductView({
                 {money(product.compareAt)}
               </span>
               <span className="rounded-full bg-coral-100 px-2.5 py-1 text-xs font-bold text-coral-600">
-                Save {discountPct(price, product.compareAt)}%
+                {t("product.save", { pct: discountPct(price, product.compareAt) })}
               </span>
             </>
           )}
@@ -309,7 +311,7 @@ export default function ProductView({
         <div className="mt-6 space-y-5">
           {colors.length > 0 && (
             <OptionPicker
-              label="Colour"
+              label={t("product.colour")}
               options={colours.map((c) => ({ value: c.color, inStock: c.inStock }))}
               value={color}
               onChange={setColor}
@@ -318,7 +320,7 @@ export default function ProductView({
           )}
           {sizes.length > 0 && (
             <OptionPicker
-              label="Size"
+              label={t("product.size")}
               options={sizeChoices.map((s) => ({ value: s.size, inStock: s.inStock }))}
               value={size}
               onChange={setSize}
@@ -350,10 +352,10 @@ export default function ProductView({
               }`}
             >
               {soldOut
-                ? "Out of stock in this option"
+                ? t("product.soldOutOption")
                 : lowStock
-                  ? `🔥 Only ${stock} left — order soon`
-                  : `✓ In stock (${stock} available)`}
+                  ? t("product.lowStock", { n: stock })
+                  : t("product.inStock", { n: stock })}
             </p>
           </div>
 
@@ -364,17 +366,17 @@ export default function ProductView({
               disabled={soldOut}
               className="btn-primary min-w-44 flex-1 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {added ? "✓ Added to Cart" : soldOut ? "Out of Stock" : "Add to Cart"}
+              {added ? t("product.added") : soldOut ? t("product.soldOut") : t("product.addToCart")}
             </button>
             <Link
               href="/cart"
               onClick={handleAdd}
               className={`btn-secondary flex-1 ${soldOut ? "pointer-events-none opacity-50" : ""}`}
             >
-              Buy Now
+              {t("product.buyNow")}
             </Link>
             <button
-              aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
+              aria-label={wished ? t("product.wishRemove") : t("product.wishAdd")}
               onClick={() =>
                 toggleWishlist(product.id, {
                   name: product.name,
@@ -464,6 +466,8 @@ function ZoomableImage({
 }) {
   const [origin, setOrigin] = useState("50% 50%");
   const [zooming, setZooming] = useState(false);
+  // Light data mode: screen width at normal quality (the zoom gets softer).
+  const { lite } = usePrefs();
   const [lightbox, setLightbox] = useState(false);
   const touchStartX = useRef<number | null>(null);
 
@@ -538,8 +542,8 @@ function ZoomableImage({
            * control whose entire job is showing fabric detail, was the
            * blurriest thing on the page. The 2 here is the scale(2) below.
            */
-          sizes="(max-width: 1024px) 150vw, 75vw"
-          quality={90}
+          sizes={lite ? "(max-width: 1024px) 100vw, 50vw" : "(max-width: 1024px) 150vw, 75vw"}
+          quality={lite ? 75 : 90}
           priority
           className="object-cover transition-transform duration-200 ease-out"
           style={{

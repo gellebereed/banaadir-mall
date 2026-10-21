@@ -5,6 +5,7 @@ import { useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import SectionHeader from "@/components/SectionHeader";
 import { money } from "@/lib/format";
+import { useT } from "@/components/prefs/PrefsProvider";
 import type { Product } from "@/lib/types";
 
 export interface BudgetBand {
@@ -20,15 +21,17 @@ export interface BudgetBand {
  */
 export default function BudgetPicks({ bands }: { bands: BudgetBand[] }) {
   const [active, setActive] = useState(0);
+  const t = useT();
   if (bands.length === 0) return null;
   const band = bands[Math.min(active, bands.length - 1)];
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <SectionHeader
-        title="Shop by budget"
-        subtitle="Best sellers at every price"
+        title={t("section.budget")}
+        subtitle={t("section.budget.sub")}
         href={`/products?max=${band.max}&sort=sold`}
+        linkLabel={t("section.viewAll")}
       />
       <div role="tablist" aria-label="Budget" className="rail-scroll -mx-4 mb-4 flex gap-2 overflow-x-auto px-4">
         {bands.map((b, i) => (
@@ -44,7 +47,7 @@ export default function BudgetPicks({ bands }: { bands: BudgetBand[] }) {
                 : "bg-white text-slate-600 ring-1 ring-sand-200 hover:ring-ocean-300"
             }`}
           >
-            Under {money(b.max)}
+            {t("section.budget.under", { amount: money(b.max) })}
           </button>
         ))}
       </div>
@@ -61,7 +64,7 @@ export default function BudgetPicks({ bands }: { bands: BudgetBand[] }) {
           <span className="text-3xl" aria-hidden>
             →
           </span>
-          See everything under {money(band.max)}
+          {t("section.budget.all", { amount: money(band.max) })}
         </Link>
       </div>
     </section>

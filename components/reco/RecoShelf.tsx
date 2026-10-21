@@ -21,6 +21,8 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
+import { REASON_LABELS_SO, shelfTextSo } from "@/lib/reco/i18n-so";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
@@ -158,6 +160,8 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
   const { mute } = useReco();
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [showWhy, setShowWhy] = useState(false);
+  const t = useT();
+  const so = usePrefs().lang === "so";
 
   /*
    * Measurement (lib/reco/metrics-client.ts): one impression when at least
@@ -239,7 +243,7 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.14em] ring-1 ring-inset ${tone.label} ${tone.labelText}`}
             >
-              {shelf.eyebrow}
+              {so ? shelfTextSo(shelf.eyebrow) : shelf.eyebrow}
             </span>
 
             <div className="mt-2 flex items-center gap-3">
@@ -254,13 +258,13 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
                   shelf.feature ? "text-2xl sm:text-3xl" : "text-lg sm:text-xl"
                 }`}
               >
-                {shelf.title}
+                {so ? shelfTextSo(shelf.title) : shelf.title}
               </h2>
             </div>
 
             {shelf.subtitle && (
               <p className="mt-1.5 max-w-xl text-sm text-slate-500 sm:ml-[3.25rem]">
-                {shelf.subtitle}
+                {so ? shelfTextSo(shelf.subtitle) : shelf.subtitle}
               </p>
             )}
           </div>
@@ -271,7 +275,7 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
               aria-expanded={showWhy}
               className={`rounded-full border bg-white/60 px-3 py-1.5 text-xs font-bold backdrop-blur transition ${tone.control}`}
             >
-              {showWhy ? "Hide" : "Why these?"}
+              {showWhy ? t("reco.hideWhy") : t("reco.why")}
             </button>
             {shelf.href && (
               <Link
@@ -370,11 +374,14 @@ function RecoCard({
   onOpen: (productId: string) => void;
 }) {
   const proof = item.proof;
+  const so = usePrefs().lang === "so";
   const icon = REASON_ICONS[item.reason.kind] ?? "✦";
   const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-700/95 text-white";
   const label = item.exploratory
-    ? "New to you"
-    : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
+    ? so ? "Cusub adiga" : "New to you"
+    : so
+      ? (REASON_LABELS_SO[item.reason.kind] ?? "Laguu doortay")
+      : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
 
   return (
     <div

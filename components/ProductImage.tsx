@@ -1,4 +1,8 @@
+"use client";
+
 import Image from "next/image";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
+import { LITE_CARD_SIZES, LITE_QUALITY } from "@/lib/lite";
 import { primaryImage } from "@/lib/product-utils";
 import type { Product } from "@/lib/types";
 
@@ -24,6 +28,7 @@ export default function ProductImage({
 }) {
   // Prefer the default variant's photo so listings and dashboards agree.
   const photo = primaryImage(product as Product);
+  const { lite } = usePrefs();
 
   if (photo) {
     return (
@@ -32,7 +37,8 @@ export default function ProductImage({
           src={photo}
           alt={product.name}
           fill
-          sizes={sizes}
+          sizes={lite ? LITE_CARD_SIZES : sizes}
+          quality={lite ? LITE_QUALITY : undefined}
           priority={priority}
           className="object-cover"
         />

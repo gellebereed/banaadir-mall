@@ -501,6 +501,8 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
         fee: 3,
         freeThreshold: 25,
         estimate: "Same-day in Mogadishu · 2–4 days nationwide",
+        localTime: "Same day",
+        nationalTime: "2–4 days",
       },
       promo: data.promo || { code: "BANAADIR10", pct: 10 },
       /*

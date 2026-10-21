@@ -1,5 +1,7 @@
 "use client";
 
+import { usePrefs } from "@/components/prefs/PrefsProvider";
+import { LITE_QUALITY } from "@/lib/lite";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -89,15 +91,19 @@ export default function HeroCarousel({
    * rotation in a background tab and the shopper returns to slide 4 with no
    * idea the first three existed.
    */
+  // Light data mode: no autoplay — each slide's photo is only fetched
+  // when the shopper actually swipes to it (see HeroSlideView).
+  const { lite } = usePrefs();
+
   useEffect(() => {
-    if (paused || count < 2) return;
+    if (paused || count < 2 || lite) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
     const id = setInterval(() => {
       if (!document.hidden) setIndex((i) => (i + 1) % count);
     }, AUTOPLAY_MS);
     return () => clearInterval(id);
-  }, [paused, count]);
+  }, [paused, count, lite]);
 
   if (count === 0) return null;
 
@@ -189,6 +195,16 @@ function HeroSlideView({
   const hasText = Boolean(slide.title || slide.subtitle || slide.cta);
   const contain = slide.fit === "contain";
   const hasArt = Boolean(slide.image || slide.mobileImage);
+  const { lite } = usePrefs();
+  // Every slide's photo normally loads up front (they are stacked, only one
+  // visible). In light data mode only slides that have been shown load,
+  // and at lower quality.
+  const [seen, setSeen] = useState(active);
+  useEffect(() => {
+    if (active) setSeen(true);
+  }, [active]);
+  const loadArt = !lite || seen;
+  const quality = lite ? LITE_QUALITY : undefined;
 
   return (
     <div
@@ -199,21 +215,23 @@ function HeroSlideView({
       style={{ background: `linear-gradient(125deg, ${slide.from}, ${slide.to})` }}
     >
       {/* Artwork. Portrait on phones when the admin supplied one. */}
-      {slide.mobileImage && (
+      {slide.mobileImage && loadArt && (
         <Image
           src={slide.mobileImage}
           alt=""
           fill
+          quality={quality}
           sizes="100vw"
           priority={priority}
           className={`sm:hidden ${contain ? "object-contain" : "object-cover"}`}
         />
       )}
-      {slide.image && (
+      {slide.image && loadArt && (
         <Image
           src={slide.image}
           alt=""
           fill
+          quality={quality}
           sizes="100vw"
           priority={priority}
           className={`${slide.mobileImage ? "hidden sm:block" : ""} ${

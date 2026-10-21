@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useT } from "@/components/prefs/PrefsProvider";
 
 /**
  * Flash-deal countdown. Counts down to the admin's chosen end time
@@ -9,6 +10,7 @@ import { useEffect, useState } from "react";
  */
 export default function CountdownTimer({ endsAt }: { endsAt?: string }) {
   const [left, setLeft] = useState<number | null>(null);
+  const t = useT();
 
   useEffect(() => {
     const tick = () => {
@@ -47,7 +49,7 @@ export default function CountdownTimer({ endsAt }: { endsAt?: string }) {
 
   return (
     <div className="flex items-center gap-1.5" aria-label="Deal ends in">
-      <span className="text-xs font-medium text-coral-600">Ends in</span>
+      <span className="text-xs font-medium text-coral-600">{t("section.endsIn")}</span>
       {days > 0 && (
         <span className="rounded-md bg-coral-500 px-1.5 py-0.5 font-mono text-xs font-bold text-white">
           {days}d

@@ -20,7 +20,8 @@ const nextConfig: NextConfig = {
      * pinstripe, herringbone, weave — collapses into mush. 90 is declared
      * so the product page and its zoom can ask for it.
      */
-    qualities: [75, 90],
+    // 40: light data mode (lib/lite.ts).
+    qualities: [40, 75, 90],
     remotePatterns: [
       {
         protocol: "https",

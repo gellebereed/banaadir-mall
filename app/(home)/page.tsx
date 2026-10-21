@@ -13,6 +13,8 @@ import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import { discountPct, money } from "@/lib/format";
 import { getSession } from "@/lib/session";
+import { getT } from "@/lib/prefs-server";
+import type { T } from "@/lib/i18n";
 import {
   getBestsellers,
   getCategories,
@@ -48,7 +50,7 @@ export default async function HomePage() {
 
   // Department artwork: the admin's chosen cover, or the best-selling
   // product's photo from inside that department. See categoryCovers().
-  const session = await getSession();
+  const [session, t] = await Promise.all([getSession(), getT()]);
   const myOrder = session?.role === "customer" ? await activeOrderFor(session.email) : null;
   // Capitalised: accounts created from an email address carry a
   // lower-case name ("ayaan"), which reads as a bug in a greeting.
@@ -119,7 +121,7 @@ export default async function HomePage() {
       subtitle: marketing.heroSubtitle,
       // Sellers have their own band lower down and in the footer; here a
       // second button only competed with shopping for every visitor.
-      cta: "Start Shopping",
+      cta: t("home.startShopping"),
       from: "#0c2b34",
       to: "#217987",
       brand: true,
@@ -145,19 +147,19 @@ export default async function HomePage() {
     // Banners are slides in the hero now, so this section renders nothing
     // of its own. Its visibility switch still governs whether they appear.
     banners: () => null,
-    promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} /> : null),
+    promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} t={t} /> : null),
     // Pinned under the hero instead (QuickNav / TrustStrip): their switches
     // still decide whether they show, their position no longer moves them.
     categories: () => null,
-    brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} /> : null),
+    brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} t={t} /> : null),
     flash: () =>
       flashProducts.length > 0 ? (
         <FlashDealsRail deals={flashProducts} name={flash.name} endsAt={flash.endsAt} />
       ) : null,
     value: () => null,
-    trending: () => <Bestsellers products={bestsellers} />,
-    stores: () => (localStores.length > 0 ? <StoreSpotlight stores={localStores} /> : null),
-    new: () => (newArrivals.length > 0 ? <NewArrivals products={newArrivals} /> : null),
+    trending: () => <Bestsellers products={bestsellers} t={t} />,
+    stores: () => (localStores.length > 0 ? <StoreSpotlight stores={localStores} t={t} /> : null),
+    new: () => (newArrivals.length > 0 ? <NewArrivals products={newArrivals} t={t} /> : null),
   };
 
   const isVisible = (key: SectionKey) => marketing.sections.some((s) => s.key === key && s.visible);
@@ -230,7 +232,7 @@ export default async function HomePage() {
 
   return (
     <div>
-      {firstName && <WelcomeStrip name={firstName} order={myOrder} />}
+      {firstName && <WelcomeStrip name={firstName} order={myOrder} t={t} />}
 
       <HeroCarousel
         slides={heroSlides}
@@ -239,7 +241,7 @@ export default async function HomePage() {
       {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
 
       {/* Why to buy here, in one line, before anything asks for a decision. */}
-      {showTrust && <TrustStrip delivery={marketing.delivery} />}
+      {showTrust && <TrustStrip delivery={marketing.delivery} t={t} />}
 
       {/* The launcher: the one set of department shortcuts on the page, and
           on a phone part of the first screen. */}
@@ -258,7 +260,7 @@ export default async function HomePage() {
       {visibleSections.map((section, index) => (
         <div key={section.key}>
           {sectionRenderers[section.key]?.()}
-          {deal && section.key === dealAfter && <DealOfTheDay {...deal} />}
+          {deal && section.key === dealAfter && <DealOfTheDay {...deal} t={t} />}
           {section.key === budgetAfter && <BudgetPicks bands={budgetBands} />}
           {index === earlyAt && (
             <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="early" />
@@ -370,10 +372,10 @@ function HeroProductCards({ products }: { products: Product[] }) {
 
 /* ── Campaign tiles (admin-built) ─────────────────────────────────── */
 
-function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
+function PromoTiles({ tiles, t }: { tiles: MarketingSettings["promoTiles"]; t: T }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-10">
-      <SectionHeader title="Today's Campaigns" subtitle="Handpicked offers across the mall" />
+      <SectionHeader title={t("section.campaigns")} subtitle={t("section.campaigns.sub")} />
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {tiles.map((t) => (
           <Link
@@ -400,13 +402,14 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
 
 /* ── Official brand stores ────────────────────────────────────────── */
 
-function OfficialBrands({ brands }: { brands: Store[] }) {
+function OfficialBrands({ brands, t }: { brands: Store[]; t: T }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <SectionHeader
-        title="Official Brand Stores"
-        subtitle="World-famous brands, franchised exclusively by Banaadir Mall"
+        title={t("section.brands")}
+        subtitle={t("section.brands.sub")}
         href="/stores"
+        linkLabel={t("section.viewAll")}
       />
       {/* One swipeable row on a phone (a 2×2 block was most of a screen). */}
       <div className="rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
@@ -438,7 +441,7 @@ function OfficialBrands({ brands }: { brands: Store[] }) {
               </h3>
               <p className="mt-0.5 line-clamp-2 text-[11px] text-white/80">{b.tagline}</p>
               <span className="mt-2.5 inline-block rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-bold ring-1 ring-white/30 backdrop-blur">
-                ★ {b.rating} · Shop now →
+                ★ {b.rating} · {t("brand.shopNow")}
               </span>
             </div>
           </Link>
@@ -502,18 +505,18 @@ async function activeOrderFor(email: string): Promise<Order | null> {
   return active[0] ?? null;
 }
 
-const ORDER_LINE: Record<string, string> = {
-  pending: "has been received",
-  processing: "is being prepared",
-  shipped: "is on the way",
-};
+const ORDER_LINE = {
+  pending: "home.order.pending",
+  processing: "home.order.processing",
+  shipped: "home.order.shipped",
+} as const;
 
 /** Name and the order in progress, above the hero — server-rendered, so it never shifts the page. */
-function WelcomeStrip({ name, order }: { name: string; order: Order | null }) {
+function WelcomeStrip({ name, order, t }: { name: string; order: Order | null; t: T }) {
   return (
     <div className="border-b border-ocean-100 bg-ocean-50">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-        <span className="font-semibold text-ocean-950">Welcome back, {name} 👋</span>
+        <span className="font-semibold text-ocean-950">{t("home.welcome", { name })}</span>
         {order ? (
           <Link
             href={`/track?id=${encodeURIComponent(order.id)}`}
@@ -521,13 +524,13 @@ function WelcomeStrip({ name, order }: { name: string; order: Order | null }) {
           >
             <span aria-hidden>{order.status === "shipped" ? "🚚" : "📦"}</span>
             <span className="truncate">
-              Order #{order.id} {ORDER_LINE[order.status]} — track it
+              {t(ORDER_LINE[order.status as keyof typeof ORDER_LINE] ?? "home.order.pending", { id: order.id })}
             </span>
             <span aria-hidden>→</span>
           </Link>
         ) : (
           <Link href="/account" className="font-semibold text-ocean-700 hover:underline">
-            Your orders &amp; saved items →
+            {t("home.yourAccount")}
           </Link>
         )}
       </div>
@@ -557,7 +560,7 @@ function dealOfTheDay(products: Product[], exclude: Set<string>) {
   return { product: candidates[day % candidates.length], endsAt };
 }
 
-function DealOfTheDay({ product, endsAt }: { product: Product; endsAt: string }) {
+function DealOfTheDay({ product, endsAt, t }: { product: Product; endsAt: string; t: T }) {
   const pct = discountPct(product.price, product.compareAt!);
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
@@ -577,7 +580,7 @@ function DealOfTheDay({ product, endsAt }: { product: Product; endsAt: string })
           </span>
         </div>
         <div className="flex flex-col justify-center gap-3 p-6 sm:p-10">
-          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-mango-300">Deal of the day</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-mango-300">{t("deal.label")}</p>
           <h2 className="font-display text-2xl font-extrabold leading-tight sm:text-4xl">{product.name}</h2>
           <p className="flex items-baseline gap-3">
             <span className="font-display text-4xl font-extrabold">{money(product.price)}</span>
@@ -586,9 +589,9 @@ function DealOfTheDay({ product, endsAt }: { product: Product; endsAt: string })
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/80">
             {/* The timer carries its own "Ends in" label. */}
             <CountdownTimer endsAt={endsAt} />
-            {product.stock <= 20 && <span className="font-semibold text-mango-300">Only {product.stock} left</span>}
+            {product.stock <= 20 && <span className="font-semibold text-mango-300">{t("deal.left", { n: product.stock })}</span>}
           </div>
-          <span className="btn-primary mt-2 self-start">Shop the deal</span>
+          <span className="btn-primary mt-2 self-start">{t("deal.shop")}</span>
         </div>
       </Link>
     </section>
@@ -627,21 +630,21 @@ function budgetPicks(products: Product[]): BudgetBand[] {
  * arguments on the page, arriving after the shopper had already decided
  * whether to scroll. Swipes sideways on a phone rather than wrapping.
  */
-function TrustStrip({ delivery }: { delivery: MarketingSettings["delivery"] }) {
+function TrustStrip({ delivery, t }: { delivery: MarketingSettings["delivery"]; t: T }) {
   const items = [
     {
       icon: "🚚",
       text:
         delivery.freeThreshold > 0
-          ? `Free delivery over ${money(delivery.freeThreshold)}`
+          ? t("trust.freeOver", { amount: money(delivery.freeThreshold) })
           : delivery.estimate
-            ? `Delivery ${delivery.estimate}`
-            : "Fast delivery",
+            ? t("trust.delivery", { estimate: delivery.estimate })
+            : t("trust.fast"),
     },
     { icon: "📲", text: "EVC Plus · Zaad · eDahab" },
-    { icon: "💵", text: "Cash on delivery" },
-    { icon: "↩️", text: "7-day returns" },
-    { icon: "🏪", text: "Trusted Somali stores" },
+    { icon: "💵", text: t("trust.cod") },
+    { icon: "↩️", text: t("trust.returns") },
+    { icon: "🏪", text: t("trust.local") },
   ];
   return (
     <section aria-label="Why shop with us" className="border-b border-sand-200 bg-white">
@@ -668,10 +671,10 @@ function TrustStrip({ delivery }: { delivery: MarketingSettings["delivery"] }) {
 const RAIL_GRID = "rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4";
 const RAIL_ITEM = "flex w-[44%] shrink-0 snap-start md:w-auto";
 
-function Bestsellers({ products }: { products: Product[] }) {
+function Bestsellers({ products, t }: { products: Product[]; t: T }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
-      <SectionHeader title="Trending Now" subtitle="What everyone is buying this week" href="/products?sort=sold" />
+      <SectionHeader title={t("section.trending")} subtitle={t("section.trending.sub")} href="/products?sort=sold" linkLabel={t("section.viewAll")} />
       <div className={RAIL_GRID}>
         {products.map((p) => (
           <div key={p.id} className={RAIL_ITEM}>
@@ -683,10 +686,10 @@ function Bestsellers({ products }: { products: Product[] }) {
   );
 }
 
-function NewArrivals({ products }: { products: Product[] }) {
+function NewArrivals({ products, t }: { products: Product[]; t: T }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
-      <SectionHeader title="Just Landed" subtitle="Fresh finds from our stores" href="/products?sort=new" />
+      <SectionHeader title={t("section.new")} subtitle={t("section.new.sub")} href="/products?sort=new" linkLabel={t("section.viewAll")} />
       <div className={RAIL_GRID}>
         {products.map((p) => (
           <div key={p.id} className={RAIL_ITEM}>
@@ -698,10 +701,10 @@ function NewArrivals({ products }: { products: Product[] }) {
   );
 }
 
-function StoreSpotlight({ stores }: { stores: Store[] }) {
+function StoreSpotlight({ stores, t }: { stores: Store[]; t: T }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
-      <SectionHeader title="Featured Stores" subtitle="Trusted sellers with top ratings" href="/stores" />
+      <SectionHeader title={t("section.stores")} subtitle={t("section.stores.sub")} href="/stores" linkLabel={t("section.viewAll")} />
       {/* Swipeable on a phone (four full-width cards were a screen and a
           half); a grid from tablet up. */}
       <div className="rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">

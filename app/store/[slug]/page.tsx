@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import ShareButton from "@/components/ShareButton";
+import { getT } from "@/lib/prefs-server";
 import Rating from "@/components/Rating";
 import StoreAvatar from "@/components/StoreAvatar";
 import { getProductsByStore, getStore, getStores } from "@/lib/api";
@@ -44,6 +45,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 /** Public store profile: banner, stats and the store's full catalog. */
 export default async function StorePage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const t = await getT();
   const { c: activeSlug } = await searchParams;
   const store = await getStore(slug);
   if (!store || store.status !== "active") notFound();
@@ -115,7 +117,7 @@ export default async function StorePage({ params, searchParams }: Props) {
               path={`/store/${store.slug}`}
               title={store.name}
               text={`Shop ${store.name} on Banaadir Mall${store.tagline ? ` — ${store.tagline}` : ""}`}
-              label="Share this store"
+              label={t("share.store")}
             />
           </div>
           <div className="flex shrink-0 gap-6 sm:flex-col sm:gap-2 sm:text-right">
