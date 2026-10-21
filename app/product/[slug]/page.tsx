@@ -48,7 +48,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: `${product.name} — ${money(product.price)}`,
       description,
       url: `/product/${product.slug}`,
-      images: [{ url: `/product/${product.slug}/opengraph-image`, width: 1200, height: 630, alt: product.name }],
+      images: [{ url: `/product/${product.slug}/opengraph-image?v=2`, width: 1200, height: 630, alt: product.name }],
     }),
     other: {
       "product:price:amount": product.price.toFixed(2),

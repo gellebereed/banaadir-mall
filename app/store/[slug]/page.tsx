@@ -27,9 +27,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     store.tagline,
     `Shop ${store.name} on Banaadir Mall — delivered across Somalia.`,
   );
-  // The store's own banner makes the best preview; without one the site's
-  // default card (app/opengraph-image.tsx) is used.
-  const banner = store.banner?.startsWith("http") ? store.banner : undefined;
   return {
     title: store.name,
     description,
@@ -38,7 +35,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: `${store.name} on Banaadir Mall`,
       description,
       url: `/store/${store.slug}`,
-      ...(banner ? { images: [{ url: banner }] } : {}),
+      // The card drawn by ./opengraph-image.tsx (banner, logo, products).
+      images: [{ url: `/store/${store.slug}/opengraph-image?v=2`, width: 1200, height: 630, alt: store.name }],
     }),
   };
 }

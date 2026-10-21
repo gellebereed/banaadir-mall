@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
     // 1 MB request limit is far too small (see lib/uploads.ts).
     serverActions: { bodySizeLimit: "12mb" },
   },
+  // The link-preview cards (lib/og.ts) read these at request time; listed
+  // so the serverless bundle includes them.
+  outputFileTracingIncludes: {
+    "/product/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
+    "/store/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
+  },
   images: {
     /*
      * next/image re-encodes every photo it serves, so a product shot is
