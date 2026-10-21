@@ -14,7 +14,7 @@ const LOCAL_REGION = "Banaadir";
 const CHANGE_EVENT = "bm-city-change";
 
 /** "Burco (Burao)" → "Burco": the bracket is a spelling aid for the list, not a name. */
-const shortName = (city: string) => city.replace(/\s*\(.*\)\s*$/, "");
+export const shortName = (city: string) => city.replace(/\s*\(.*\)\s*$/, "");
 
 export function readDeliveryCity(): string | null {
   try {
@@ -26,11 +26,27 @@ export function readDeliveryCity(): string | null {
 }
 
 /**
+ * How long delivery takes to `city`: the admin's local time for the
+ * capital, the national time anywhere else in Somalia, and the general
+ * estimate for an address abroad. Shared with the cart and checkout so all
+ * three quote the same promise.
+ */
+export function deliveryTimeFor(
+  delivery: MarketingSettings["delivery"],
+  city: string,
+  countryCode = "SO",
+): string {
+  if (countryCode !== "SO") return delivery.estimate;
+  const local = SOMALI_REGIONS_CITIES.find((r) => r.region === LOCAL_REGION)?.cities.includes(city) ?? false;
+  return (local ? delivery.localTime : delivery.nationalTime) || delivery.estimate;
+}
+
+/**
  * The admin's delivery times are free text ("Same day", "2–4 days"); the
  * common words are put into Somali so the header doesn't switch language
  * mid-line. Anything unrecognised is shown as written.
  */
-function localiseTime(text: string, lang: Lang): string {
+export function localiseTime(text: string, lang: Lang): string {
   if (lang !== "so") return text;
   return text
     .replace(/same[- ]day/i, "Isla maalinta")
@@ -72,8 +88,7 @@ export default function DeliveryCity({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const local = SOMALI_REGIONS_CITIES.find((r) => r.region === LOCAL_REGION)?.cities.includes(city) ?? false;
-  const time = (local ? delivery.localTime : delivery.nationalTime) || delivery.estimate;
+  const time = deliveryTimeFor(delivery, city);
 
   const regions = useMemo(() => {
     const q = query.trim().toLowerCase();

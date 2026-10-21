@@ -4,12 +4,19 @@ const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+const usdCents = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-/** "$49" / "$49.99" */
+/** "$49" / "$49.99" / "$118.80" — cents are shown in full or not at all. */
 export function money(n: number): string {
-  return usd.format(n);
+  const cents = Math.round(n * 100);
+  return cents % 100 === 0 ? usd.format(cents / 100) : usdCents.format(cents / 100);
 }
 
 /** "2.3k" style compact counters for sold/followers numbers. */

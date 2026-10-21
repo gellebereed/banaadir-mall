@@ -48,6 +48,9 @@ export interface PlacedOrder {
   city: string;
   paymentLabel: string;
   subtotal: number;
+  /** Promo-code saving as the server honoured it. */
+  discount?: number;
+  discountPct?: number;
   delivery: number;
   total: number;
   parcels: PlacedParcel[];
@@ -93,6 +96,7 @@ export default function OrderConfirmation({
     city: order.city,
     paymentMethod: order.paymentLabel,
     subtotal: order.subtotal,
+    discount: order.discount,
     deliveryFee: order.delivery,
     total: order.total,
     placedAt,
@@ -146,6 +150,12 @@ export default function OrderConfirmation({
             <dt className="text-slate-500">Items</dt>
             <dd className="font-semibold text-slate-800">{money(order.subtotal)}</dd>
           </div>
+          {(order.discount ?? 0) > 0 && (
+            <div className="flex justify-between text-emerald-600">
+              <dt>Promo ({order.discountPct}%)</dt>
+              <dd className="font-semibold">−{money(order.discount ?? 0)}</dd>
+            </div>
+          )}
           <div className="flex justify-between">
             <dt className="text-slate-500">Delivery</dt>
             <dd className="font-semibold text-slate-800">
@@ -227,6 +237,7 @@ export default function OrderConfirmation({
               paymentMethod: order.paymentLabel,
               placedAt,
               lines: parcel.lines,
+              discountPct: order.discountPct,
               dashboardUrl: "banaadirmall.com/vendor/orders",
             });
 

@@ -9,6 +9,7 @@ import AccountMenu from "./AccountMenu";
 import DepartmentStrip from "./DepartmentStrip";
 import SearchBox from "./SearchBox";
 import DeliveryCity from "./DeliveryCity";
+import { isCheckoutPath } from "./ShopChrome";
 import LiteToggle from "@/components/prefs/LiteToggle";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
@@ -55,6 +56,46 @@ export default function Header({
   const [menuOpen, setMenuOpen] = useState(false);
   const t = useT();
   const action = primaryAction(session, t, storeName);
+
+  // Checkout gets a focused header: the logo, a way back to the cart, and
+  // the reassurance that it is secure — no search box or department menu
+  // pulling a shopper away halfway through paying.
+  if (isCheckoutPath(pathname)) {
+    return (
+      <header className="sticky top-0 z-40 border-b border-sand-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
+          {/* Not once the order is placed — the cart is empty by then. */}
+          {count > 0 && (
+          <Link
+            href="/cart"
+            aria-label={t("checkout.backToCart")}
+            className="flex h-10 items-center gap-1.5 rounded-full px-2 text-sm font-semibold text-slate-600 hover:bg-sand-100 hover:text-ocean-800"
+          >
+            <span aria-hidden className="text-lg leading-none">←</span>
+            <span className="hidden sm:inline">{t("checkout.backToCart")}</span>
+          </Link>
+          )}
+          <Link href="/" className="shrink-0">
+            <Image
+              src="/banaadir-logo.png"
+              alt="Banaadir Mall"
+              width={125}
+              height={50}
+              priority
+              className="h-9 w-auto sm:h-10"
+            />
+          </Link>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 sm:text-sm">
+              <span aria-hidden>🔒</span>
+              <span className="hidden min-[400px]:inline">{t("cart.trust.secure")}</span>
+            </span>
+            <LanguageToggle />
+          </div>
+        </div>
+      </header>
+    );
+  }
   /**
    * Departments only. The category list is the whole tree flattened, so
    * without this filter a menswear import puts "Socks" and "Bracelets" in

@@ -22,7 +22,8 @@ export default function WhatsAppHelp() {
 
   // Product pages have a sticky "Add to Cart" bar above the tab bar on a
   // phone; the button sits above it rather than on top of the buy button.
-  const onProduct = pathname.startsWith("/product/");
+  // The cart has the same kind of bar (its total and Checkout button).
+  const onProduct = pathname.startsWith("/product/") || pathname === "/cart";
 
   const open = () => {
     const page = document.title.replace(/\s*·\s*Banaadir Mall$/, "");

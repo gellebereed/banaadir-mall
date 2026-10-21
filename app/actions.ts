@@ -2275,6 +2275,28 @@ export interface ResolvedParcel {
   }[];
 }
 
+/**
+ * Today's price for each cart line, keyed by product id.
+ *
+ * The cart keeps the price from the moment something was added; the order
+ * is charged at the catalogue's price (see submitOrderAction). Checkout
+ * asks for these so the total it shows is the total that gets recorded.
+ * Products no longer in the catalogue are simply left out.
+ */
+export async function quoteCartAction(
+  items: { productId: string; selectedColor?: string; selectedSize?: string }[],
+): Promise<Record<string, number>> {
+  const { getAllProducts } = await import("@/lib/api");
+  const { findVariant, variantPrice } = await import("@/lib/product-utils");
+  const catalog = await getAllProducts();
+  const quote: Record<string, number> = {};
+  for (const item of items.slice(0, 200)) {
+    const product = catalog.find((p) => p.id === item.productId);
+    if (product) quote[item.productId] = variantPrice(product, findVariant(product, item.selectedColor, item.selectedSize));
+  }
+  return quote;
+}
+
 export async function submitOrderAction(payload: {
   id: string;
   customerName: string;
@@ -2298,10 +2320,14 @@ export async function submitOrderAction(payload: {
   deliveryFee: number;
   total: number;
   paymentMethod: string;
+  /** The code the customer applied in the cart, if any. Checked here. */
+  promoCode?: string;
 }): Promise<{
   ok: boolean;
   message: string;
   orderId: string;
+  /** Percentage the server actually honoured (0 when the code was not valid). */
+  discountPct: number;
   /**
    * The parcels as the SERVER resolved them. The confirmation screen uses
    * these rather than its own copy, because the browser's cart may carry a
@@ -2328,9 +2354,26 @@ export async function submitOrderAction(payload: {
    * carries a store, because a stale cart in someone's browser would still
    * be wrong. The product record is the authority on which shop sells it.
    */
-  const { getAllStores, getBaseProducts } = await import("@/lib/api");
-  const [catalog, allStores] = await Promise.all([getBaseProducts(), getAllStores()]);
+  const { getAllStores, getAllProducts, getMarketingSettings } = await import("@/lib/api");
+  const { findVariant, variantPrice } = await import("@/lib/product-utils");
+  // getAllProducts, not the base catalogue: it carries today's promotions
+  // and campaign, which are the prices the shopper was actually shown.
+  const [catalog, allStores, marketing] = await Promise.all([
+    getAllProducts(),
+    getAllStores(),
+    getMarketingSettings(),
+  ]);
   const storesBySlug = new Map(allStores.map((store) => [store.slug, store]));
+
+  // The promo code is re-checked here rather than trusted from the cart:
+  // the browser only says which code it typed, the settings say what it is
+  // worth.
+  const promo = marketing.promo;
+  const typed = (payload.promoCode ?? "").trim().toUpperCase();
+  const discountPct =
+    typed && promo.code && promo.pct > 0 && typed === promo.code.trim().toUpperCase()
+      ? Math.min(promo.pct, 100)
+      : 0;
 
   const items = payload.items.map((item) => {
     const product = catalog.find((p) => p.id === item.productId);
@@ -2347,7 +2390,15 @@ export async function submitOrderAction(payload: {
       // Same reasoning as `store`: the catalogue is the authority, and a
       // stale cart snapshot must not decide what gets recorded.
       name: product?.name || item.name,
-      price: typeof item.price === "number" ? item.price : (product?.price ?? 0),
+      // The PRICE too. This used to keep whatever number the browser sent,
+      // so anyone calling the action directly could set their own prices.
+      // The client's figure is only a fallback for a product that has
+      // since left the catalogue.
+      price: product
+        ? variantPrice(product, findVariant(product, item.selectedColor, item.selectedSize))
+        : typeof item.price === "number" && item.price >= 0
+          ? item.price
+          : 0,
       image: item.image || product?.images?.[0],
       reference: item.reference || product?.internalReference,
       storeName: storesBySlug.get(store)?.name || store.replace(/-/g, " "),
@@ -2366,7 +2417,10 @@ export async function submitOrderAction(payload: {
   const parcels: ResolvedParcel[] = [];
 
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
-    const storeSubtotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+    const itemsTotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+    // A promo code takes the same percentage off every parcel, so each
+    // shop's total is what its courier actually collects.
+    const storeSubtotal = Math.round(itemsTotal * (1 - discountPct / 100) * 100) / 100;
     const store = storesBySlug.get(storeSlug);
     const parcelId = orderIds.get(storeSlug) ?? id;
 
@@ -2435,7 +2489,7 @@ export async function submitOrderAction(payload: {
   }
 
   refresh();
-  return { ok: true, message: "Order placed successfully!", orderId: id, parcels };
+  return { ok: true, message: "Order placed successfully!", orderId: id, discountPct, parcels };
 }
 
 export async function getOrderAction(id: string): Promise<Order | undefined> {

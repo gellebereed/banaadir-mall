@@ -160,12 +160,17 @@ export default async function RootLayout({
             <StoreSiteFooter store={siteStore!} />
           ) : (
             // Dashboards draw their own frame — see ShopChrome.
-            <ShopChrome>
-              <Footer session={session} />
-              <BottomNav />
-              <WhatsAppHelp />
-              <InstallPrompt />
-            </ShopChrome>
+            <>
+              <ShopChrome hideOnCheckout>
+                <Footer session={session} />
+                <BottomNav />
+                <InstallPrompt />
+              </ShopChrome>
+              {/* Help stays on checkout — it is where questions come up. */}
+              <ShopChrome>
+                <WhatsAppHelp />
+              </ShopChrome>
+            </>
           )}
           {/* Cart / wishlist confirmations */}
           <Toaster />

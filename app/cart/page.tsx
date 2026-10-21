@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import CartClient from "@/components/cart/CartClient";
-import { getMarketingSettings } from "@/lib/api";
+import { getMarketingSettings, getStores } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Shopping Cart" };
 
@@ -9,6 +9,7 @@ export const metadata: Metadata = { title: "Shopping Cart" };
 export const dynamic = "force-dynamic";
 
 export default async function CartPage() {
-  const settings = await getMarketingSettings();
-  return <CartClient settings={settings} />;
+  // Stores so each parcel is headed by the shop's name and logo, not a slug.
+  const [settings, stores] = await Promise.all([getMarketingSettings(), getStores()]);
+  return <CartClient settings={settings} stores={stores} />;
 }

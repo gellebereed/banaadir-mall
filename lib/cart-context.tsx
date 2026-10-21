@@ -45,6 +45,12 @@ export interface Toast {
 interface CartContextValue {
   /** Cart lines joined with their product records. */
   lines: CartLine[];
+  /**
+   * False until the basket has been read from this device. Before that,
+   * `lines` is empty whether or not the cart is — pages that would show an
+   * "empty cart" state should wait for this instead of flashing it.
+   */
+  ready: boolean;
   /** Total number of units in the cart (drives the header badge). */
   count: number;
   subtotal: number;
@@ -234,6 +240,7 @@ export function CartProvider({
 
     return {
       scope,
+      ready: hydrated,
       lines,
       count: lines.reduce((sum, l) => sum + l.qty, 0),
       subtotal: lines.reduce((sum, l) => sum + l.qty * l.product.price, 0),
@@ -290,7 +297,7 @@ export function CartProvider({
       },
       isWishlisted: (productId) => wishlist.includes(productId),
     };
-  }, [items, wishlist, toasts, scope]);
+  }, [items, wishlist, toasts, scope, hydrated]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
