@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
+import ShareButton from "./ShareButton";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
@@ -249,9 +250,12 @@ export default function ProductView({
             {product.badge}
           </span>
         )}
-        <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
-          {product.name}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
+            {product.name}
+          </h1>
+          <ShareButton slug={product.slug} name={product.name} price={money(price)} />
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
           {product.reviewCount > 0 ? (
             <a href="#reviews" className="hover:underline">

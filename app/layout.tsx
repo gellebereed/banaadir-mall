@@ -41,6 +41,8 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: SITE_DESCRIPTION,
     applicationName: "Banaadir Mall",
+    // iPhone "Add to Home Screen": the name under the icon, full-screen launch.
+    appleWebApp: { capable: true, title: "Banaadir Mall", statusBarStyle: "default" },
     openGraph: {
       type: "website",
       siteName: "Banaadir Mall",
