@@ -104,7 +104,9 @@ export default function CategoryChips({
 
   return (
     <div className="mb-5">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* One swipeable row on a phone — wrapped, eight chips took six rows
+          and pushed every product off the first screen. */}
+      <div className="rail-scroll -mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
         <Chip active={activeSlug === null} onClick={() => choose(null)} label={allLabel} count={allCount} />
 
         {chips.map((option) => (
@@ -122,7 +124,7 @@ export default function CategoryChips({
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
               open
                 ? "border-ocean-400 bg-ocean-50 text-ocean-800"
                 : "border-dashed border-sand-300 bg-white text-slate-500 hover:border-ocean-400 hover:text-ocean-700"
@@ -197,7 +199,7 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-semibold transition ${
         active
           ? "bg-ocean-700 text-white"
           : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
