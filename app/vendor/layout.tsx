@@ -140,7 +140,10 @@ export default async function VendorLayout({
       ? [{ href: "/vendor/orders", icon: "orders" as const, label: "Orders", badge: newOrders.length, tab: true }]
       : []),
     ...(may(session, "products.view")
-      ? [{ href: "/vendor/products", icon: "products" as const, label: "Products", tab: true }]
+      ? [
+          { href: "/vendor/products", icon: "products" as const, label: "Products", tab: true },
+          { href: "/vendor/collections", icon: "collections" as const, label: "Collections" },
+        ]
       : []),
     // Only for shops that have switched the counter on. Everyone else never
     // learns it exists, which is the point of a toggle.

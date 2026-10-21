@@ -57,6 +57,9 @@ Rules:
   them as `attributesJson`.
   The editor's ✨ suggestions come from `lib/product-classify.ts`; keep
   every AI call to one request under ~9s (serverless time limit).
+- **Store collections** (`lib/collections.ts`, /vendor/collections) are a
+  store's own product groupings, shown as tabs on its store page — the
+  answer when a seller asks for "a category" only their shop needs.
 - **Types**: `lib/types.ts` (`Product`, `Variant`, …); variant helpers in
   `lib/product-utils.ts` (`hasVariants`, `totalStock`, `colorSwatch`).
 

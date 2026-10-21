@@ -42,6 +42,7 @@ import type {
 
 import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
 import type { CategoryMapping } from "./category-mappings";
+import type { StoreCollection } from "./collections";
 
 export interface DB {
   /** Field-level edits per product id (price, stock, hidden, …). */
@@ -96,6 +97,8 @@ export interface DB {
   activity?: ActivityEntry[];
   /** Supplier grouping → category decisions (lib/category-mappings.ts). */
   categoryMappings?: CategoryMapping[];
+  /** Sellers' own product groupings (lib/collections.ts). */
+  collections?: StoreCollection[];
 }
 
 /**

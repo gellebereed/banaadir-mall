@@ -136,6 +136,15 @@ get a suggestion by themselves once the name is typed; the seller taps
 - **Without the key**, word matching suggests the same things from the
   text alone ("Women's cotton dress" → Dresses, Fabric: Cotton).
 
+### Store collections
+
+A store's own groupings — "Ramadan picks", "Kitchen essentials", "Under
+$20" — managed at **`/vendor/collections`** and shown as tabs on the store
+page (`/store/<store>?c=<collection>`). A product can be in any number of
+them; the marketplace category tree is untouched, which is the point: a
+store can group however it likes without adding categories every other
+store would see. Run **`supabase/migration-store-collections.sql`** once.
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL
