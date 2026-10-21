@@ -102,6 +102,9 @@ export function RecoProvider({
    * outgoing account's profile and save it under the incoming account's
    * key — which would hand one person's browsing history to the next.
    */
+  /** The account the profile was last read for; null before the first read. */
+  const previousScope = useRef<string | null>(null);
+
   useEffect(() => {
     setReady(false);
 
@@ -111,10 +114,15 @@ export function RecoProvider({
     // the keyboard has changed.
     answerCache.clear();
 
+    const previous = previousScope.current;
+    previousScope.current = scope;
+
     if (scope === GUEST_SCOPE) {
-      // Signing out: leave nothing in the guest bucket for the next person
-      // to adopt.
-      setProfile(emptyProfile());
+      // Only an account → guest switch within this page is a sign-out:
+      // leave nothing in the guest bucket for the next person. A plain
+      // guest page load keeps the guest's own profile — resetting it there
+      // meant a guest's recommendations never learned past one page.
+      setProfile(previous !== null && previous !== GUEST_SCOPE ? emptyProfile() : readProfile(GUEST_SCOPE));
     } else {
       setProfile(readProfile(scope));
     }

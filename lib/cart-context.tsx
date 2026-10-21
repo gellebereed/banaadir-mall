@@ -13,6 +13,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -111,6 +112,8 @@ export function CartProvider({
   // Hydration guard: localStorage is only read after mount so the first
   // client render matches the server-rendered HTML.
   const [hydrated, setHydrated] = useState(false);
+  /** The account the stored data was last read for; null before the first read. */
+  const previousScope = useRef<string | null>(null);
 
   const scope = scopeFor(email);
   const cartKey = scopedKey(CART_KEY, scope);
@@ -126,13 +129,27 @@ export function CartProvider({
    */
   useEffect(() => {
     setHydrated(false);
+    const previous = previousScope.current;
+    previousScope.current = scope;
 
     if (scope === GUEST_SCOPE) {
-      // Signing out. Whatever the previous person left in the guest bucket
-      // must not be waiting there for the next account to adopt.
-      clearGuestData([...SHOPPER_KEYS]);
-      setItems([]);
-      setWishlist([]);
+      /*
+       * A guest page load is NOT a sign-out. This used to clear the guest
+       * bucket on every mount with no account — i.e. every guest's basket,
+       * saved address and order copies vanished on each full page load
+       * (a reload, a new tab, coming back tomorrow). Only an account →
+       * guest switch within this page is a sign-out; a sign-out that
+       * reloads the page needs no clearing, because signing in already
+       * handed the guest bucket over and emptied it (adoptGuestData).
+       */
+      if (previous !== null && previous !== GUEST_SCOPE) {
+        clearGuestData([...SHOPPER_KEYS]);
+        setItems([]);
+        setWishlist([]);
+      } else {
+        setItems(readStorage<CartItem[]>(cartKey, []));
+        setWishlist(readStorage<string[]>(wishlistKey, []));
+      }
     } else {
       // First sign-in on this device takes over whatever was browsed as a
       // guest — losing a basket at the point of signing in to pay for it
