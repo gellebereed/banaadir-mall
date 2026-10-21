@@ -14,6 +14,7 @@ import ProductImage from "@/components/ProductImage";
 import { discountPct, money } from "@/lib/format";
 import { getSession } from "@/lib/session";
 import { getT } from "@/lib/prefs-server";
+import { RAIL_CARD } from "@/lib/card-sizes";
 import type { T } from "@/lib/i18n";
 import {
   getBestsellers,
@@ -478,7 +479,7 @@ function FlashDeals({
         </div>
         <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
           {deals.map((p) => (
-            <div key={p.id} className="flex h-full w-44 shrink-0 flex-col snap-start sm:w-52">
+            <div key={p.id} className={`${RAIL_CARD} h-full flex-col`}>
               <ProductCard product={p} />
             </div>
           ))}

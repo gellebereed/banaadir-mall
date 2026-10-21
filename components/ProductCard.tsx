@@ -128,7 +128,7 @@ export default function ProductCard({
 
   return (
     <div
-      className="group card relative flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
+      className="group card relative flex h-full w-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => {
         setHovering(false);

@@ -22,6 +22,7 @@
  */
 
 import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
+import { RAIL_CARD } from "@/lib/card-sizes";
 import { REASON_LABELS_SO, shelfTextSo } from "@/lib/reco/i18n-so";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -314,9 +315,9 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
               ))}
             </div>
           ) : (
-            <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
+            <div className="rail-scroll -mx-4 flex snap-x items-stretch gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:gap-4 md:px-0">
               {items.map((item) => (
-                <div key={item.product.id} className="flex w-44 shrink-0 snap-start sm:w-52">
+                <div key={item.product.id} className={RAIL_CARD}>
                   <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
                 </div>
               ))}

@@ -5,6 +5,7 @@ import { useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import SectionHeader from "@/components/SectionHeader";
 import { money } from "@/lib/format";
+import { RAIL_CARD, RAIL_ROW } from "@/lib/card-sizes";
 import { useT } from "@/components/prefs/PrefsProvider";
 import type { Product } from "@/lib/types";
 
@@ -51,15 +52,15 @@ export default function BudgetPicks({ bands }: { bands: BudgetBand[] }) {
           </button>
         ))}
       </div>
-      <div role="tabpanel" className="rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:gap-4">
+      <div role="tabpanel" className={RAIL_ROW}>
         {band.products.map((p) => (
-          <div key={p.id} className="flex w-[44%] shrink-0 snap-start sm:w-52">
+          <div key={p.id} className={RAIL_CARD}>
             <ProductCard product={p} />
           </div>
         ))}
         <Link
           href={`/products?max=${band.max}&sort=sold`}
-          className="flex w-[44%] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl bg-sand-100 p-4 text-center font-display font-bold text-ocean-800 ring-1 ring-sand-200 transition hover:bg-sand-200 sm:w-52"
+          className={`${RAIL_CARD} flex-col items-center justify-center gap-2 rounded-2xl bg-sand-100 p-4 text-center font-display font-bold text-ocean-800 ring-1 ring-sand-200 transition hover:bg-sand-200`}
         >
           <span className="text-3xl" aria-hidden>
             →

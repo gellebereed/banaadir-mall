@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import Link from "next/link";
 import CountdownTimer from "@/components/CountdownTimer";
+import { PANEL_RAIL_CARD } from "@/lib/card-sizes";
 import { useT } from "@/components/prefs/PrefsProvider";
 import ProductCard from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
@@ -72,10 +73,10 @@ export default function FlashDealsRail({
         {/* Scrollable Container with Custom Styled Scrollbar */}
         <div
           ref={scrollRef}
-          className="flex snap-x items-stretch gap-4 overflow-x-auto pb-4 pt-1 scroll-smooth scrollbar-thin scrollbar-thumb-ocean-300 scrollbar-track-transparent"
+          className="flex snap-x items-stretch gap-3 overflow-x-auto pb-4 pt-1 scroll-smooth scrollbar-thin scrollbar-thumb-ocean-300 scrollbar-track-transparent md:gap-4"
         >
           {deals.map((p) => (
-            <div key={p.id} className="flex h-full w-44 shrink-0 flex-col snap-start sm:w-56">
+            <div key={p.id} className={`${PANEL_RAIL_CARD} h-full flex-col`}>
               <ProductCard product={p} />
             </div>
           ))}
