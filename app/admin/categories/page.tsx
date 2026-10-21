@@ -6,6 +6,8 @@ import HoldingQueue, { type HeldGroup } from "@/components/dashboard/HoldingQueu
 import { getAllStores, getBaseProducts, getCategories, getCategoriesFlat } from "@/lib/api";
 import { HOLDING_SLUG, suggestCategory } from "@/lib/category-mappings";
 import { proposeTidy } from "@/lib/category-tidy";
+import { suggestCategoryForProducts } from "@/lib/product-classify";
+import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
 import { standardNode } from "@/lib/taxonomy";
 
 export const metadata: Metadata = {
@@ -62,11 +64,36 @@ export default async function AdminCategoriesPage() {
         grouping,
         count: 0,
         samples: [],
-        suggestion: grouping ? suggestCategory(grouping, categories) : undefined,
       } as HeldGroup);
     group.count++;
-    if (group.samples.length < 3) group.samples.push(p.name);
+    if (group.samples.length < 6) group.samples.push(p.name);
     held.set(key, group);
+  }
+  const nameOf = new Map(categories.map((c) => [c.slug, c.name]));
+  for (const group of held.values()) {
+    /*
+     * Two opinions. The grouping's NAME matching one of ours ("Kitchenware"
+     * → Kitchen) is strong evidence and gets pre-selected. Failing that,
+     * the products themselves are matched against the standard taxonomy
+     * (lib/product-classify.ts) — offered, but left for the admin to pick.
+     */
+    const byName = group.grouping ? suggestCategory(group.grouping, categories) : undefined;
+    if (byName && byName.score >= 70) {
+      group.suggestion = { ...byName, source: "name" };
+      continue;
+    }
+    const byProducts = suggestCategoryForProducts(group.samples, categories);
+    // Half the products agreeing is the least that is worth offering.
+    if (byProducts && byProducts.share >= 0.5) {
+      group.suggestion = {
+        slug: byProducts.slug,
+        name: nameOf.get(byProducts.slug) ?? byProducts.slug,
+        score: Math.round(byProducts.share * 100),
+        source: "products",
+      };
+    } else if (byName) {
+      group.suggestion = { ...byName, source: "name" };
+    }
   }
   const heldGroups = [...held.values()].sort((a, b) => b.count - a.count);
   const fileOptions = flat
@@ -85,7 +112,7 @@ export default async function AdminCategoriesPage() {
 
   return (
     <div>
-      <HoldingQueue groups={heldGroups} options={fileOptions} />
+      <HoldingQueue groups={heldGroups} options={fileOptions} ai={aiMatchingAvailable()} />
       <Link
         href="/admin/categories/standard"
         className={`card mb-6 flex flex-wrap items-center justify-between gap-3 p-5 transition hover:bg-sand-50 ${

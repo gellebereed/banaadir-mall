@@ -50,6 +50,38 @@ function choices(categories: Category[]) {
   return categories.filter((c) => c.slug !== HOLDING_SLUG && !c.hidden);
 }
 
+/**
+ * Word matching alone — never calls the AI, so it is safe to run for every
+ * row of a page as it renders (the "Needs a category" queue).
+ */
+export function suggestCategoryByWords(
+  name: string,
+  description: string,
+  categories: Category[],
+): { slug: string; reason: string } | undefined {
+  return categoryByWords(name.slice(0, 200), description.slice(0, 1500), choices(categories), categories);
+}
+
+/**
+ * For a group of products (a supplier's grouping): each product's name is
+ * matched on its own and they vote. A grouping's NAME is often a code
+ * ("GRP-COOK-01", "MISC 77") — the products are the real evidence.
+ * `share` is the fraction of products that agreed.
+ */
+export function suggestCategoryForProducts(
+  productNames: string[],
+  categories: Category[],
+): { slug: string; share: number } | undefined {
+  const names = productNames.slice(0, 12);
+  const votes = new Map<string, number>();
+  for (const name of names) {
+    const slug = suggestCategoryByWords(name, "", categories)?.slug;
+    if (slug) votes.set(slug, (votes.get(slug) ?? 0) + 1);
+  }
+  const [best] = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+  return best ? { slug: best[0], share: best[1] / names.length } : undefined;
+}
+
 export async function classifyProduct(input: ClassifyInput, categories: Category[]): Promise<ClassifyResult> {
   const name = input.name.trim().slice(0, 200);
   const description = input.description.trim().slice(0, 1500);
@@ -103,6 +135,13 @@ function editable(category: Category): AttributeDef[] {
 
 // ── Words ─────────────────────────────────────────────────────────────
 
+/**
+ * A category's best candidate must score at least this share of the top
+ * candidate's. Scores shrink as names get longer, so a fixed floor either
+ * lets junk through or drops real matches; a share of the best does not.
+ */
+const MIN_SHARE_OF_BEST = 0.6;
+
 const WOMEN = /\b(women|womens|woman|ladies|lady|female|girls?|dumar|kadın|kadin|bayan)\b/i;
 const MEN = /\b(men|mens|man|gents?|male|boys?|rag|erkek|bay)\b/i;
 
@@ -116,6 +155,7 @@ const MEN = /\b(men|mens|man|gents?|male|boys?|rag|erkek|bay)\b/i;
 function categoryByWords(name: string, description: string, options: Category[], all: Category[]) {
   const candidates = standardCandidates(name, [description.slice(0, 300)], 40, false);
   if (candidates.length === 0) return undefined;
+  const floor = candidates[0].score * MIN_SHARE_OF_BEST;
   const text = `${name} ${description.slice(0, 300)}`;
   const wantsWomen = WOMEN.test(text);
   const wantsMen = !wantsWomen && MEN.test(text);
@@ -138,7 +178,8 @@ function categoryByWords(name: string, description: string, options: Category[],
     for (const c of candidates) {
       if (c.node.id === linked.id || c.node.id.startsWith(`${linked.id}-`)) s = Math.max(s, c.score);
     }
-    if (s < 0) continue;
+    // A stray shared word, far below the real match, is not evidence.
+    if (s < floor) continue;
     s += linked.depth * 5;
     // A tie-breaker between Men's and Women's, not a trump card: "perfume
     // for men" is still Beauty, not Men's Fashion.

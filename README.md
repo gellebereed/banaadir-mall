@@ -82,6 +82,13 @@ import from the same supplier files itself.
 Run **`supabase/migration-category-mappings.sql`** once to store those
 decisions (without it they are asked again on every import).
 
+The queue suggests a home for each waiting group. When the grouping's name
+matches one of ours it is pre-selected; otherwise its products are matched
+one by one and vote (supplier groupings are often codes like "GRP-COOK-01").
+With `ANTHROPIC_API_KEY` set, **✨ Ask AI** (per group, or for all at once)
+reads the products and a photo. Nothing is filed until the admin clicks
+**File** — or **File all chosen** after looking down the list.
+
 ### Standard categories (the meaning underneath the menu)
 
 Every category is linked to a node of a published product taxonomy —

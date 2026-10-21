@@ -79,6 +79,9 @@ const SYNONYMS: Record<string, string[]> = {
   SMARTPHONE: ["SMART", "MOBILE", "PHONE"],
   PAN: ["COOKWARE", "PAN"],
   POT: ["COOKWARE", "POT"],
+  SAUCEPAN: ["COOKWARE", "SAUCEPAN", "POT"],
+  FRYING: ["COOKWARE", "FRYING"],
+  SKILLET: ["COOKWARE", "SKILLET"],
   MOBILE: ["MOBILE", "PHONE"],
   KITCHENWARE: ["KITCHEN", "COOKWARE"],
   COOKWARE: ["COOKWARE", "BAKEWARE"],
@@ -106,6 +109,9 @@ const STOP = new Set(["AND", "OF", "THE", "FOR", "WITH", "SET", "ACCESSORY", "OT
  */
 function words(text: string, expand = true): string[] {
   const out: string[] = [];
+  // "Non-stick" describes cookware; split, its "stick" matched pogo sticks
+  // and stick vacuums ahead of the pan it was written on.
+  if (expand) text = text.replace(/\bnon[\s-]?stick\b/gi, "cookware");
   for (const raw of text.split(/[^A-Za-z0-9ÇĞİÖŞÜçğıöşü']+/)) {
     const key = categoryKey(raw.replace(/'/g, ""));
     if (key.length < 2 || STOP.has(key)) continue;
