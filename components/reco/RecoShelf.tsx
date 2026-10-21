@@ -308,8 +308,16 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
             // A grid from tablet up; on a phone, one swipeable row — eight
             // cards as a 2-column grid cost four screen-heights each.
             <div className="rail-scroll -mx-4 flex snap-x items-stretch gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4">
-              {items.map((item) => (
-                <div key={item.product.id} className="flex w-[44%] shrink-0 snap-start md:w-auto">
+              {/* Complete rows only on tablet (3 across) and desktop (4): a
+                  lone card on a second row reads as a mistake. The phone
+                  row swipes, so it keeps every card. */}
+              {items.map((item, i) => (
+                <div
+                  key={item.product.id}
+                  className={`flex w-[44%] shrink-0 snap-start md:w-auto ${
+                    Math.floor(items.length / 3) > 0 && i >= Math.floor(items.length / 3) * 3 ? "md:max-lg:hidden" : ""
+                  } ${Math.floor(items.length / 4) > 0 && i >= Math.floor(items.length / 4) * 4 ? "lg:hidden" : ""}`}
+                >
                   <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
                 </div>
               ))}
