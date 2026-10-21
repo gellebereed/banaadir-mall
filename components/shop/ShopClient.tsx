@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
+import { money } from "@/lib/format";
 import { categories as seedCategories } from "@/lib/data/categories";
 import CategoryChips from "./CategoryChips";
 import { useReco } from "@/components/reco/RecoProvider";
@@ -47,6 +48,7 @@ export default function ShopClient({
   title,
   subtitle,
   initialSort = "featured",
+  initialMaxPrice,
   showCategoryFilter = true,
   facets = { facets: [], index: {} },
   personalize = false,
@@ -75,6 +77,8 @@ export default function ShopClient({
   title: string;
   subtitle?: string;
   initialSort?: string;
+  /** From a link like /products?max=10 (the home page's budget rows). */
+  initialMaxPrice?: number;
   showCategoryFilter?: boolean;
 }) {
   const [sort, setSort] = useState<SortKey>(
@@ -84,6 +88,8 @@ export default function ShopClient({
   const [activeStores, setActiveStores] = useState<string[]>([]);
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [priceBand, setPriceBand] = useState<number | null>(null);
+  /** "Under $X" from a link; cleared like any other filter. */
+  const [maxPrice, setMaxPrice] = useState<number | null>(initialMaxPrice ?? null);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [onSaleOnly, setOnSaleOnly] = useState(false);
   /** attribute handle → ticked value keys. OR within one, AND across them. */
@@ -144,6 +150,9 @@ export default function ShopClient({
       const band = PRICE_BANDS[priceBand];
       list = list.filter((p) => p.price >= band.min && p.price < band.max);
     }
+    if (maxPrice !== null) {
+      list = list.filter((p) => p.price < maxPrice);
+    }
     if (minRating !== null) {
       list = list.filter((p) => p.rating >= minRating);
     }
@@ -185,7 +194,7 @@ export default function ShopClient({
         break;
     }
     return list;
-  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs, facets, personalOrder]);
+  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, maxPrice, minRating, onSaleOnly, activeAttrs, facets, personalOrder]);
 
   const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
   const BATCH_SIZE = 16;
@@ -194,7 +203,7 @@ export default function ShopClient({
   // Reset visible count whenever filters or sort change
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs]);
+  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, maxPrice, minRating, onSaleOnly, activeAttrs]);
 
   const displayedProducts = useMemo(() => {
     return filtered.slice(0, visibleCount);
@@ -281,6 +290,7 @@ export default function ShopClient({
     activeStores.length +
     (activeSubcategory ? 1 : 0) +
     (priceBand !== null ? 1 : 0) +
+    (maxPrice !== null ? 1 : 0) +
     (minRating !== null ? 1 : 0) +
     (onSaleOnly ? 1 : 0) +
     attrFilterCount;
@@ -290,6 +300,7 @@ export default function ShopClient({
     setActiveStores([]);
     setActiveSubcategory(null);
     setPriceBand(null);
+    setMaxPrice(null);
     setMinRating(null);
     setOnSaleOnly(false);
     setActiveAttrs({});
@@ -308,6 +319,16 @@ export default function ShopClient({
       <div className="mb-6">
         <h1 className="font-display text-3xl font-extrabold text-ocean-950">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        {maxPrice !== null && (
+          <button
+            type="button"
+            onClick={() => setMaxPrice(null)}
+            className="mt-3 inline-flex items-center gap-2 rounded-full bg-mango-100 px-3 py-1.5 text-sm font-semibold text-mango-800 hover:bg-mango-200"
+            aria-label={`Remove filter: under ${money(maxPrice)}`}
+          >
+            Under {money(maxPrice)} <span aria-hidden>✕</span>
+          </button>
+        )}
       </div>
 
       {/* Quick cut across the results — by category on a mixed list, by

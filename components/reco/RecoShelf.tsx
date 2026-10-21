@@ -300,9 +300,13 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
         {/* ── Items ──────────────────────────────────────────────── */}
         <div className="mt-5">
           {shelf.layout === "grid" ? (
-            <div className="grid grid-cols-2 items-stretch gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+            // A grid from tablet up; on a phone, one swipeable row — eight
+            // cards as a 2-column grid cost four screen-heights each.
+            <div className="rail-scroll -mx-4 flex snap-x items-stretch gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4">
               {items.map((item) => (
-                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} onOpen={onCardClick} />
+                <div key={item.product.id} className="flex w-[44%] shrink-0 snap-start md:w-auto">
+                  <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
+                </div>
               ))}
             </div>
           ) : (

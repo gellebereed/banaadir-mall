@@ -86,7 +86,9 @@ export function HomeSkeleton() {
 /** Generic centered spinner for everything else. */
 export function PageSpinner() {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
+    // A full screen tall: at half a screen the footer sat in view beneath
+    // it and was thrown down the page when the content arrived.
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
       <div className="h-12 w-12 animate-spin rounded-full border-4 border-sand-200 border-t-ocean-700" />
       <p className="text-sm font-semibold text-slate-400">Loading…</p>
     </div>

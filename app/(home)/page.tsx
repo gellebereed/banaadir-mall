@@ -3,6 +3,7 @@ import Link from "next/link";
 import HeroCarousel, { type HeroSlide } from "@/components/home/HeroCarousel";
 import QuickNav from "@/components/home/QuickNav";
 import FlashDealsRail from "@/components/home/FlashDealsRail";
+import BudgetPicks, { type BudgetBand } from "@/components/home/BudgetPicks";
 import CountdownTimer from "@/components/CountdownTimer";
 import ProductCard from "@/components/ProductCard";
 import RecoStack from "@/components/reco/RecoStack";
@@ -10,7 +11,8 @@ import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
-import { money } from "@/lib/format";
+import { discountPct, money } from "@/lib/format";
+import { getSession } from "@/lib/session";
 import {
   getBestsellers,
   getCategories,
@@ -20,8 +22,9 @@ import {
   getMarketingSettings,
   getMarketplaceProducts,
   getNewArrivals,
+  getOrders,
 } from "@/lib/api";
-import type { MarketingSettings, Product, SectionKey, Store } from "@/lib/types";
+import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib/types";
 
 /**
  * Home page. The admin controls the content and the ORDER of every section
@@ -45,6 +48,20 @@ export default async function HomePage() {
 
   // Department artwork: the admin's chosen cover, or the best-selling
   // product's photo from inside that department. See categoryCovers().
+  const session = await getSession();
+  const myOrder = session?.role === "customer" ? await activeOrderFor(session.email) : null;
+  // Capitalised: accounts created from an email address carry a
+  // lower-case name ("ayaan"), which reads as a bug in a greeting.
+  const rawFirst = session?.role === "customer" ? session.name?.trim().split(/\s+/)[0] : undefined;
+  const firstName = rawFirst ? rawFirst.charAt(0).toUpperCase() + rawFirst.slice(1) : undefined;
+
+  const flashIds = new Set(flashProducts.map((p) => p.id));
+  const deal = dealOfTheDay(allProducts, flashIds);
+  // Trending already shows the overall best sellers; the budget rows skip
+  // them so the two rows don't open with the same products.
+  const trendingIds = new Set(bestsellers.map((p) => p.id));
+  const budgetBands = budgetPicks(allProducts.filter((p) => !trendingIds.has(p.id)));
+
   const officialBrands = stores.filter((s) => s.official);
   const localStores = stores.filter((s) => !s.official).slice(0, 4);
   const activeBanners = marketing.banners.filter((b) => b.active);
@@ -194,10 +211,27 @@ export default async function HomePage() {
    * time under a different heading — which reads as a small catalogue, not
    * as two endorsements.
    */
-  const alreadyOnPage = [...bestsellers, ...newArrivals, ...flashProducts].map((p) => p.id);
+  const alreadyOnPage = [
+    ...bestsellers,
+    ...newArrivals,
+    ...flashProducts,
+    ...(deal ? [deal.product] : []),
+  ].map((p) => p.id);
+
+  // Deal of the day follows the flash deals (one deals moment, not two far
+  // apart); budget rows follow Trending. Each falls back to the first or
+  // last visible section when the admin has hidden its anchor.
+  const dealAfter = visibleSections.some((s) => s.key === "flash") && flashProducts.length > 0
+    ? "flash"
+    : visibleSections[0]?.key;
+  const budgetAfter = visibleSections.some((s) => s.key === "trending")
+    ? "trending"
+    : visibleSections[visibleSections.length - 1]?.key;
 
   return (
     <div>
+      {firstName && <WelcomeStrip name={firstName} order={myOrder} />}
+
       <HeroCarousel
         slides={heroSlides}
         brandDecoration={<HeroProductCards products={heroProducts} />}
@@ -224,6 +258,8 @@ export default async function HomePage() {
       {visibleSections.map((section, index) => (
         <div key={section.key}>
           {sectionRenderers[section.key]?.()}
+          {deal && section.key === dealAfter && <DealOfTheDay {...deal} />}
+          {section.key === budgetAfter && <BudgetPicks bands={budgetBands} />}
           {index === earlyAt && (
             <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="early" />
           )}
@@ -372,12 +408,13 @@ function OfficialBrands({ brands }: { brands: Store[] }) {
         subtitle="World-famous brands, franchised exclusively by Banaadir Mall"
         href="/stores"
       />
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* One swipeable row on a phone (a 2×2 block was most of a screen). */}
+      <div className="rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
         {brands.map((b) => (
           <Link
             key={b.slug}
             href={`/store/${b.slug}`}
-            className="group relative flex aspect-[4/5] flex-col justify-end overflow-hidden rounded-2xl p-5 text-white shadow-md transition hover:-translate-y-1 hover:shadow-2xl sm:aspect-[4/3]"
+            className="group relative flex aspect-[4/5] w-[44%] shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl p-5 text-white shadow-md transition hover:-translate-y-1 hover:shadow-2xl sm:aspect-[4/3] sm:w-auto"
           >
             {b.banner ? (
               <Image
@@ -448,6 +485,140 @@ function FlashDeals({
   );
 }
 
+/* ── Signed-in welcome ────────────────────────────────────────────── */
+
+const ACTIVE_STATUSES = new Set(["pending", "processing", "shipped"]);
+
+/**
+ * The customer's newest order still on its way, matched by EMAIL only. The
+ * account page also matches by name for orders placed before sign-up, but
+ * here that could put a stranger's parcel on someone's home page.
+ */
+async function activeOrderFor(email: string): Promise<Order | null> {
+  const mine = email.trim().toLowerCase();
+  const active = (await getOrders())
+    .filter((o) => o.email?.trim().toLowerCase() === mine && ACTIVE_STATUSES.has(o.status))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return active[0] ?? null;
+}
+
+const ORDER_LINE: Record<string, string> = {
+  pending: "has been received",
+  processing: "is being prepared",
+  shipped: "is on the way",
+};
+
+/** Name and the order in progress, above the hero — server-rendered, so it never shifts the page. */
+function WelcomeStrip({ name, order }: { name: string; order: Order | null }) {
+  return (
+    <div className="border-b border-ocean-100 bg-ocean-50">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
+        <span className="font-semibold text-ocean-950">Welcome back, {name} 👋</span>
+        {order ? (
+          <Link
+            href={`/track?id=${encodeURIComponent(order.id)}`}
+            className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-ocean-700 hover:underline"
+          >
+            <span aria-hidden>{order.status === "shipped" ? "🚚" : "📦"}</span>
+            <span className="truncate">
+              Order #{order.id} {ORDER_LINE[order.status]} — track it
+            </span>
+            <span aria-hidden>→</span>
+          </Link>
+        ) : (
+          <Link href="/account" className="font-semibold text-ocean-700 hover:underline">
+            Your orders &amp; saved items →
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Deal of the day ─────────────────────────────────────────────────── */
+
+/** Somalia is UTC+3 all year: the deal changes at its midnight, not the server's. */
+const SOMALIA_OFFSET_MS = 3 * 3_600_000;
+
+/**
+ * One product, big. The biggest real discounts in stock (not already in
+ * the flash rail), rotating daily through the top seven so a regular sees
+ * a new one each day. Nothing is discounted for the occasion — the price
+ * is the product's own.
+ */
+function dealOfTheDay(products: Product[], exclude: Set<string>) {
+  const candidates = products
+    .filter((p) => p.compareAt && p.compareAt > p.price && p.stock > 0 && !exclude.has(p.id))
+    .sort((a, b) => discountPct(b.price, b.compareAt!) - discountPct(a.price, a.compareAt!))
+    .slice(0, 7);
+  if (candidates.length === 0) return null;
+  const day = Math.floor((Date.now() + SOMALIA_OFFSET_MS) / 86_400_000);
+  const endsAt = new Date((day + 1) * 86_400_000 - SOMALIA_OFFSET_MS).toISOString();
+  return { product: candidates[day % candidates.length], endsAt };
+}
+
+function DealOfTheDay({ product, endsAt }: { product: Product; endsAt: string }) {
+  const pct = discountPct(product.price, product.compareAt!);
+  return (
+    <section className="mx-auto max-w-7xl px-4 pt-14">
+      <Link
+        href={`/product/${product.slug}`}
+        className="group grid overflow-hidden rounded-3xl bg-gradient-to-br from-ocean-950 to-ocean-700 text-white shadow-lg ring-1 ring-black/5 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+      >
+        <div className="relative aspect-[16/10] bg-white sm:aspect-auto sm:min-h-72">
+          <ProductImage
+            product={product}
+            iconClass="text-8xl"
+            sizes="(max-width: 640px) 100vw, 40vw"
+            className="absolute inset-0 h-full w-full object-contain transition duration-500 group-hover:scale-105"
+          />
+          <span className="absolute left-4 top-4 rounded-full bg-coral-500 px-3 py-1 text-sm font-extrabold shadow">
+            -{pct}%
+          </span>
+        </div>
+        <div className="flex flex-col justify-center gap-3 p-6 sm:p-10">
+          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-mango-300">Deal of the day</p>
+          <h2 className="font-display text-2xl font-extrabold leading-tight sm:text-4xl">{product.name}</h2>
+          <p className="flex items-baseline gap-3">
+            <span className="font-display text-4xl font-extrabold">{money(product.price)}</span>
+            <span className="text-lg text-white/60 line-through">{money(product.compareAt!)}</span>
+          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/80">
+            {/* The timer carries its own "Ends in" label. */}
+            <CountdownTimer endsAt={endsAt} />
+            {product.stock <= 20 && <span className="font-semibold text-mango-300">Only {product.stock} left</span>}
+          </div>
+          <span className="btn-primary mt-2 self-start">Shop the deal</span>
+        </div>
+      </Link>
+    </section>
+  );
+}
+
+/* ── Shop by budget ──────────────────────────────────────────────────── */
+
+const BUDGETS = [10, 25, 50];
+
+/**
+ * Best sellers under each price, in stock. A band is dropped when it has
+ * too few products to be worth a tab, or when it would show exactly the
+ * same products as the cheaper band before it.
+ */
+function budgetPicks(products: Product[]): BudgetBand[] {
+  const bands: BudgetBand[] = [];
+  let previous = "";
+  for (const max of BUDGETS) {
+    const picks = products
+      .filter((p) => p.price < max && p.stock > 0)
+      .sort((a, b) => b.sold - a.sold)
+      .slice(0, 10);
+    const key = picks.map((p) => p.id).join();
+    if (picks.length >= 4 && key !== previous) bands.push({ max, products: picks });
+    previous = key;
+  }
+  return bands;
+}
+
 /* ── Trust strip ──────────────────────────────────────────────────── */
 
 /**
@@ -488,13 +659,24 @@ function TrustStrip({ delivery }: { delivery: MarketingSettings["delivery"] }) {
 
 /* ── Product rails ────────────────────────────────────────────────── */
 
+/**
+ * Product rows: one swipeable row on a phone, a grid from tablet up. As
+ * grids, five product sections made the phone page about twelve screens
+ * long; as rows each costs one card's height, and the 44% width leaves the
+ * next card peeking in so the row reads as swipeable.
+ */
+const RAIL_GRID = "rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4";
+const RAIL_ITEM = "flex w-[44%] shrink-0 snap-start md:w-auto";
+
 function Bestsellers({ products }: { products: Product[] }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <SectionHeader title="Trending Now" subtitle="What everyone is buying this week" href="/products?sort=sold" />
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+      <div className={RAIL_GRID}>
         {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
+          <div key={p.id} className={RAIL_ITEM}>
+            <ProductCard product={p} />
+          </div>
         ))}
       </div>
     </section>
@@ -505,9 +687,11 @@ function NewArrivals({ products }: { products: Product[] }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <SectionHeader title="Just Landed" subtitle="Fresh finds from our stores" href="/products?sort=new" />
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className={RAIL_GRID}>
         {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
+          <div key={p.id} className={RAIL_ITEM}>
+            <ProductCard product={p} />
+          </div>
         ))}
       </div>
     </section>
@@ -518,9 +702,13 @@ function StoreSpotlight({ stores }: { stores: Store[] }) {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <SectionHeader title="Featured Stores" subtitle="Trusted sellers with top ratings" href="/stores" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Swipeable on a phone (four full-width cards were a screen and a
+          half); a grid from tablet up. */}
+      <div className="rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
         {stores.map((s) => (
-          <StoreCard key={s.slug} store={s} />
+          <div key={s.slug} className="w-[80%] shrink-0 snap-start sm:w-auto">
+            <StoreCard store={s} />
+          </div>
         ))}
       </div>
     </section>

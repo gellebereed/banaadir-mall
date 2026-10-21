@@ -9,9 +9,11 @@ export const metadata: Metadata = { title: "All Products" };
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string }>;
+  searchParams: Promise<{ sort?: string; max?: string }>;
 }) {
-  const { sort } = await searchParams;
+  const { sort, max } = await searchParams;
+  // ?max=10 — "Under $10" from the home page's budget rows.
+  const maxPrice = Number(max);
   const [products, stores, categories] = await Promise.all([
     // Browsing the whole catalogue is a discovery surface, so stores that
     // opted out of the marketplace are not part of it.
@@ -29,6 +31,7 @@ export default async function ProductsPage({
       title="All Products"
       subtitle="Everything on Banaadir Mall, from every store"
       initialSort={sort ?? "featured"}
+      initialMaxPrice={Number.isFinite(maxPrice) && maxPrice > 0 ? Math.min(maxPrice, 100_000) : undefined}
     />
   );
 }
