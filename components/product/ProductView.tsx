@@ -253,7 +253,15 @@ export default function ProductView({
           {product.name}
         </h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Rating value={product.rating} count={product.reviewCount} />
+          {product.reviewCount > 0 ? (
+            <a href="#reviews" className="hover:underline">
+              <Rating value={product.rating} count={product.reviewCount} />
+            </a>
+          ) : (
+            <a href="#reviews" className="text-sm text-slate-400 hover:text-ocean-700 hover:underline">
+              No reviews yet
+            </a>
+          )}
           <span className="text-sm text-slate-400">{compact(product.sold)} sold</span>
         </div>
 

@@ -210,8 +210,13 @@ export default function ProductCard({
           {product.name}
         </Link>
         
-        <div className="mt-1">
-          <Rating value={product.rating} />
+        {/* Same height either way, so a row of cards stays aligned. */}
+        <div className="mt-1 min-h-5">
+          {product.reviewCount > 0 ? (
+            <Rating value={product.rating} count={product.reviewCount} />
+          ) : (
+            <span className="text-xs text-slate-400">No reviews yet</span>
+          )}
         </div>
 
         {/* Variant options at a glance — reserved slot for uniform height */}

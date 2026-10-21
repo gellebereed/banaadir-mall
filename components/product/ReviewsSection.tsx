@@ -57,10 +57,12 @@ export default function ReviewsSection({
         <div>
           <h2 className="font-display text-2xl font-bold text-ocean-950">Customer Reviews</h2>
           <p className="mt-1 text-sm text-slate-500">
-            {rating.toFixed(1)} average from {reviewCount.toLocaleString()} ratings
+            {reviewCount > 0
+              ? `${rating.toFixed(1)} average from ${reviewCount.toLocaleString()} review${reviewCount === 1 ? "" : "s"}`
+              : "No reviews yet"}
           </p>
         </div>
-        {!writing &&
+        {!writing && reviews.length > 0 &&
           (signedIn ? (
             <button type="button" onClick={() => setWriting(true)} className="btn-secondary !py-2 text-sm">
               ✍️ Write a review
@@ -74,124 +76,145 @@ export default function ReviewsSection({
 
       {writing && <ReviewForm productId={productId} onDone={() => setWriting(false)} />}
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-[220px_1fr]">
-        {/* Star breakdown */}
-        <div className="space-y-1.5">
-          {counts.map((n, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
-              <span className="w-6 shrink-0">{5 - i}★</span>
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-sand-100">
-                <span
-                  className="block h-full rounded-full bg-mango-400"
-                  style={{ width: `${reviews.length ? (n / reviews.length) * 100 : 0}%` }}
-                />
-              </span>
-              <span className="w-5 shrink-0 text-right">{n}</span>
-            </div>
-          ))}
-          {/* The bars count the written reviews below; the total above is
-              every rating, most of which come without words. */}
-          <p className="pt-1 text-[11px] text-slate-400">
-            From {reviews.length} written review{reviews.length === 1 ? "" : "s"}
+      {reviews.length === 0 && !writing && (
+        <div className="card mt-5 p-8 text-center">
+          <p className="text-3xl">⭐</p>
+          <p className="mt-2 font-display font-bold text-ocean-950">No reviews yet — be the first</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+            Bought this? Tell other shoppers what it&apos;s really like. Photos of what arrived help most.
           </p>
+          {signedIn ? (
+            <button type="button" onClick={() => setWriting(true)} className="btn-primary mt-4 !py-2 text-sm">
+              Write the first review
+            </button>
+          ) : (
+            <Link href={loginHref(`${pathname}#reviews`)} className="btn-primary mt-4 inline-flex !py-2 text-sm">
+              Sign in to write a review
+            </Link>
+          )}
         </div>
+      )}
 
-        <div className="min-w-0">
-          {photos.length > 0 && (
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Photos from customers</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1 rail-scroll">
-                {photos.slice(0, 12).map((src) => (
+      {reviews.length > 0 && (
+        <div className="mt-5 grid gap-6 lg:grid-cols-[220px_1fr]">
+          {/* Star breakdown */}
+          <div className="space-y-1.5">
+            {counts.map((n, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="w-6 shrink-0">{5 - i}★</span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-sand-100">
+                  <span
+                    className="block h-full rounded-full bg-mango-400"
+                    style={{ width: `${reviews.length ? (n / reviews.length) * 100 : 0}%` }}
+                  />
+                </span>
+                <span className="w-5 shrink-0 text-right">{n}</span>
+              </div>
+            ))}
+            {/* The bars count the written reviews below; the total above is
+                every rating, most of which come without words. */}
+            <p className="pt-1 text-[11px] text-slate-400">
+              From {reviews.length} written review{reviews.length === 1 ? "" : "s"}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            {photos.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Photos from customers</p>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1 rail-scroll">
+                  {photos.slice(0, 12).map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setLightbox(src)}
+                      aria-label="View customer photo"
+                      className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-sand-100"
+                    >
+                      <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {withPhotos.length > 0 && (
+              <div className="mt-4 flex gap-2 text-sm">
+                {(["all", "photos"] as const).map((f) => (
                   <button
-                    key={src}
+                    key={f}
                     type="button"
-                    onClick={() => setLightbox(src)}
-                    aria-label="View customer photo"
-                    className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-sand-100"
+                    onClick={() => setFilter(f)}
+                    className={`rounded-full px-3 py-1.5 font-semibold ${
+                      filter === f ? "bg-ocean-800 text-white" : "bg-white text-slate-600 ring-1 ring-sand-200"
+                    }`}
                   >
-                    <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+                    {f === "all" ? `All ${reviews.length}` : `📷 With photos ${withPhotos.length}`}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {withPhotos.length > 0 && (
-            <div className="mt-4 flex gap-2 text-sm">
-              {(["all", "photos"] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setFilter(f)}
-                  className={`rounded-full px-3 py-1.5 font-semibold ${
-                    filter === f ? "bg-ocean-800 text-white" : "bg-white text-slate-600 ring-1 ring-sand-200"
-                  }`}
-                >
-                  {f === "all" ? `All ${reviews.length}` : `📷 With photos ${withPhotos.length}`}
-                </button>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {shown.map((r, i) => (
+                <article key={i} className="card p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-800">{r.author}</p>
+                    <span className="text-xs text-slate-400">{shortDate(r.date)}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-mango-400" aria-label={`${r.rating} out of 5 stars`}>
+                    {"★".repeat(r.rating)}
+                    <span className="text-sand-200">{"★".repeat(5 - r.rating)}</span>
+                  </p>
+                  {r.verified && (
+                    <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">✓ Verified purchase</p>
+                  )}
+                  {r.text && <p className="mt-2 text-sm text-slate-600">{r.text}</p>}
+                  {r.photos && r.photos.length > 0 && (
+                    <div className="mt-3 flex gap-2">
+                      {r.photos.map((src) => (
+                        <button
+                          key={src}
+                          type="button"
+                          onClick={() => setLightbox(src)}
+                          aria-label="View photo"
+                          className="relative h-16 w-16 overflow-hidden rounded-lg bg-sand-100"
+                        >
+                          <Image src={src} alt="" fill sizes="64px" className="object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Only real reviews can be reported; signed-in only, once each. */}
+                  {r.id && (
+                    <div className="mt-3 text-right text-xs">
+                      {reported[r.id] ? (
+                        <span className="text-slate-500">{reported[r.id]}</span>
+                      ) : signedIn ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm("Report this review as inappropriate, fake or not about this product?")) return;
+                            const result = await reportReviewAction(r.id!);
+                            setReported((prev) => ({ ...prev, [r.id!]: result.ok ?? result.error ?? "" }));
+                          }}
+                          className="text-slate-400 underline hover:text-coral-600"
+                        >
+                          Report
+                        </button>
+                      ) : (
+                        <Link href={loginHref(`${pathname}#reviews`)} className="text-slate-400 underline hover:text-coral-600">
+                          Report
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </article>
               ))}
             </div>
-          )}
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {shown.map((r, i) => (
-              <article key={i} className="card p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-slate-800">{r.author}</p>
-                  <span className="text-xs text-slate-400">{shortDate(r.date)}</span>
-                </div>
-                <p className="mt-1 text-sm text-mango-400" aria-label={`${r.rating} out of 5 stars`}>
-                  {"★".repeat(r.rating)}
-                  <span className="text-sand-200">{"★".repeat(5 - r.rating)}</span>
-                </p>
-                {r.verified && (
-                  <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">✓ Verified purchase</p>
-                )}
-                {r.text && <p className="mt-2 text-sm text-slate-600">{r.text}</p>}
-                {r.photos && r.photos.length > 0 && (
-                  <div className="mt-3 flex gap-2">
-                    {r.photos.map((src) => (
-                      <button
-                        key={src}
-                        type="button"
-                        onClick={() => setLightbox(src)}
-                        aria-label="View photo"
-                        className="relative h-16 w-16 overflow-hidden rounded-lg bg-sand-100"
-                      >
-                        <Image src={src} alt="" fill sizes="64px" className="object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {/* Only real reviews can be reported; signed-in only, once each. */}
-                {r.id && (
-                  <div className="mt-3 text-right text-xs">
-                    {reported[r.id] ? (
-                      <span className="text-slate-500">{reported[r.id]}</span>
-                    ) : signedIn ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!confirm("Report this review as inappropriate, fake or not about this product?")) return;
-                          const result = await reportReviewAction(r.id!);
-                          setReported((prev) => ({ ...prev, [r.id!]: result.ok ?? result.error ?? "" }));
-                        }}
-                        className="text-slate-400 underline hover:text-coral-600"
-                      >
-                        Report
-                      </button>
-                    ) : (
-                      <Link href={loginHref(`${pathname}#reviews`)} className="text-slate-400 underline hover:text-coral-600">
-                        Report
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </article>
-            ))}
           </div>
         </div>
-      </div>
+      )}
 
       {lightbox && (
         <div

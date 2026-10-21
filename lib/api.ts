@@ -178,17 +178,46 @@ export async function getStore(slug: string): Promise<Store | undefined> {
  * promotion or campaign discounts.
  */
 export async function getBaseProducts(): Promise<Product[]> {
-  const supabaseProducts = await fetchProductsFromSupabase();
+  const [supabaseProducts, reviews] = await Promise.all([fetchProductsFromSupabase(), getCustomerReviews()]);
   // See getAllStores: an empty Supabase means an empty catalogue, not a cue
   // to serve the bundled demo products. A shop clearing its demo data has
   // to be able to reach zero.
-  if (supabaseProducts) return supabaseProducts;
+  if (supabaseProducts) return withRealRatings(supabaseProducts, reviews);
 
   const db = await getDB();
-  return [
-    ...seedProducts.filter((p) => !db.deletedProducts.includes(p.id)),
-    ...db.newProducts,
-  ].map((p) => (db.productOverrides[p.id] ? { ...p, ...db.productOverrides[p.id] } : p));
+  return withRealRatings(
+    [
+      ...seedProducts.filter((p) => !db.deletedProducts.includes(p.id)),
+      ...db.newProducts,
+    ].map((p) => (db.productOverrides[p.id] ? { ...p, ...db.productOverrides[p.id] } : p)),
+    reviews,
+  );
+}
+
+/**
+ * A product's stars and review count come from its REAL, visible reviews
+ * and nothing else. The stored `rating` / `reviews_count` were demo
+ * figures ("4.9 · 621 reviews" on a product nobody had reviewed), and a
+ * new product started at a perfect 5★ with no reviews at all. With none,
+ * the rating is 0 and the shop shows no stars — see Rating's callers.
+ */
+function withRealRatings(products: Product[], reviews: ProductReview[]): Product[] {
+  const byProduct = new Map<string, { sum: number; count: number }>();
+  for (const r of reviews) {
+    if (r.hidden) continue;
+    const entry = byProduct.get(r.productId) ?? { sum: 0, count: 0 };
+    entry.sum += r.rating;
+    entry.count++;
+    byProduct.set(r.productId, entry);
+  }
+  return products.map((p) => {
+    const real = byProduct.get(p.id);
+    return {
+      ...p,
+      rating: real ? Math.round((real.sum / real.count) * 10) / 10 : 0,
+      reviewCount: real?.count ?? 0,
+    };
+  });
 }
 
 /** Base (undiscounted) product for the dashboards' edit forms. */
@@ -911,15 +940,6 @@ export async function getVendorStats(storeSlug: string): Promise<VendorStats> {
 
 // ── Reviews ────────────────────────────────────────────────────────────
 
-const REVIEWERS = ["Amina K.", "Omar S.", "Zeynab M.", "Farah A.", "Hibo D.", "Ahmed Y."];
-const REVIEW_TEXTS = [
-  "Exactly as described — quality is better than I expected for the price. Delivery was fast too.",
-  "Second time ordering from this store. Consistent quality and the packaging was very careful.",
-  "Really happy with this purchase. Photos don't do it justice, it looks even better in person.",
-  "Good value for money. Took a couple of days to arrive but well worth the wait.",
-  "Bought this as a gift and they loved it. Will definitely order again from Banaadir Mall.",
-];
-
 /** Every review left by a real customer. */
 export async function getCustomerReviews(): Promise<ProductReview[]> {
   const supabaseReviews = await fetchReviewsFromSupabase();
@@ -928,37 +948,26 @@ export async function getCustomerReviews(): Promise<ProductReview[]> {
 }
 
 /**
- * Reviews for a product.
+ * Reviews for a product: real customer reviews only, newest first.
  *
- * Real customer reviews (collected by the rating prompt, see
- * lib/reco/prompts.ts) come first and are never mixed in among the
- * generated demo ones — once a product has a real review, the samples stop
- * entirely. Padding genuine feedback with invented feedback is the fastest
- * way to make every review on the site worthless.
+ * Products with none used to show three generated ones ("Farah A.:
+ * Exactly as described…") — on the live site too, presented as real.
+ * Invented reviews make every review on the site worthless, and in many
+ * places are illegal; a product with none now says so and invites one.
  */
 export async function getReviews(product: Product): Promise<Review[]> {
   const real = (await getCustomerReviews()).filter((r) => r.productId === product.id && !r.hidden);
-  if (real.length > 0) {
-    return real
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .map((r) => ({
-        author: r.author,
-        rating: r.rating,
-        date: r.date,
-        text: r.text || "",
-        photos: r.photos?.length ? r.photos : undefined,
-        verified: r.verified,
-        id: r.id,
-      }));
-  }
-
-  const seed = product.slug.length;
-  return Array.from({ length: 3 }, (_, i) => ({
-    author: REVIEWERS[(seed + i * 2) % REVIEWERS.length],
-    rating: i === 2 ? Math.max(3, Math.round(product.rating) - 1) : 5,
-    date: `2026-07-${String(10 + ((seed + i * 5) % 20)).padStart(2, "0")}`,
-    text: REVIEW_TEXTS[(seed + i) % REVIEW_TEXTS.length],
-  }));
+  return real
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((r) => ({
+      author: r.author,
+      rating: r.rating,
+      date: r.date,
+      text: r.text || "",
+      photos: r.photos?.length ? r.photos : undefined,
+      verified: r.verified,
+      id: r.id,
+    }));
 }
 
 // ── Category artwork ───────────────────────────────────────────────────

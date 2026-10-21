@@ -178,6 +178,10 @@ store would see. Run **`supabase/migration-store-collections.sql`** once.
   until the team decides. **Keep** restores it for good, **Hide**, remove
   single photos, or **Delete**. Sellers can report but not remove reviews
   of their own products. Run **`supabase/migration-review-moderation.sql`**.
+- **No invented reviews**: a product shows only its real, visible
+  reviews; its stars and review count are computed from them
+  (`withRealRatings` in lib/api.ts). With none it says "No reviews yet"
+  and invites the first — the stored demo ratings are ignored.
 - **Sign-in returns you where you were**: `/login?next=…` (and the sign-up
   form) go back to the page that sent you; guarded pages pass their own
   address. Only same-site paths are accepted (`lib/safe-next.ts`).
