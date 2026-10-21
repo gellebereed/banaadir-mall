@@ -219,6 +219,23 @@ function parseJsonField<T>(value: FormDataEntryValue | null, fallback: T): T {
 }
 
 /**
+ * The product's standard attributes (`attributesJson`), checked against
+ * the attributes its category actually has. `undefined` when the form has
+ * no attributes section, so the stored ones are left as they are.
+ */
+async function readAttributes(
+  formData: FormData,
+  categorySlug: string,
+): Promise<Record<string, string[]> | undefined> {
+  const raw = formData.get("attributesJson");
+  if (raw === null) return undefined;
+  const { getCategory } = await import("@/lib/api");
+  const { attributesForStandard, cleanAttributes } = await import("@/lib/taxonomy-attributes");
+  const category = await getCategory(categorySlug);
+  return cleanAttributes(parseJsonField(raw, {}), attributesForStandard(category?.standardId));
+}
+
+/**
  * Resolve each variant's photos: the ones kept in the editor plus any new
  * files uploaded through that variant's own file input.
  */
@@ -501,6 +518,8 @@ export async function updateProduct(formData: FormData): Promise<void> {
   if (visibility !== null) {
     updatedFields.hidden = String(visibility) === "hidden";
   }
+  const attributes = await readAttributes(formData, category);
+  if (attributes !== undefined) updatedFields.attributes = attributes;
 
   // Validate against the catalogue before writing. Photos have already been
   // uploaded at this point, but they are only referenced by this product —
@@ -707,6 +726,7 @@ export async function createProduct(formData: FormData): Promise<void> {
     badge: "New",
     colors: variants?.length ? undefined : commaList(formData.get("colors")),
     sizes: variants?.length ? undefined : commaList(formData.get("sizes")),
+    attributes: await readAttributes(formData, category),
     description: String(formData.get("description")),
     features: features.length > 0 ? features : ["Ships within 24 hours", "7-day easy returns"],
     images,

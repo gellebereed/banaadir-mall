@@ -105,9 +105,16 @@ export async function upsertProductWithError(
       images: product.images ?? [],
       variants: product.variants ?? [],
     };
+    // Only when known: a re-import builds products without attributes, and
+    // must not wipe the ones a seller filled in by hand.
+    if (product.attributes !== undefined) row.attributes = product.attributes;
 
     let { error } = await supabase.from("products").upsert(row, { onConflict: "id" });
 
+    if (error && isMissingAttributesColumn(error)) {
+      delete row.attributes;
+      ({ error } = await supabase.from("products").upsert(row, { onConflict: "id" }));
+    }
     if (error && isMissingColumnError(error)) {
       console.warn(
         "[Supabase] products table is missing newer columns — run supabase/migration.sql. " +
@@ -207,6 +214,17 @@ const EXTENDED_STORE_COLUMNS = [
   "listing",
   "own_site",
 ] as const;
+
+/**
+ * products.attributes (migration-product-attributes.sql) is optional, so
+ * when it alone is missing only it is dropped — the general fallback below
+ * would also drop stock, colours and sizes, a far worse trade.
+ */
+function isMissingAttributesColumn(error: { code?: string; message?: string }): boolean {
+  if (!isMissingColumnError(error) || !/attributes/.test(error.message ?? "")) return false;
+  console.warn("[Supabase] products.attributes is missing — run supabase/migration-product-attributes.sql.");
+  return true;
+}
 
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
 function isMissingColumnError(error: { code?: string; message?: string }): boolean {
@@ -313,6 +331,7 @@ export async function updateProductFields(
     if (fields.art !== undefined) row.art = fields.art;
     if (fields.colors !== undefined) row.colors = fields.colors ?? [];
     if (fields.sizes !== undefined) row.sizes = fields.sizes ?? [];
+    if (fields.attributes !== undefined) row.attributes = fields.attributes ?? {};
     if (fields.defaultVariantId !== undefined) {
       row.default_variant_id = fields.defaultVariantId ?? null;
     }
@@ -336,6 +355,11 @@ export async function updateProductFields(
     };
 
     let { data, error } = await runUpdate(row);
+
+    if (error && isMissingAttributesColumn(error)) {
+      delete row.attributes;
+      ({ data, error } = await runUpdate(row));
+    }
 
     // Retry without the post-migration columns so the edit still lands.
     if (error && isMissingColumnError(error)) {

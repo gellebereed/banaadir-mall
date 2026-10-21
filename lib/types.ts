@@ -229,6 +229,12 @@ export interface Product {
   badge?: "Sale" | "Bestseller" | "New";
   colors?: string[];
   sizes?: string[];
+  /**
+   * Standard attributes — `{ fabric: ["cotton"], neckline: ["v-neck"] }`,
+   * keyed by the taxonomy's attribute handle, values from its fixed lists
+   * (lib/taxonomy-attributes.ts). What storefront filters are built from.
+   */
+  attributes?: Record<string, string[]>;
   description: string;
   features: string[];
   /** Hidden products stay in dashboards but disappear from the storefront. */

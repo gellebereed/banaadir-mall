@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ShopClient from "@/components/shop/ShopClient";
+import { buildFacets } from "@/lib/taxonomy-attributes";
 import { getCategories, getCategory, getProductsByCategory, getListedStores } from "@/lib/api";
 
 interface Props {
@@ -36,6 +37,7 @@ export default async function CategoryPage({ params }: Props) {
   return (
     <ShopClient
       products={products}
+      facets={buildFacets(products)}
       stores={stores}
       categories={categories}
       title={`${category.icon} ${category.name}`}

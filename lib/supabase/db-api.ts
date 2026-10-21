@@ -327,6 +327,8 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       badge: p.badge || undefined,
       colors: p.colors?.length ? p.colors : undefined,
       sizes: p.sizes?.length ? p.sizes : undefined,
+      // supabase/migration-product-attributes.sql
+      attributes: p.attributes && Object.keys(p.attributes).length ? p.attributes : undefined,
       description: p.description || "",
       features: mapFeatures(p),
       hidden: p.hidden ?? false,

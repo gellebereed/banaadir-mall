@@ -14,6 +14,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { categories as seedCategories } from "@/lib/data/categories";
 import CategoryChips from "./CategoryChips";
+import { colorSwatch } from "@/lib/product-utils";
+import type { FacetData } from "@/lib/taxonomy-attributes";
 import type { Category, Product, Store } from "@/lib/types";
 
 type SortKey = "featured" | "sold" | "price-asc" | "price-desc" | "rating" | "discount" | "new";
@@ -43,8 +45,14 @@ export default function ShopClient({
   subtitle,
   initialSort = "featured",
   showCategoryFilter = true,
+  facets = { facets: [], index: {} },
 }: {
   products: Product[];
+  /**
+   * Standard-attribute filters (Colour, Size, Fabric…) for these products,
+   * built on the server by lib/taxonomy-attributes.ts#buildFacets.
+   */
+  facets?: FacetData;
   /** Stores present in this result set, for the brand filter. */
   stores?: Store[];
   /**
@@ -68,7 +76,17 @@ export default function ShopClient({
   const [priceBand, setPriceBand] = useState<number | null>(null);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [onSaleOnly, setOnSaleOnly] = useState(false);
+  /** attribute handle → ticked value keys. OR within one, AND across them. */
+  const [activeAttrs, setActiveAttrs] = useState<Record<string, string[]>>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const attrSelections = Object.entries(activeAttrs).filter(([, keys]) => keys.length > 0);
+  const attrFilterCount = attrSelections.reduce((n, [, keys]) => n + keys.length, 0);
+
+  const toggleAttr = (handle: string, key: string) =>
+    setActiveAttrs((prev) => {
+      const current = prev[handle] ?? [];
+      return { ...prev, [handle]: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] };
+    });
 
   // Only offer brands that actually appear in these results.
   const availableStores = useMemo(() => {
@@ -100,6 +118,12 @@ export default function ShopClient({
     if (onSaleOnly) {
       list = list.filter((p) => p.compareAt);
     }
+    for (const [handle, keys] of attrSelections) {
+      list = list.filter((p) => {
+        const tokens = facets.index[p.id];
+        return tokens ? keys.some((key) => tokens.includes(`${handle}:${key}`)) : false;
+      });
+    }
 
     switch (sort) {
       case "sold":
@@ -126,7 +150,7 @@ export default function ShopClient({
         break;
     }
     return list;
-  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
+  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs, facets]);
 
   const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
   const BATCH_SIZE = 16;
@@ -135,7 +159,7 @@ export default function ShopClient({
   // Reset visible count whenever filters or sort change
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly]);
+  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs]);
 
   const displayedProducts = useMemo(() => {
     return filtered.slice(0, visibleCount);
@@ -223,7 +247,8 @@ export default function ShopClient({
     (activeSubcategory ? 1 : 0) +
     (priceBand !== null ? 1 : 0) +
     (minRating !== null ? 1 : 0) +
-    (onSaleOnly ? 1 : 0);
+    (onSaleOnly ? 1 : 0) +
+    attrFilterCount;
 
   function clearFilters() {
     setActiveCategories([]);
@@ -232,6 +257,7 @@ export default function ShopClient({
     setPriceBand(null);
     setMinRating(null);
     setOnSaleOnly(false);
+    setActiveAttrs({});
   }
 
   const gridClass =
@@ -385,6 +411,44 @@ export default function ShopClient({
               </FilterGroup>
             )}
 
+            {facets.facets.map((facet) =>
+              facet.handle === "color" ? (
+                <FilterGroup key={facet.handle} label={facet.name}>
+                  <div className="flex flex-wrap gap-2">
+                    {facet.values.map((v) => {
+                      const active = activeAttrs.color?.includes(v.key) ?? false;
+                      return (
+                        <button
+                          key={v.key}
+                          type="button"
+                          aria-pressed={active}
+                          title={`${v.name} (${v.count})`}
+                          onClick={() => toggleAttr("color", v.key)}
+                          className={`flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs font-semibold transition ${
+                            active ? "border-ocean-700 bg-ocean-50 text-ocean-900" : "border-sand-200 text-slate-600 hover:border-ocean-400"
+                          }`}
+                        >
+                          <span
+                            className="h-4 w-4 rounded-full ring-1 ring-black/10"
+                            style={{ background: colorSwatch(v.name) }}
+                          />
+                          {v.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </FilterGroup>
+              ) : (
+                <AttributeFilter
+                  key={facet.handle}
+                  facet={facet}
+                  selected={activeAttrs[facet.handle] ?? []}
+                  onToggle={(key) => toggleAttr(facet.handle, key)}
+                  chips={facet.handle === "size" || facet.handle === "shoe-size"}
+                />
+              ),
+            )}
+
             {availableStores.length > 1 && (
               <FilterGroup label="Brand / Store">
                 <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -527,6 +591,71 @@ function Chip({
         <span className={active ? "text-white/70" : "text-slate-400"}>{count}</span>
       )}
     </button>
+  );
+}
+
+/** One standard-attribute filter. Long lists show their first few until asked. */
+function AttributeFilter({
+  facet,
+  selected,
+  onToggle,
+  chips,
+}: {
+  facet: FacetData["facets"][number];
+  selected: string[];
+  onToggle: (key: string) => void;
+  /** Sizes read better as a row of small buttons than as a checkbox list. */
+  chips?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const FEW = chips ? 12 : 6;
+  const shown = expanded ? facet.values : facet.values.slice(0, FEW);
+  return (
+    <FilterGroup label={facet.name}>
+      {chips ? (
+        <div className="flex flex-wrap gap-1.5">
+          {shown.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              aria-pressed={selected.includes(v.key)}
+              onClick={() => onToggle(v.key)}
+              title={`${v.count} product${v.count === 1 ? "" : "s"}`}
+              className={`min-w-10 rounded-lg border px-2 py-1 text-xs font-bold transition ${
+                selected.includes(v.key)
+                  ? "border-ocean-700 bg-ocean-700 text-white"
+                  : "border-sand-200 text-slate-600 hover:border-ocean-400"
+              }`}
+            >
+              {/* "Medium (M)" → "M": the standard's long name is for the list, not the button. */}
+              {v.name.match(/\(([^)]+)\)$/)?.[1] ?? v.name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        shown.map((v) => (
+          <label key={v.key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={selected.includes(v.key)}
+              onChange={() => onToggle(v.key)}
+              className="h-4 w-4 accent-ocean-700"
+            />
+            <span className="min-w-0 flex-1 truncate">{v.name}</span>
+            <span className="shrink-0 text-xs text-slate-400">{v.count}</span>
+          </label>
+        ))
+      )}
+      {facet.values.length > FEW && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs font-bold text-ocean-700 hover:underline"
+        >
+          {expanded ? "Show fewer" : `Show all ${facet.values.length}`}
+        </button>
+      )}
+    </FilterGroup>
   );
 }
 

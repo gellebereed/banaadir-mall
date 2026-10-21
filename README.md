@@ -103,6 +103,25 @@ automatic categorisation will build on.
   candidates, reading each category's products. Without the key the page
   still works, on word matching alone.
 
+### Attributes and shop filters
+
+Each standard category brings its attributes from the same taxonomy —
+Dresses: Fabric, Neckline, Sleeve length…; phones: Operating system, SIM…
+— each with a fixed list of values (`lib/taxonomy/attributes.json`, up to
+8 per category, built by `npm run taxonomy`). Fixed values are what let
+"Cotton" from two different stores be one filter.
+
+- **Product editor → Attributes**: the attributes of the product's
+  category, picked from the lists. Optional, and in the listing checklist.
+- **Colour and size need no extra work**: they are read off each
+  product's variants ("Navy Blue" → Navy, "Siyah" → Black, "2XL" → XXL).
+- **Shop pages** (category, all products, search) show a filter for every
+  attribute at least two of the listed products carry; the product page
+  lists them under the features.
+- Run **`supabase/migration-product-attributes.sql`** once (adds
+  `products.attributes`). Until then everything else saves as before and
+  colour/size filters still work.
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL

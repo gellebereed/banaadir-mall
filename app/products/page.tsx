@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ShopClient from "@/components/shop/ShopClient";
+import { buildFacets } from "@/lib/taxonomy-attributes";
 import { getCategories, getListedStores, getMarketplaceProducts } from "@/lib/api";
 
 export const metadata: Metadata = { title: "All Products" };
@@ -22,6 +23,7 @@ export default async function ProductsPage({
   return (
     <ShopClient
       products={products}
+      facets={buildFacets(products)}
       stores={stores}
       categories={categories}
       title="All Products"

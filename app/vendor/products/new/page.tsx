@@ -4,6 +4,7 @@ import { createProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
 import { getCategoriesFlat, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
+import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Add Product" };
@@ -33,6 +34,7 @@ export default async function NewProductPage() {
         depth: c.depth,
       }))}
       subcategories={subcategories}
+      attributeSets={attributeSetsFor(categories)}
       backHref="/vendor/products"
     />
   );

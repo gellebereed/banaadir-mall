@@ -52,6 +52,9 @@ Rules:
   Each category also carries `standardId`, a node of the standard taxonomy
   (`lib/taxonomy.ts`, Shopify's, trimmed); new categories must have one,
   existing ones are linked at /admin/categories/standard.
+  Standard attributes (`product.attributes`, lib/taxonomy-attributes.ts)
+  come from that link and drive the storefront filters; the editor posts
+  them as `attributesJson`.
 - **Types**: `lib/types.ts` (`Product`, `Variant`, …); variant helpers in
   `lib/product-utils.ts` (`hasVariants`, `totalStock`, `colorSwatch`).
 

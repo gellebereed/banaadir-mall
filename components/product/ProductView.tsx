@@ -30,9 +30,12 @@ import type { Product } from "@/lib/types";
  */
 export default function ProductView({
   product,
+  details = [],
   children,
 }: {
   product: Product;
+  /** Standard attributes as rows (lib/taxonomy-attributes#describeAttributes). */
+  details?: { name: string; value: string }[];
   children?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
@@ -345,6 +348,17 @@ export default function ProductView({
             </li>
           ))}
         </ul>
+
+        {details.length > 0 && (
+          <dl className="mt-6 divide-y divide-sand-100 rounded-2xl border border-sand-200 text-sm">
+            {details.map((d) => (
+              <div key={d.name} className="flex gap-4 px-4 py-2.5">
+                <dt className="w-2/5 shrink-0 text-slate-500">{d.name}</dt>
+                <dd className="font-semibold text-slate-800">{d.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { deleteProduct, updateProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
 import { getBaseProduct, getCategoriesFlat, getDiscountMap, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
+import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Edit Product" };
@@ -49,6 +50,7 @@ export default async function EditProductPage({
         depth: c.depth,
       }))}
       subcategories={subcategories}
+      attributeSets={attributeSetsFor(categories)}
       backHref={session.role === "admin" ? "/admin/products" : "/vendor/products"}
       previewHref={`/product/${product.slug}`}
       dangerZone={

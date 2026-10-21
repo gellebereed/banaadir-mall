@@ -16,6 +16,7 @@ import {
   getStoriesForProduct,
 } from "@/lib/api";
 import { compact, shortDate } from "@/lib/format";
+import { describeAttributes } from "@/lib/taxonomy-attributes";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -71,7 +72,7 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       {/* Gallery + buy box (client) with the store card passed through */}
-      <ProductView product={product}>
+      <ProductView product={product} details={describeAttributes(product.attributes)}>
         {store && (
           <Link
             href={`/store/${store.slug}`}

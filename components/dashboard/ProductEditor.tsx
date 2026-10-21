@@ -8,6 +8,8 @@ import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SearchableSelect, { type SelectOption } from "@/components/dashboard/SearchableSelect";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
+import AttributeFields from "@/components/dashboard/AttributeFields";
+import type { AttributeSets } from "@/lib/taxonomy-attributes";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor, { type VariantSummary } from "@/components/dashboard/VariantEditor";
 import { discountPct, money } from "@/lib/format";
@@ -66,6 +68,7 @@ const SECTIONS = [
   { id: "details", label: "Details" },
   { id: "pricing", label: "Pricing" },
   { id: "options", label: "Options & stock" },
+  { id: "attributes", label: "Attributes" },
   { id: "codes", label: "Codes" },
 ];
 
@@ -75,6 +78,7 @@ export default function ProductEditor({
   storeSlug,
   categories,
   subcategories,
+  attributeSets = { defs: {}, byCategory: {} },
   product,
   discountPct: activeDiscount = 0,
   backHref,
@@ -86,6 +90,8 @@ export default function ProductEditor({
   storeSlug: string;
   categories: SelectOption[];
   subcategories: string[];
+  /** Standard attributes per category (lib/taxonomy-attributes.ts). */
+  attributeSets?: AttributeSets;
   /** The product being edited, at its BASE prices (never promotion prices). */
   product?: Product;
   /** A promotion currently discounting this product, in percent. */
@@ -117,6 +123,10 @@ export default function ProductEditor({
     totalStock: 0,
   });
   const [categoryError, setCategoryError] = useState(false);
+  const [attributesFilled, setAttributesFilled] = useState({ filled: 0, total: 0 });
+  const onAttributesFilled = useCallback((filled: number, total: number) => {
+    setAttributesFilled((prev) => (prev.filled === filled && prev.total === total ? prev : { filled, total }));
+  }, []);
   const [visibility, setVisibility] = useState<"live" | "hidden">(
     product?.hidden ? "hidden" : "live",
   );
@@ -213,6 +223,14 @@ export default function ProductEditor({
     { done: snap.price > 0, label: "Set a price", target: "pricing" },
     { done: Boolean(snap.category), label: "Choose a category", target: "organisation" },
     { done: stock > 0, label: "Add stock", target: "options" },
+    // Only when the category has attributes; two is enough to be findable.
+    ...(attributesFilled.total > 0
+      ? [{
+          done: attributesFilled.filled >= Math.min(2, attributesFilled.total),
+          label: "Fill in attributes (shoppers filter by them)",
+          target: "attributes",
+        }]
+      : []),
     { done: snap.hasCode, label: "Add a barcode or reference", target: "codes" },
   ];
   const doneCount = checklist.filter((c) => c.done).length;
@@ -405,6 +423,19 @@ export default function ProductEditor({
                 initialColors={product?.variants?.length ? [] : product?.colors}
                 initialSizes={product?.variants?.length ? [] : product?.sizes}
                 onSummaryChange={onVariantSummary}
+              />
+            </Section>
+
+            <Section
+              id="attributes"
+              title="Attributes"
+              hint="Standard details for this category. Shoppers filter by them across every store, so pick from the list rather than describing it in the text."
+            >
+              <AttributeFields
+                category={snap.category}
+                sets={attributeSets}
+                initial={product?.attributes}
+                onFilledChange={onAttributesFilled}
               />
             </Section>
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import RecoStack from "@/components/reco/RecoStack";
 import TrackSearch from "@/components/reco/TrackSearch";
 import ShopClient from "@/components/shop/ShopClient";
+import { buildFacets } from "@/lib/taxonomy-attributes";
 import {
   getCategories,
   getListedStores,
@@ -45,6 +46,7 @@ export default async function SearchPage({
       <TrackSearch query={q} resultCount={results.length} />
       <ShopClient
         products={results}
+        facets={buildFacets(results)}
         stores={stores}
         categories={categories}
         title={q ? `Results for “${q}”${where}` : `Search${where}`}
