@@ -15,7 +15,10 @@ import {
   getStore,
   getStoriesForProduct,
 } from "@/lib/api";
-import { compact, shortDate } from "@/lib/format";
+import { compact, money, shortDate } from "@/lib/format";
+import { primaryImage } from "@/lib/product-utils";
+import { requestOrigin } from "@/lib/request-origin";
+import { jsonLd, metaDescription, openGraph } from "@/lib/seo";
 import { describeAttributes } from "@/lib/taxonomy-attributes";
 
 interface Props {
@@ -28,9 +31,28 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getProduct((await params).slug);
+  if (!product) notFound();
+  const store = await getStore(product.store);
+  const description = metaDescription(
+    product.description,
+    `${product.name} from ${store?.name ?? "a trusted store"} on Banaadir Mall.`,
+  );
   return {
-    title: product?.name ?? "Product",
-    description: product?.description,
+    title: product.name,
+    description,
+    alternates: { canonical: `/product/${product.slug}` },
+    // The card drawn by ./opengraph-image.tsx (photo, name, price, store);
+    // the title carries the price too — that is what gets a link tapped.
+    openGraph: openGraph({
+      title: `${product.name} — ${money(product.price)}`,
+      description,
+      url: `/product/${product.slug}`,
+      images: [{ url: `/product/${product.slug}/opengraph-image`, width: 1200, height: 630, alt: product.name }],
+    }),
+    other: {
+      "product:price:amount": product.price.toFixed(2),
+      "product:price:currency": "USD",
+    },
   };
 }
 
@@ -46,8 +68,45 @@ export default async function ProductPage({ params }: Props) {
     getStoriesForProduct(product),
   ]);
 
+  /*
+   * schema.org Product: what lets Google show the price, stock and rating
+   * stars under the result instead of a bare link.
+   */
+  const origin = await requestOrigin();
+  const photo = primaryImage(product);
+  const productLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: metaDescription(product.description, product.name),
+    image: photo ? [photo.startsWith("http") ? photo : `${origin}${photo}`] : [`${origin}/product/${product.slug}/opengraph-image`],
+    sku: product.internalReference || product.id,
+    ...(product.barcode ? { gtin: product.barcode } : {}),
+    ...(category ? { category: category.name } : {}),
+    brand: { "@type": "Brand", name: store?.name ?? "Banaadir Mall" },
+    offers: {
+      "@type": "Offer",
+      url: `${origin}/product/${product.slug}`,
+      priceCurrency: "USD",
+      price: product.price.toFixed(2),
+      availability:
+        product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      seller: { "@type": "Organization", name: store?.name ?? "Banaadir Mall" },
+    },
+    ...(product.reviewCount > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: product.rating,
+            reviewCount: product.reviewCount,
+          },
+        }
+      : {}),
+  };
+
   return (
     <div className="pb-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(productLd)} />
       {/* Records the visit and how long it held attention — the two
           strongest honest signals the recommender has. */}
       <TrackProductView productId={product.id} />

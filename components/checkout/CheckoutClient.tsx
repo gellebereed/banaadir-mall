@@ -620,8 +620,14 @@ export default function CheckoutClient({
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="name" className="label">Full name</label>
+                {/* `name` + `autoComplete` let the phone offer the details it
+                    already knows — a checkout typed on a small screen is where
+                    shoppers give up. */}
                 <input
                   id="name"
+                  name="name"
+                  autoComplete="name"
+                  autoCapitalize="words"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -636,7 +642,10 @@ export default function CheckoutClient({
                 </label>
                 <input
                   id="email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  inputMode="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -659,8 +668,11 @@ export default function CheckoutClient({
                   </span>
                   <input
                     id="phone"
+                    name="phone"
                     required
                     type="tel"
+                    autoComplete="tel-national"
+                    inputMode="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="61 000 0000"
@@ -674,6 +686,8 @@ export default function CheckoutClient({
                 <label htmlFor="country" className="label">Country</label>
                 <select
                   id="country"
+                  name="country"
+                  autoComplete="country"
                   value={countryCode}
                   onChange={(e) => {
                     setCountryCode(e.target.value);
@@ -735,6 +749,8 @@ export default function CheckoutClient({
                 ) : (
                   <input
                     id="cityInput"
+                    name="city"
+                    autoComplete="address-level2"
                     required
                     value={customCity}
                     onChange={(e) => setCustomCity(e.target.value)}
@@ -750,6 +766,8 @@ export default function CheckoutClient({
                   <label htmlFor="customCity" className="label">Specify City / Town Name</label>
                   <input
                     id="customCity"
+                    name="city"
+                    autoComplete="address-level2"
                     required
                     value={customCity}
                     onChange={(e) => setCustomCity(e.target.value)}
@@ -763,6 +781,8 @@ export default function CheckoutClient({
                 <label htmlFor="district" className="label">District / Neighbourhood / Area</label>
                 <input
                   id="district"
+                  name="address"
+                  autoComplete="street-address"
                   required
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
@@ -781,6 +801,7 @@ export default function CheckoutClient({
                   </label>
                   <input
                     id="saveLabel"
+                    autoComplete="off"
                     value={saveLabel}
                     onChange={(e) => setSaveLabel(e.target.value)}
                     placeholder="Home, The shop, Mum's place…"

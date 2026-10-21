@@ -152,6 +152,25 @@ them; the marketplace category tree is untouched, which is the point: a
 store can group however it likes without adding categories every other
 store would see. Run **`supabase/migration-store-collections.sql`** once.
 
+## Link previews & search engines
+
+- **WhatsApp / Facebook previews**: every product link shows a generated
+  card — photo (or initial), name, price, saving, store
+  (`app/product/[slug]/opengraph-image.tsx`); other pages show the site
+  card (`app/opengraph-image.tsx`). URLs are absolute via `metadataBase`,
+  taken from the request, so they're right on Netlify and a custom domain.
+  Page metadata goes through `lib/seo.ts#openGraph` (Next merges openGraph
+  shallowly — a page's own object would otherwise drop the site name).
+  The cards use no emoji: emoji artwork is fetched from a CDN mid-render,
+  and one failed fetch blanks the whole image.
+- **Google**: product pages carry schema.org `Product` data (price, stock,
+  rating); `/sitemap.xml` lists visible products, categories and listed
+  stores; `/robots.txt` keeps dashboards, accounts and checkout out.
+- **Missing pages answer 200, not 404.** The root `app/loading.tsx` streams
+  the shell before a page can call `notFound()`; Next marks those pages
+  `noindex`, so they never reach search results. A true 404 would cost the
+  instant loading screens — not worth it.
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL

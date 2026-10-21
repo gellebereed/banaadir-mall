@@ -16,19 +16,41 @@ import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
 import Toaster from "@/components/Toaster";
+import { requestOrigin } from "@/lib/request-origin";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Banaadir Mall — Somalia's Online Marketplace",
-    template: "%s · Banaadir Mall",
-  },
-  description:
-    "Shop thousands of products from trusted local stores. Electronics, fashion, beauty, home and more — delivered across Somalia. Pay with EVC Plus, Zaad or cash on delivery.",
-};
+const SITE_DESCRIPTION =
+  "Shop thousands of products from trusted local stores. Electronics, fashion, beauty, home and more — delivered across Somalia. Pay with EVC Plus, Zaad or cash on delivery.";
+
+/*
+ * Link previews. A product link pasted into WhatsApp showed a bare URL:
+ * no picture, no title, no price — on a marketplace that spreads through
+ * WhatsApp. Open Graph needs ABSOLUTE urls, so `metadataBase` is this
+ * site's own address as the visitor reached it (Netlify or a custom
+ * domain alike); each page's opengraph-image then resolves against it.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    metadataBase: new URL(await requestOrigin()),
+    title: {
+      default: "Banaadir Mall — Somalia's Online Marketplace",
+      template: "%s · Banaadir Mall",
+    },
+    description: SITE_DESCRIPTION,
+    applicationName: "Banaadir Mall",
+    openGraph: {
+      type: "website",
+      siteName: "Banaadir Mall",
+      locale: "en_US",
+      title: "Banaadir Mall — Somalia's Online Marketplace",
+      description: SITE_DESCRIPTION,
+    },
+    twitter: { card: "summary_large_image" },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#1f6270",

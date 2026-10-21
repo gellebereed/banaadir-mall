@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ShopClient from "@/components/shop/ShopClient";
+import { metaDescription, openGraph } from "@/lib/seo";
 import { buildFacets } from "@/lib/taxonomy-attributes";
 import { getCategories, getCategory, getProductsByCategory, getListedStores } from "@/lib/api";
 
@@ -13,7 +14,17 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const category = await getCategory((await params).slug);
-  return { title: category?.name ?? "Category" };
+  if (!category) notFound();
+  const description = metaDescription(
+    category.tagline,
+    `Shop ${category.name} from trusted Somali stores on Banaadir Mall.`,
+  );
+  return {
+    title: category.name,
+    description,
+    alternates: { canonical: `/category/${category.slug}` },
+    openGraph: openGraph({ title: `${category.name} · Banaadir Mall`, description, url: `/category/${category.slug}` }),
+  };
 }
 
 export default async function CategoryPage({ params }: Props) {

@@ -8,6 +8,7 @@ import StoreAvatar from "@/components/StoreAvatar";
 import { getProductsByStore, getStore, getStores } from "@/lib/api";
 import { getCollections } from "@/lib/collections";
 import { compact } from "@/lib/format";
+import { metaDescription, openGraph } from "@/lib/seo";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -20,7 +21,25 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const store = await getStore((await params).slug);
-  return { title: store?.name ?? "Store" };
+  if (!store) notFound();
+  const description = metaDescription(
+    store.tagline,
+    `Shop ${store.name} on Banaadir Mall — delivered across Somalia.`,
+  );
+  // The store's own banner makes the best preview; without one the site's
+  // default card (app/opengraph-image.tsx) is used.
+  const banner = store.banner?.startsWith("http") ? store.banner : undefined;
+  return {
+    title: store.name,
+    description,
+    alternates: { canonical: `/store/${store.slug}` },
+    openGraph: openGraph({
+      title: `${store.name} on Banaadir Mall`,
+      description,
+      url: `/store/${store.slug}`,
+      ...(banner ? { images: [{ url: banner }] } : {}),
+    }),
+  };
 }
 
 /** Public store profile: banner, stats and the store's full catalog. */

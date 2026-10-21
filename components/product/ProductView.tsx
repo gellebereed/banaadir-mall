@@ -123,6 +123,24 @@ export default function ProductView({
   const lowStock = stock > 0 && stock <= 15;
   const soldOut = withVariants ? stock === 0 : product.stock === 0;
 
+  /*
+   * On a phone the buy buttons sit below the photo, price, description and
+   * options — off the first screen — and scroll away again while the
+   * shopper reads reviews. Once they have scrolled PAST them, a slim bar
+   * with the price and Add to Cart rides above the bottom navigation.
+   */
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [showBar, setShowBar] = useState(false);
+  useEffect(() => {
+    const node = actionsRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) =>
+      setShowBar(!entry.isIntersecting && entry.boundingClientRect.top < 0),
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   function handleAdd() {
     if (soldOut) return;
     addToCart({
@@ -159,6 +177,32 @@ export default function ProductView({
    */
   return (
     <div className="grid gap-8 lg:grid-cols-2">
+      {/* Sticky buy bar — phones only (the bottom nav is md:hidden too). */}
+      <div
+        aria-hidden={!showBar}
+        className={`fixed inset-x-0 bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-30 border-t border-sand-200 bg-white/95 px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur transition-transform duration-200 md:hidden ${
+          showBar ? "translate-y-0" : "pointer-events-none translate-y-[200%]"
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs text-slate-500">
+              {[color, size].filter(Boolean).join(" · ") || product.name}
+            </p>
+            <p className="font-display text-lg font-extrabold leading-tight text-ocean-950">{money(price)}</p>
+          </div>
+          <button
+            type="button"
+            tabIndex={showBar ? 0 : -1}
+            onClick={handleAdd}
+            disabled={soldOut}
+            className="btn-primary !px-5 !py-2.5 text-sm disabled:opacity-50"
+          >
+            {added ? "✓ Added" : soldOut ? "Out of stock" : "Add to Cart"}
+          </button>
+        </div>
+      </div>
+
       {/* ── Photos ─────────────────────────────────────────────────── */}
       <div className="min-w-0">
         {images.length > 0 ? (
@@ -297,7 +341,7 @@ export default function ProductView({
           </div>
 
           {/* Actions */}
-          <div className="flex flex-wrap gap-3">
+          <div ref={actionsRef} className="flex flex-wrap gap-3">
             <button
               onClick={handleAdd}
               disabled={soldOut}
