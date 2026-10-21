@@ -5,6 +5,7 @@ import ProductEditor from "@/components/dashboard/ProductEditor";
 import { getCategoriesFlat, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
+import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Add Product" };
@@ -35,6 +36,7 @@ export default async function NewProductPage() {
       }))}
       subcategories={subcategories}
       attributeSets={attributeSetsFor(categories)}
+      aiSuggest={aiMatchingAvailable()}
       backHref="/vendor/products"
     />
   );

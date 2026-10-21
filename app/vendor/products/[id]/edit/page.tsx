@@ -5,6 +5,7 @@ import ProductEditor from "@/components/dashboard/ProductEditor";
 import { getBaseProduct, getCategoriesFlat, getDiscountMap, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
+import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
 import { requireVendor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Edit Product" };
@@ -51,6 +52,7 @@ export default async function EditProductPage({
       }))}
       subcategories={subcategories}
       attributeSets={attributeSetsFor(categories)}
+      aiSuggest={aiMatchingAvailable()}
       backHref={session.role === "admin" ? "/admin/products" : "/vendor/products"}
       previewHref={`/product/${product.slug}`}
       dangerZone={

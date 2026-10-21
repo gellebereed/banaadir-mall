@@ -55,6 +55,8 @@ Rules:
   Standard attributes (`product.attributes`, lib/taxonomy-attributes.ts)
   come from that link and drive the storefront filters; the editor posts
   them as `attributesJson`.
+  The editor's ✨ suggestions come from `lib/product-classify.ts`; keep
+  every AI call to one request under ~9s (serverless time limit).
 - **Types**: `lib/types.ts` (`Product`, `Variant`, …); variant helpers in
   `lib/product-utils.ts` (`hasVariants`, `totalStock`, `colorSwatch`).
 

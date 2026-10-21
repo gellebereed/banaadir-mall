@@ -122,6 +122,20 @@ Dresses: Fabric, Neckline, Sleeve length…; phones: Operating system, SIM…
   `products.attributes`). Until then everything else saves as before and
   colour/size filters still work.
 
+### ✨ Suggested category & attributes
+
+The product editor suggests a category and attribute values from the
+product's name and description (`lib/product-classify.ts`). New products
+get a suggestion by themselves once the name is typed; the seller taps
+**Use** / **Apply** — nothing changes on its own.
+
+- **With `ANTHROPIC_API_KEY`** Claude chooses, reading the cover photo too:
+  first the category, then — once a category is set — the attributes
+  (one AI call per tap, so it stays inside Netlify's ~10s function limit).
+  It can only choose from our categories and the fixed value lists.
+- **Without the key**, word matching suggests the same things from the
+  text alone ("Women's cotton dress" → Dresses, Fabric: Cotton).
+
 ## Payouts, activity log & ownership transfer
 
 Run **`supabase/migration-payouts-activity.sql`** once in the Supabase SQL

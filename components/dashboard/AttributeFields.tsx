@@ -17,11 +17,14 @@ export default function AttributeFields({
   category,
   sets,
   initial,
+  incoming,
   onFilledChange,
 }: {
   category: string;
   sets: AttributeSets;
   initial?: Record<string, string[]>;
+  /** Suggested values to merge in (✨ Suggest); a new nonce applies them again. */
+  incoming?: { values: Record<string, string[]>; nonce: number } | null;
   /** How many of this category's attributes have a value — for the checklist. */
   onFilledChange?: (filled: number, total: number) => void;
 }) {
@@ -31,6 +34,18 @@ export default function AttributeFields({
     [category, sets],
   );
   const filled = attrs.filter((a) => values[a.handle]?.length).length;
+
+  // Added to what the seller already picked, never replacing it.
+  useEffect(() => {
+    if (!incoming) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      for (const [handle, keys] of Object.entries(incoming.values)) {
+        next[handle] = [...new Set([...(prev[handle] ?? []), ...keys])];
+      }
+      return next;
+    });
+  }, [incoming]);
 
   useEffect(() => onFilledChange?.(filled, attrs.length), [filled, attrs.length, onFilledChange]);
 

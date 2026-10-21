@@ -9,6 +9,7 @@ import SafeForm from "@/components/dashboard/SafeForm";
 import SearchableSelect, { type SelectOption } from "@/components/dashboard/SearchableSelect";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import AttributeFields from "@/components/dashboard/AttributeFields";
+import SuggestDetails from "@/components/dashboard/SuggestDetails";
 import type { AttributeSets } from "@/lib/taxonomy-attributes";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import VariantEditor, { type VariantSummary } from "@/components/dashboard/VariantEditor";
@@ -79,6 +80,7 @@ export default function ProductEditor({
   categories,
   subcategories,
   attributeSets = { defs: {}, byCategory: {} },
+  aiSuggest = false,
   product,
   discountPct: activeDiscount = 0,
   backHref,
@@ -92,6 +94,8 @@ export default function ProductEditor({
   subcategories: string[];
   /** Standard attributes per category (lib/taxonomy-attributes.ts). */
   attributeSets?: AttributeSets;
+  /** Whether "✨ Suggest" is answered by AI (ANTHROPIC_API_KEY set) or by word matching. */
+  aiSuggest?: boolean;
   /** The product being edited, at its BASE prices (never promotion prices). */
   product?: Product;
   /** A promotion currently discounting this product, in percent. */
@@ -123,6 +127,16 @@ export default function ProductEditor({
     totalStock: 0,
   });
   const [categoryError, setCategoryError] = useState(false);
+  /*
+   * Suggestions are applied by re-mounting the widget with a new default:
+   * the category picker keeps its own state and posts through a hidden
+   * input, so a fresh key is the clean way to set it from outside.
+   */
+  const [categoryOverride, setCategoryOverride] = useState<{ value: string; nonce: number } | null>(null);
+  const [incomingAttributes, setIncomingAttributes] = useState<{
+    values: Record<string, string[]>;
+    nonce: number;
+  } | null>(null);
   const [attributesFilled, setAttributesFilled] = useState({ filled: 0, total: 0 });
   const onAttributesFilled = useCallback((filled: number, total: number) => {
     setAttributesFilled((prev) => (prev.filled === filled && prev.total === total ? prev : { filled, total }));
@@ -345,6 +359,23 @@ export default function ProductEditor({
               </div>
             </Section>
 
+            <SuggestDetails
+              name={snap.name}
+              description={snap.description}
+              category={snap.category}
+              photoSrc={snap.photoSrc}
+              categories={categories}
+              sets={attributeSets}
+              ai={aiSuggest}
+              autoRunWhenNamed={!isEdit}
+              onUseCategory={(value) => {
+                setCategoryOverride({ value, nonce: Date.now() });
+                setCategoryError(false);
+                setSnap((prev) => ({ ...prev, category: value }));
+              }}
+              onApplyAttributes={(values) => setIncomingAttributes({ values, nonce: Date.now() })}
+            />
+
             <Section id="pricing" title="Pricing">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -435,6 +466,7 @@ export default function ProductEditor({
                 category={snap.category}
                 sets={attributeSets}
                 initial={product?.attributes}
+                incoming={incomingAttributes}
                 onFilledChange={onAttributesFilled}
               />
             </Section>
@@ -516,10 +548,11 @@ export default function ProductEditor({
                     Category <Required />
                   </label>
                   <SearchableSelect
+                    key={categoryOverride?.nonce ?? "initial"}
                     id="category"
                     name="category"
                     required
-                    defaultValue={product?.category ?? ""}
+                    defaultValue={categoryOverride?.value ?? product?.category ?? ""}
                     onChange={() => setCategoryError(false)}
                     placeholder="Choose a category"
                     searchPlaceholder="Type to find a category…"

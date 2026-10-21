@@ -20,8 +20,8 @@ export interface LinkerRow {
 
 /** Proposals at or above this are offered for one-click bulk approval. */
 const CONFIDENT = 85;
-/** Categories per proposal request — keeps each server action short. */
-const BATCH = 15;
+/** Categories per proposal request — each must finish inside the host's ~10s function limit. */
+const BATCH = 5;
 
 type Filter = "unlinked" | "linked" | "all";
 

@@ -21,6 +21,26 @@ export function aiMatchingAvailable(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 }
 
+/** An SDK error as a sentence an admin or seller can act on. */
+export function friendlyAiError(err: unknown): Error {
+  if (err instanceof Anthropic.AuthenticationError) {
+    return new Error("The Anthropic API key was rejected — check ANTHROPIC_API_KEY in Netlify.");
+  }
+  if (err instanceof Anthropic.APIConnectionTimeoutError) {
+    return new Error("The AI took too long to answer. Try again, or fill this in yourself.");
+  }
+  if (err instanceof Anthropic.APIConnectionError) {
+    return new Error("Could not reach the AI service. Check the connection and try again.");
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return new Error("The AI service is busy (rate limited). Wait a minute and try again.");
+  }
+  if (err instanceof Anthropic.APIError) {
+    return new Error(`The AI service returned an error (${err.status}): ${err.message}`);
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 export interface AiMatchInput {
   slug: string;
   name: string;
@@ -72,16 +92,17 @@ const SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/** One request for a batch of categories (keep batches small — ~20). */
+/** One request for a batch of categories (keep batches small — ~5). */
 export async function aiMatchCategories(items: AiMatchInput[]): Promise<AiMatch[]> {
   if (items.length === 0) return [];
-  const client = new Anthropic();
+  // A deadline under the ~10s serverless cut-off; the page sends small batches.
+  const client = new Anthropic({ timeout: 9_000, maxRetries: 0 });
 
   let response;
   try {
     response = await client.beta.messages.create({
       model: "claude-opus-5-5",
-      max_tokens: 16000,
+      max_tokens: 4000,
       // A declined request is re-run on Anthropic's recommended fallback
       // model instead of coming back empty.
       betas: ["server-side-fallback-2026-07-01"],
@@ -92,16 +113,7 @@ export async function aiMatchCategories(items: AiMatchInput[]): Promise<AiMatch[
       messages: [{ role: "user", content: JSON.stringify({ categories: items }) }],
     });
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) {
-      throw new Error("The Anthropic API key was rejected — check ANTHROPIC_API_KEY in Netlify.");
-    }
-    if (err instanceof Anthropic.RateLimitError) {
-      throw new Error("The AI service is busy (rate limited). Wait a minute and try again.");
-    }
-    if (err instanceof Anthropic.APIError) {
-      throw new Error(`The AI service returned an error (${err.status}): ${err.message}`);
-    }
-    throw err;
+    throw friendlyAiError(err);
   }
 
   if (response.stop_reason === "refusal") return [];
