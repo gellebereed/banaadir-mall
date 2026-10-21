@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import AnnouncementBar from "./AnnouncementBar";
 import AccountMenu from "./AccountMenu";
-import CategoryMenu from "./CategoryMenu";
+import DepartmentStrip from "./DepartmentStrip";
+import SearchBox from "./SearchBox";
 import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
 import type { Category } from "@/lib/types";
@@ -42,10 +42,8 @@ export default function Header({
   storeName?: string;
   categories?: Category[];
 }) {
-  const router = useRouter();
   const { count, wishlist } = useCart();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const action = primaryAction(session, storeName);
   /**
    * Departments only. The category list is the whole tree flattened, so
@@ -67,13 +65,6 @@ export default function Header({
     const siblings = childrenOf.get(category.parentSlug);
     if (siblings) siblings.push(category);
     else childrenOf.set(category.parentSlug, [category]);
-  }
-
-  function submitSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setMenuOpen(false);
-    router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   }
 
   return (
@@ -111,24 +102,10 @@ export default function Header({
             />
           </Link>
 
-          {/* Search (desktop) */}
-          <form onSubmit={submitSearch} className="hidden flex-1 md:block">
-            <div className="relative">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                type="search"
-                placeholder="Search products, brands and stores…"
-                className="w-full rounded-full border-2 border-ocean-700/20 bg-sand-50 py-2.5 pl-5 pr-28 text-sm outline-none transition focus:border-ocean-600 focus:bg-white"
-              />
-              <button
-                type="submit"
-                className="absolute right-1 top-1 bottom-1 rounded-full bg-ocean-700 px-5 text-sm font-semibold text-white transition hover:bg-mango-500"
-              >
-                Search
-              </button>
-            </div>
-          </form>
+          {/* Search (desktop) — with suggestions as you type */}
+          <div className="hidden flex-1 md:block">
+            <SearchBox variant="desktop" onNavigate={() => setMenuOpen(false)} />
+          </div>
 
           {/* Actions */}
           <nav className="ml-auto flex items-center gap-1.5 sm:gap-2">
@@ -168,66 +145,19 @@ export default function Header({
         </div>
 
         {/* Search (mobile) */}
-        <form onSubmit={submitSearch} className="px-4 pb-3 md:hidden">
-          <div className="relative">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              type="search"
-              placeholder="Search products, brands and stores…"
-              className="w-full rounded-full border border-sand-200 bg-sand-50 py-2 pl-4 pr-10 text-sm outline-none transition focus:border-ocean-600 focus:bg-white"
-            />
-            <button
-              type="submit"
-              className="absolute right-1 top-1 bottom-1 px-3 text-slate-500 hover:text-ocean-700"
-            >
-              🔍
-            </button>
-          </div>
-        </form>
+        <div className="px-4 pb-3 md:hidden">
+          <SearchBox variant="mobile" onNavigate={() => setMenuOpen(false)} />
+        </div>
 
         {/* Category strip (desktop) */}
         <div className="hidden border-t border-sand-100 lg:block">
           {/*
-            `relative`, and no `overflow-x-auto`.
-
-            The strip used to scroll horizontally, which clipped anything
-            absolutely positioned inside it — fine for a 264px dropdown,
-            fatal for a full-width mega panel. Departments wrap instead;
-            there are only a handful of them, so they never needed to
-            scroll. Being the positioned ancestor is what lets a grouped
-            panel span the whole container the way a real shop's does.
+            No `overflow-x-auto`: scrolling clipped anything absolutely
+            positioned inside — the dropdowns and the departments panel.
+            The strip keeps one line by showing only the departments that
+            fit; the rest are one click away under "All departments".
           */}
-          <div className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-1 px-4 py-1">
-            <Link
-              href="/products"
-              className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold text-ocean-800 hover:bg-ocean-50"
-            >
-              All Products
-            </Link>
-            {categoriesList.map((c) => (
-              <CategoryMenu
-                key={c.slug}
-                category={c}
-                subcategories={childrenOf.get(c.slug) ?? []}
-                grandchildrenOf={childrenOf}
-              />
-            ))}
-            <Link
-              href="/stores"
-              className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold text-mango-600 hover:bg-mango-50"
-            >
-              ✦ All Stores
-            </Link>
-            {!session && (
-              <Link
-                href="/sell"
-                className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
-              >
-                🏪 Sell on Banaadir
-              </Link>
-            )}
-          </div>
+          <DepartmentStrip departments={categoriesList} childrenOf={childrenOf} showSell={!session} />
         </div>
       </div>
 

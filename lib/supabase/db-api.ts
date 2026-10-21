@@ -672,6 +672,8 @@ async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
       date: (row.created_at || new Date().toISOString()).slice(0, 10),
       verified: row.verified ?? false,
       orderId: row.order_id || undefined,
+      // supabase/migration-review-photos.sql
+      photos: Array.isArray(row.photos) && row.photos.length ? (row.photos as string[]) : undefined,
     }));
   } catch {
     return null;

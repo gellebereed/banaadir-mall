@@ -149,9 +149,48 @@ export interface ReviewSubmission {
 export async function submitReviewAction(
   submission: ReviewSubmission,
 ): Promise<{ ok: boolean; verified: boolean; error?: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, verified: false, error: "Please sign in to review." };
+  return saveReview(session, submission);
+}
+
+/** Most photos one review may carry. */
+const MAX_REVIEW_PHOTOS = 4;
+
+/**
+ * The product page's review form: the same review, plus up to four photos
+ * (compressed in the browser before they are sent). Photos already on the
+ * shopper's review are kept when they edit it without attaching new ones.
+ */
+export async function submitReviewFormAction(
+  formData: FormData,
+): Promise<{ ok: boolean; verified: boolean; error?: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, verified: false, error: "Please sign in to review." };
+
+  const { filesFrom, saveImages } = await import("@/lib/uploads");
+  const files = filesFrom(formData, "photos").slice(0, MAX_REVIEW_PHOTOS);
+  const photos = files.length ? await saveImages(files, "reviews") : undefined;
+  if (files.length && !photos?.length) {
+    return { ok: false, verified: false, error: "Those photos couldn't be uploaded — use JPG, PNG or WebP under 5 MB." };
+  }
+  return saveReview(
+    session,
+    {
+      productId: String(formData.get("productId") ?? ""),
+      rating: Number(formData.get("rating")),
+      text: String(formData.get("text") ?? ""),
+    },
+    photos,
+  );
+}
+
+async function saveReview(
+  session: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+  submission: ReviewSubmission,
+  newPhotos?: string[],
+): Promise<{ ok: boolean; verified: boolean; error?: string }> {
   try {
-    const session = await getSession();
-    if (!session) return { ok: false, verified: false, error: "Please sign in to review." };
 
     const rating = Math.round(Number(submission.rating));
     if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
@@ -161,8 +200,12 @@ export async function submitReviewAction(
     const productId = String(submission.productId || "").slice(0, 80);
     if (!productId) return { ok: false, verified: false, error: "Unknown product." };
 
-    const { getOrders, getBaseProducts } = await import("@/lib/api");
-    const [orders, products] = await Promise.all([getOrders(), getBaseProducts()]);
+    const { getOrders, getBaseProducts, getCustomerReviews } = await import("@/lib/api");
+    const [orders, products, existingReviews] = await Promise.all([
+      getOrders(),
+      getBaseProducts(),
+      getCustomerReviews(),
+    ]);
 
     if (!products.some((product) => product.id === productId)) {
       return { ok: false, verified: false, error: "Unknown product." };
@@ -178,17 +221,20 @@ export async function submitReviewAction(
         (order.items ?? []).some((item) => item.productId === productId),
     );
 
+    // Deterministic per shopper + product, so an edited review replaces
+    // the old one instead of stacking a second opinion from one person.
+    const id = `rv-${hash(`${email}|${productId}`)}`;
+    const previous = existingReviews.find((r) => r.id === id);
     const review: ProductReview = {
-      // Deterministic per shopper + product, so an edited review replaces
-      // the old one instead of stacking a second opinion from one person.
-      id: `rv-${hash(`${email}|${productId}`)}`,
+      id,
       productId,
       author: session.name.trim().split(/\s+/)[0] || "Customer",
       rating,
       text: submission.text?.trim().slice(0, 600) || undefined,
       date: new Date().toISOString().slice(0, 10),
       verified,
-      orderId: submission.orderId?.slice(0, 60),
+      orderId: submission.orderId?.slice(0, 60) ?? previous?.orderId,
+      photos: newPhotos?.slice(0, MAX_REVIEW_PHOTOS) ?? previous?.photos,
     };
 
     const { upsertReviewInSupabase } = await import("@/lib/supabase/mutations");

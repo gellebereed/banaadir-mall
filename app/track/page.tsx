@@ -44,6 +44,35 @@ function TrackContent() {
     >
   >({});
 
+  /*
+   * The orders placed on this device (saved at checkout). Asking a
+   * customer to type an order number they were shown once, on a screen
+   * they have since closed, is where tracking usually ends.
+   */
+  const [recent, setRecent] = useState<Order[]>([]);
+  useEffect(() => {
+    let local: Order[] = [];
+    try {
+      local = JSON.parse(localStorage.getItem(ordersKey) || "[]");
+    } catch {
+      local = [];
+    }
+    const latest = [...local].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+    setRecent(latest);
+    // The saved copy has the status at checkout; ask the server for now.
+    let cancelled = false;
+    (async () => {
+      const { getOrderAction } = await import("@/app/actions");
+      const fresh = await Promise.all(latest.map((o) => getOrderAction(o.id).catch(() => undefined)));
+      if (!cancelled) {
+        setRecent(latest.map((o, i) => (fresh[i] ? { ...o, status: fresh[i]!.status } : o)));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ordersKey]);
+
   async function performLookup(searchId: string) {
     if (!searchId.trim()) return;
     setIsSearching(true);
@@ -211,8 +240,43 @@ function TrackContent() {
 
       {notFound && (
         <div className="mt-4 rounded-2xl border border-coral-200 bg-coral-50 p-4 text-sm font-semibold text-coral-800 animate-fade-up">
-          ⚠️ We couldn&apos;t find order &ldquo;{input}&rdquo;. Please verify your order number and try again.
+          ⚠️ We couldn&apos;t find order &ldquo;{input}&rdquo;. Order numbers look like BM-12345 — it&apos;s on
+          your confirmation screen and in the WhatsApp message to the store.
         </div>
+      )}
+
+      {!order && recent.length > 0 && (
+        <section className="mt-8">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wide text-slate-500">
+            Your recent orders
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {recent.map((o) => (
+              <li key={o.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInput(o.id);
+                    void performLookup(o.id);
+                  }}
+                  className="card flex w-full items-center justify-between gap-3 p-4 text-left transition hover:border-ocean-300"
+                >
+                  <span className="min-w-0">
+                    <span className="block font-mono text-sm font-bold text-ocean-950">{o.id}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {shortDate(o.date)} · {o.items.length} item{o.items.length === 1 ? "" : "s"} · {money(o.total)}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <StatusBadge status={o.status} />
+                    <span className="text-sm font-semibold text-ocean-700">Track →</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-400">Orders placed on this device. Signed in? All your orders are under My account.</p>
+        </section>
       )}
 
       {order && (

@@ -152,6 +152,28 @@ them; the marketplace category tree is untouched, which is the point: a
 store can group however it likes without adding categories every other
 store would see. Run **`supabase/migration-store-collections.sql`** once.
 
+## Search, navigation, tracking & reviews
+
+- **Search** (`lib/search.ts`, used by `/search`, store sites and the
+  header suggestions): ranked by where the words appear (name, store,
+  category, attributes, description), plurals folded, typos corrected
+  against the catalogue's own words ("drss" → dress, shown as "Showing
+  results for…"), and Somali ↔ English words expanded ("dirac" → dress,
+  "kabo" → shoes — extend `SYNONYMS`). Long queries fall back to the
+  closest matches, labelled. Nothing found → departments to browse.
+- **Header suggestions** (`components/layout/SearchBox.tsx`): products,
+  departments and stores as you type; arrow keys + Enter.
+- **Departments** (`components/layout/DepartmentStrip.tsx`): the desktop
+  strip keeps one line — as many departments as fit — and "All
+  departments" opens a panel with every department and its subcategories.
+- **Tracking**: `/track` lists the orders placed on this device with their
+  current status — no order number to remember.
+- **Photo reviews**: signed-in shoppers write reviews on the product page
+  with up to 4 photos (compressed in the browser, stored with product
+  photos). "Verified purchase" still requires a delivered order. Run
+  **`supabase/migration-review-photos.sql`** once; without it reviews save
+  without photos.
+
 ## Link previews & search engines
 
 - **WhatsApp / Facebook previews**: every product link shows a generated

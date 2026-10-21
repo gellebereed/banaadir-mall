@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductView from "@/components/product/ProductView";
+import ReviewsSection from "@/components/product/ReviewsSection";
 import BundleBox from "@/components/reco/BundleBox";
 import RecoStack from "@/components/reco/RecoStack";
 import TrackProductView from "@/components/reco/TrackProductView";
-import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StorySection from "@/components/story/StorySection";
 import {
@@ -15,10 +15,11 @@ import {
   getStore,
   getStoriesForProduct,
 } from "@/lib/api";
-import { compact, money, shortDate } from "@/lib/format";
+import { compact, money } from "@/lib/format";
 import { primaryImage } from "@/lib/product-utils";
 import { requestOrigin } from "@/lib/request-origin";
 import { jsonLd, metaDescription, openGraph } from "@/lib/seo";
+import { getSession } from "@/lib/session";
 import { describeAttributes } from "@/lib/taxonomy-attributes";
 
 interface Props {
@@ -61,11 +62,12 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProduct(slug);
   if (!product) notFound();
 
-  const [store, category, reviews, stories] = await Promise.all([
+  const [store, category, reviews, stories, session] = await Promise.all([
     getStore(product.store),
     getCategory(product.category),
     getReviews(product),
     getStoriesForProduct(product),
+    getSession(),
   ]);
 
   /*
@@ -157,27 +159,14 @@ export default async function ProductPage({ params }: Props) {
           it up (lib/reco/psychology.ts, buildBundle). */}
       <BundleBox seedId={product.id} />
 
-      {/* Reviews */}
-      <section className="mt-14">
-        <SectionHeader
-          title="Customer Reviews"
-          subtitle={`${product.reviewCount.toLocaleString()} verified reviews · ${product.rating.toFixed(1)} average`}
-        />
-        <div className="grid gap-4 md:grid-cols-3">
-          {reviews.map((r, i) => (
-            <div key={i} className="card p-5">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-800">{r.author}</p>
-                <span className="text-xs text-slate-400">{shortDate(r.date)}</span>
-              </div>
-              <p className="mt-1 text-sm text-mango-400" aria-label={`${r.rating} stars`}>
-                {"★".repeat(r.rating)}
-              </p>
-              <p className="mt-2 text-sm text-slate-600">{r.text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Reviews — with customers' photos, and the form to write one. */}
+      <ReviewsSection
+        productId={product.id}
+        reviews={reviews}
+        rating={product.rating}
+        reviewCount={product.reviewCount}
+        signedIn={Boolean(session)}
+      />
       </div>
 
       {/* The episode: how it works, how to look after it, what it looks

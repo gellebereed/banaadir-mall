@@ -1502,18 +1502,23 @@ export async function upsertReviewInSupabase(review: ProductReview): Promise<boo
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = getDataClient();
-    const { error } = await supabase.from("product_reviews").upsert(
-      {
-        id: review.id,
-        product_id: review.productId,
-        author: review.author,
-        rating: review.rating,
-        text: review.text ?? null,
-        order_id: review.orderId ?? null,
-        verified: review.verified ?? false,
-      },
-      { onConflict: "id" },
-    );
+    const row: Record<string, unknown> = {
+      id: review.id,
+      product_id: review.productId,
+      author: review.author,
+      rating: review.rating,
+      text: review.text ?? null,
+      order_id: review.orderId ?? null,
+      verified: review.verified ?? false,
+    };
+    if (review.photos !== undefined) row.photos = review.photos;
+    let { error } = await supabase.from("product_reviews").upsert(row, { onConflict: "id" });
+    // Before migration-review-photos.sql the review still saves, without photos.
+    if (error && isMissingColumnError(error) && "photos" in row) {
+      console.warn("[Supabase] product_reviews.photos is missing — run supabase/migration-review-photos.sql.");
+      delete row.photos;
+      ({ error } = await supabase.from("product_reviews").upsert(row, { onConflict: "id" }));
+    }
     if (error) {
       console.warn("[Supabase Mutations] upsertReview:", error.message);
       return false;

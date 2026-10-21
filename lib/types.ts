@@ -680,6 +680,10 @@ export interface Review {
   rating: number;
   date: string;
   text: string;
+  /** Photos the customer attached (ProductReview.photos). */
+  photos?: string[];
+  /** Tied to a delivered order for this product. */
+  verified?: boolean;
 }
 
 // ── Point of sale: the counter, the pantry and what is made from it ────
@@ -994,4 +998,9 @@ export interface ProductReview {
   /** True when we can tie it to an order the reviewer actually received. */
   verified?: boolean;
   orderId?: string;
+  /**
+   * Up to four photos of the product as it arrived — the most persuasive
+   * thing a review can carry (supabase/migration-review-photos.sql).
+   */
+  photos?: string[];
 }

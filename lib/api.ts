@@ -9,6 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
 import { orders as seedOrders } from "./data/orders";
 import { products as seedProducts } from "./data/products";
@@ -401,23 +402,36 @@ export async function getAllProductsByStore(slug: string): Promise<Product[]> {
  * that one product among fuzzy name matches is the difference between the
  * search box being usable at a counter and not.
  */
-export async function searchProducts(query: string): Promise<Product[]> {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
+/**
+ * Ranked, typo-tolerant, Somali-aware search (lib/search.ts). `within`
+ * narrows it to one shop's products (a store's own site); otherwise the
+ * whole marketplace. A product code or barcode still short-circuits to
+ * that exact product.
+ */
+export async function searchProducts(query: string, within?: Product[]): Promise<SearchResult> {
+  const q = query.trim();
+  if (!q) return { products: [], partial: false };
 
-  const products = await getMarketplaceProducts();
+  const products = within ?? (await getMarketplaceProducts());
 
   const exact = products.filter((p) => matchesCode(p, query));
-  if (exact.length > 0) return exact;
+  if (exact.length > 0) return { products: exact, partial: false };
 
-  return products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
-      p.category.includes(q) ||
-      p.subcategory?.toLowerCase().includes(q) ||
-      p.internalReference?.toLowerCase().includes(q),
-  );
+  const [stores, categories, { describeAttributes }] = await Promise.all([
+    getAllStores(),
+    getCategories(true),
+    // Server-only and large: loaded only when a search actually runs.
+    import("./taxonomy-attributes"),
+  ]);
+  const byCategory = new Map(categories.map((c) => [c.slug, c]));
+  return searchCatalog(products, q, {
+    storeNames: new Map(stores.map((s) => [s.slug, s.name])),
+    // "Dresses" also answers to "women" through its parent department.
+    categoryNames: new Map(
+      categories.map((c) => [c.slug, `${c.parentSlug ? byCategory.get(c.parentSlug)?.name ?? "" : ""} ${c.name}`]),
+    ),
+    attributeText: (p) => describeAttributes(p.attributes).map((row) => row.value).join(" "),
+  });
 }
 
 // ── Barcode / internal-reference lookup (Odoo product.product) ─────────
@@ -928,10 +942,12 @@ export async function getReviews(product: Product): Promise<Review[]> {
     return real
       .sort((a, b) => b.date.localeCompare(a.date))
       .map((r) => ({
-        author: r.verified ? `${r.author} ✓` : r.author,
+        author: r.author,
         rating: r.rating,
         date: r.date,
         text: r.text || "",
+        photos: r.photos?.length ? r.photos : undefined,
+        verified: r.verified,
       }));
   }
 
