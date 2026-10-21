@@ -36,6 +36,7 @@ import {
 } from "react";
 import { getRecommendationsAction } from "@/app/reco-actions";
 import { CART_KEY, WISHLIST_KEY, useCart } from "@/lib/cart-context";
+import { attributeCart } from "@/lib/reco/metrics-client";
 import { GUEST_SCOPE, scopeFor, scopedKey } from "@/lib/storage-scope";
 import {
   emptyProfile,
@@ -239,9 +240,11 @@ function CartWishlistBridge({ scope }: { scope: string }) {
   useEffect(() => {
     if (!ready || !cartBaseline.current) return;
     const current = new Set(lines.map((line) => line.productId));
-    diff(cartBaseline.current, current, (id, added) =>
-      track(added ? "cart" : "uncart", { id }),
-    );
+    diff(cartBaseline.current, current, (id, added) => {
+      track(added ? "cart" : "uncart", { id });
+      // Credit the shelf that surfaced it, if one did (shelf metrics).
+      if (added) attributeCart(id);
+    });
     cartBaseline.current = current;
   }, [lines, ready, track]);
 

@@ -102,6 +102,7 @@ export default async function SearchPage({
         <ShopClient
           products={results}
           facets={buildFacets(results)}
+          personalize
           stores={stores}
           categories={categories}
           title={q ? `Results for “${q}”${where}` : `Search${where}`}

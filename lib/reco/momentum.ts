@@ -175,3 +175,22 @@ export function shopperCity(orders: Order[], identity: { email?: string; name?: 
 
   return theirs[0]?.city || undefined;
 }
+
+/**
+ * Units actually sold per product over a longer window — the honest
+ * replacement for the catalogue's stored `sold` figure, which on most
+ * products was imported or demo data. Cancelled orders don't count.
+ */
+export function buildSales(orders: Order[], options: { windowDays?: number; now?: Date } = {}): Map<string, number> {
+  const from = (options.now ?? new Date()).getTime() - (options.windowDays ?? 90) * DAY_MS;
+  const sales = new Map<string, number>();
+  for (const order of orders) {
+    if (order.status === "cancelled") continue;
+    const placed = Date.parse(`${(order.date ?? "").slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(placed) || placed < from) continue;
+    for (const item of order.items ?? []) {
+      sales.set(item.productId, (sales.get(item.productId) ?? 0) + (item.qty || 0));
+    }
+  }
+  return sales;
+}

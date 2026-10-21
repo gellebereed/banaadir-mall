@@ -186,6 +186,21 @@ store would see. Run **`supabase/migration-store-collections.sql`** once.
   form) go back to the page that sent you; guarded pages pass their own
   address. Only same-site paths are accepted (`lib/safe-next.ts`).
 
+## Recommendations: measured, and on real data
+
+- **Shelf results** (`/admin/discovery` → Results): views, taps, add-to-
+  baskets, orders and revenue per recommendation shelf, 7 or 30 days. A
+  sale is credited to a shelf when the product was tapped there in the
+  previous 7 days (attributed in the browser). Counts only — no shopper id.
+  Run **`supabase/migration-reco-metrics.sql`** (table + summary function).
+- **Real data only**: the "Popular" (new-visitor) and discovery shelves
+  rank by units really sold in the last 90 days and real reviews; before
+  any sales, the newest well-photographed products.
+- **Similar items** use the standard taxonomy and attributes, so the same
+  kind of product matches across stores whatever each calls its category.
+- **Search** results are nudged toward the shopper's taste in their own
+  browser ("✨ tuned to you") — relevance still leads.
+
 ## Link previews & search engines
 
 - **WhatsApp / Facebook previews**: every product link shows a generated

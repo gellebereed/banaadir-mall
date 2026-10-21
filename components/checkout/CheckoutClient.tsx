@@ -6,6 +6,7 @@
  * auto-location detection, and address memory.
  */
 
+import { attributePurchase } from "@/lib/reco/metrics-client";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import OrderConfirmation, {
@@ -446,6 +447,8 @@ export default function CheckoutClient({
     // looks identical whether it was bought or abandoned).
     setPurchased(lines.map((l) => ({ productId: l.productId, qty: l.qty })));
     trackPurchase(lines.map((l) => l.productId));
+    // Credit any shelf that surfaced what was bought (shelf metrics).
+    attributePurchase(lines.map((l) => ({ productId: l.productId, revenue: l.product.price * l.qty })));
 
     clearCart();
     setIsSubmitting(false);

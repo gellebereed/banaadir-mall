@@ -21,10 +21,11 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import type { Recommendation, Shelf } from "@/lib/reco/types";
+import { trackImpression, trackShelfClick } from "@/lib/reco/metrics-client";
 import { useReco } from "./RecoProvider";
 
 interface Tone {
@@ -150,10 +151,38 @@ const REASON_BADGE_STYLES: Record<string, string> = {
   "price-drop": "bg-emerald-600/95 text-white",
 };
 
-export default function RecoShelf({ shelf }: { shelf: Shelf }) {
+export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: string }) {
   const { mute } = useReco();
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [showWhy, setShowWhy] = useState(false);
+
+  /*
+   * Measurement (lib/reco/metrics-client.ts): one impression when at least
+   * half the shelf has been on screen, and a click when a card on it is
+   * tapped. Without these nobody can tell which shelves earn their place.
+   */
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          trackImpression(surface, shelf.id);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [surface, shelf.id]);
+  const clicked = useRef(new Set<string>());
+  const onCardClick = (productId: string) => {
+    if (clicked.current.has(productId)) return;
+    clicked.current.add(productId);
+    trackShelfClick(surface, shelf.id, productId);
+  };
 
   const items = shelf.items.filter((item) => !dismissed.includes(item.product.id));
 
@@ -193,6 +222,7 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
    */
   return (
     <section
+      ref={sectionRef}
       className={`band ${tone.band} band-edge mt-8 ${shelf.feature ? "py-11" : "py-8"}`}
     >
       <div className="mx-auto max-w-7xl px-4">
@@ -265,14 +295,14 @@ export default function RecoShelf({ shelf }: { shelf: Shelf }) {
           {shelf.layout === "grid" ? (
             <div className="grid grid-cols-2 items-stretch gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {items.map((item) => (
-                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} />
+                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} onOpen={onCardClick} />
               ))}
             </div>
           ) : (
             <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
               {items.map((item) => (
                 <div key={item.product.id} className="flex w-44 shrink-0 snap-start sm:w-52">
-                  <RecoCard item={item} onDismiss={dismiss} />
+                  <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
                 </div>
               ))}
             </div>
@@ -321,9 +351,12 @@ function shortReason(text: string): string {
 function RecoCard({
   item,
   onDismiss,
+  onOpen,
 }: {
   item: Recommendation;
   onDismiss: (productId: string) => void;
+  /** A tap on the card (its link or its add button) — for shelf metrics. */
+  onOpen: (productId: string) => void;
 }) {
   const proof = item.proof;
   const icon = REASON_ICONS[item.reason.kind] ?? "✦";
@@ -333,7 +366,14 @@ function RecoCard({
     : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
 
   return (
-    <div className="group/reco h-full w-full">
+    <div
+      className="group/reco h-full w-full"
+      onClickCapture={(e) => {
+        // The dismiss ✕ is not interest.
+        if ((e.target as HTMLElement).closest("[data-reco-dismiss]")) return;
+        if ((e.target as HTMLElement).closest("a,button")) onOpen(item.product.id);
+      }}
+    >
       <ProductCard
         product={item.product}
         cornerBadge={
@@ -379,6 +419,7 @@ function RecoCard({
             </span>
 
             <button
+              data-reco-dismiss
               onClick={() => onDismiss(item.product.id)}
               aria-label={`Not interested in ${item.product.name}`}
               title="Not interested — stop showing me this"

@@ -48,6 +48,8 @@ export interface RecoContext {
   index: SimilarityIndex;
   graph: AffinityGraph;
   momentum: MomentumIndex;
+  /** Units really sold per product, last 90 days (momentum.ts#buildSales). */
+  sales: Map<string, number>;
   /** The product being viewed, on the product surface. */
   seed?: Product;
   /** Product ids in the basket right now. */
@@ -137,13 +139,14 @@ export const similarToSeed: Strategy = {
       anchorName: seed.name,
     };
 
-    const inDepartment = nearestTo(
-      seed.id,
-      ctx.index,
-      ctx.index.byCategory.get(seed.category) ?? [],
-      DEPTH,
-      0.05,
-    );
+    // The seed's own category, plus anything filed under the same standard
+    // node by another store ("Dresses" in one shop, "Dirac" in the next).
+    const seedStandard = ctx.categories.get(seed.category)?.standardId;
+    const shortlist = new Set([
+      ...(ctx.index.byCategory.get(seed.category) ?? []),
+      ...(seedStandard ? ctx.index.byStandard.get(seedStandard) ?? [] : []),
+    ]);
+    const inDepartment = nearestTo(seed.id, ctx.index, shortlist, DEPTH, 0.05);
 
     /**
      * Widen to the whole catalogue when the seed's own department cannot
@@ -593,36 +596,59 @@ export const rising: Strategy = {
   },
 };
 
+/** Rating on 0–1, shrunk toward "average" by how few REAL reviews it rests on. */
+function quality(product: Product): number {
+  const PRIOR_REVIEWS = 8;
+  const NEUTRAL = 0.8; // "fine, as far as we know" for an unreviewed product
+  if (product.reviewCount <= 0) return NEUTRAL;
+  return (
+    ((product.rating / 5) * product.reviewCount + NEUTRAL * PRIOR_REVIEWS) /
+    (product.reviewCount + PRIOR_REVIEWS)
+  );
+}
+
 /**
- * The cold-start floor. Ranked by a Bayesian-shrunk rating rather than raw
- * stars, so a single five-star review cannot outrank a 4.6 with 300 — that
- * mistake is what makes a "top rated" shelf full of products nobody has
- * heard of.
+ * The cold-start floor: what new visitors see before we know anything.
+ *
+ * Ranked by REAL units sold (the last 90 days of orders), adjusted by a
+ * review-shrunk rating where real reviews exist — one five-star review
+ * can't outrank a 4.6 from three hundred. It used to rank by the stored
+ * `rating` and `sold` figures, which were demo data; once ratings became
+ * real-only, every product scored zero and this shelf went blank.
+ *
+ * Before the marketplace has sales, it falls back to what is easiest to
+ * judge from a card: in stock, with a photo, newest first — and says so
+ * rather than calling anything "popular".
  */
 export const popular: Strategy = {
   key: "popular",
   run: (ctx) => {
-    const meanRating =
-      ctx.products.reduce((total, p) => total + p.rating, 0) / Math.max(1, ctx.products.length);
-    const PRIOR_REVIEWS = 25;
-
+    const anySales = [...ctx.sales.values()].some((n) => n > 0);
     return ctx.products
-      .map((product) => {
-        const shrunk =
-          (product.rating * product.reviewCount + meanRating * PRIOR_REVIEWS) /
-          (product.reviewCount + PRIOR_REVIEWS);
+      .filter((product) => totalStock(product) > 0)
+      .map((product, position) => {
+        const units = ctx.sales.get(product.id) ?? 0;
+        const hasPhoto = Boolean(product.images?.length || product.variants?.some((v) => v.images?.length));
+        const score = anySales
+          ? Math.log10(1 + units) * quality(product) + (hasPhoto ? 0.05 : 0)
+          : // No sales yet anywhere: photo first, then the catalogue's own
+            // order (newest additions are appended last, so reverse it).
+            (hasPhoto ? 1 : 0.5) * quality(product) + position / (ctx.products.length * 100);
         return {
           id: product.id,
-          score: shrunk * Math.log10(10 + product.sold),
+          score,
           reason: {
             kind: "popular" as const,
             text:
-              product.reviewCount > 40
-                ? `★ ${product.rating.toFixed(1)} from ${product.reviewCount.toLocaleString()} reviews`
-                : "One of the mall's most bought",
+              units > 0
+                ? `${units} bought in the last 3 months`
+                : product.reviewCount > 0
+                  ? `★ ${product.rating.toFixed(1)} from ${product.reviewCount.toLocaleString()} review${product.reviewCount === 1 ? "" : "s"}`
+                  : "Fresh in the mall",
           },
         };
       })
+      .filter((candidate) => candidate.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, DEPTH);
   },
@@ -631,12 +657,16 @@ export const popular: Strategy = {
 /**
  * Deliberate serendipity.
  *
- * Products in departments the shopper has NOT been living in, chosen for
- * quality rather than fit. A recommender that only ever narrows will, given
- * a few weeks, show a customer the same shelf forever — they stop looking,
- * and the marketplace loses the discovery that made them browse in the
- * first place. This is the arm that keeps the catalogue open, and the
- * engine reserves slots for it on purpose (engine.ts, EXPLORE_RATE).
+ * Products in departments the shopper has NOT been living in. A recommender
+ * that only ever narrows will, given a few weeks, show a customer the same
+ * shelf forever — they stop looking, and the marketplace loses the
+ * discovery that made them browse in the first place. This is the arm that
+ * keeps the catalogue open, and the engine reserves slots for it on
+ * purpose (engine.ts, EXPLORE_RATE).
+ *
+ * Under-exposed (few real sales) and not badly reviewed: an unreviewed
+ * product qualifies — requiring 4.3★ meant that, with real ratings only,
+ * nothing did, and the exploration slot silently disappeared.
  */
 export const discover: Strategy = {
   key: "discover",
@@ -644,14 +674,17 @@ export const discover: Strategy = {
     const familiar = new Set(topKeys(ctx.taste.categories, 3));
     return ctx.products
       .filter((product) => !familiar.has(product.category) && !ctx.taste.touched.has(product.id))
-      .filter((product) => product.rating >= 4.3 && totalStock(product) > 0)
+      .filter((product) => totalStock(product) > 0)
+      .filter((product) => product.reviewCount === 0 || product.rating >= 4)
       .map((product) => ({
         id: product.id,
-        // Under-exposed but well-reviewed: the honest definition of a find.
-        score: product.rating / Math.log10(20 + product.sold),
+        score: quality(product) / Math.log10(20 + (ctx.sales.get(product.id) ?? 0)),
         reason: {
           kind: "discover" as const,
-          text: `Something different — ${categoryName(ctx, product.category)}, rated ${product.rating.toFixed(1)}`,
+          text:
+            product.reviewCount > 0
+              ? `Something different — ${categoryName(ctx, product.category)}, rated ${product.rating.toFixed(1)}`
+              : `Something different — from ${categoryName(ctx, product.category)}`,
         },
       }))
       .sort((a, b) => b.score - a.score)

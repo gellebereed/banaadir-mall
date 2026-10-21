@@ -80,7 +80,7 @@ export default function RecoStack({
   return (
     <>
       {shelves.map((shelf) => (
-        <RecoShelf key={shelf.id} shelf={shelf} />
+        <RecoShelf key={shelf.id} shelf={shelf} surface={surface} />
       ))}
     </>
   );

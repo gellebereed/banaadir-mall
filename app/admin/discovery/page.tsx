@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import PinManager from "@/components/dashboard/discovery/PinManager";
 import PromptSettingsForm from "@/components/dashboard/discovery/PromptSettingsForm";
+import ShelfPerformance from "@/components/dashboard/discovery/ShelfPerformance";
 import ShelfSettingsForm from "@/components/dashboard/discovery/ShelfSettingsForm";
 import StoryManager from "@/components/dashboard/discovery/StoryManager";
 import { getAllStories, getBaseProducts, getCategories, getRecoSettings, getStores } from "@/lib/api";
 import { SHELF_CATALOGUE } from "@/lib/reco/catalogue";
+import { shelfStats } from "@/lib/reco/metrics";
 
 export const metadata: Metadata = { title: "Discovery" };
 
@@ -26,9 +28,11 @@ export const dynamic = "force-dynamic";
 export default async function AdminDiscoveryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; saved?: string }>;
+  searchParams: Promise<{ tab?: string; saved?: string; days?: string }>;
 }) {
-  const { tab = "engine", saved } = await searchParams;
+  const { tab = "engine", saved, days: daysParam } = await searchParams;
+  const days = daysParam === "7" ? 7 : 30;
+  const stats = tab === "results" ? await shelfStats(days) : undefined;
 
   const [settings, products, stories, categories, stores] = await Promise.all([
     getRecoSettings(),
@@ -43,6 +47,7 @@ export default async function AdminDiscoveryPage({
 
   const tabs = [
     { key: "engine", label: "Engine", icon: "🎛️" },
+    { key: "results", label: "Results", icon: "📈" },
     { key: "pins", label: "Pushes", icon: "📌", badge: livePins },
     { key: "prompts", label: "Ask shoppers", icon: "💬" },
     { key: "stories", label: "Guides", icon: "📖", badge: drafts },
@@ -109,6 +114,10 @@ export default async function AdminDiscoveryPage({
       <div className="mt-5">
         {tab === "engine" && (
           <ShelfSettingsForm settings={settings} shelves={SHELF_CATALOGUE} />
+        )}
+
+        {tab === "results" && stats && (
+          <ShelfPerformance rows={stats.rows} stored={stats.stored} days={days} shelves={SHELF_CATALOGUE} />
         )}
 
         {tab === "pins" && (

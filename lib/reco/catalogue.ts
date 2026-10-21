@@ -89,10 +89,10 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
   },
   {
     id: "loved",
-    title: "Loved across the mall",
+    title: "Popular across the mall",
     surface: "home",
     slot: "mid",
-    blurb: "The cold-start shelf: review-weighted ratings, shown to shoppers we don't know yet.",
+    blurb: "The cold-start shelf: real sales of the last 3 months, adjusted by real reviews, shown to shoppers we don't know yet.",
     pinnable: true,
   },
   {

@@ -43,6 +43,7 @@ import type {
 import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
 import type { CategoryMapping } from "./category-mappings";
 import type { StoreCollection } from "./collections";
+import type { RecoMetricEvent } from "./reco/metrics";
 
 export interface DB {
   /** Field-level edits per product id (price, stock, hidden, …). */
@@ -99,6 +100,8 @@ export interface DB {
   categoryMappings?: CategoryMapping[];
   /** Sellers' own product groupings (lib/collections.ts). */
   collections?: StoreCollection[];
+  /** Recommendation shelf metrics, demo mode (lib/reco/metrics.ts). */
+  recoEvents?: RecoMetricEvent[];
 }
 
 /**

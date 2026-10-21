@@ -14,7 +14,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import { categories as seedCategories } from "@/lib/data/categories";
 import CategoryChips from "./CategoryChips";
+import { useReco } from "@/components/reco/RecoProvider";
 import { colorSwatch } from "@/lib/product-utils";
+import { hasHistory } from "@/lib/reco/profile";
+import { deriveTaste, tasteScore } from "@/lib/reco/taste";
 import type { FacetData } from "@/lib/taxonomy-attributes";
 import type { Category, Product, Store } from "@/lib/types";
 
@@ -46,6 +49,7 @@ export default function ShopClient({
   initialSort = "featured",
   showCategoryFilter = true,
   facets = { facets: [], index: {} },
+  personalize = false,
 }: {
   products: Product[];
   /**
@@ -53,6 +57,12 @@ export default function ShopClient({
    * built on the server by lib/taxonomy-attributes.ts#buildFacets.
    */
   facets?: FacetData;
+  /**
+   * Nudge the "Featured" order toward the shopper's own taste — for search
+   * results, which arrive ranked by relevance alone. Computed here, in the
+   * browser, from the profile that never leaves it (lib/reco).
+   */
+  personalize?: boolean;
   /** Stores present in this result set, for the brand filter. */
   stores?: Store[];
   /**
@@ -79,6 +89,28 @@ export default function ShopClient({
   /** attribute handle → ticked value keys. OR within one, AND across them. */
   const [activeAttrs, setActiveAttrs] = useState<Record<string, string[]>>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  /*
+   * Personal order for search results. Relevance stays the main thing — the
+   * server's rank becomes a score from 1 down to 0 — and taste can move a
+   * result only a few places (TASTE_WEIGHT): enough that a shopper who buys
+   * from one store or in one price range sees those first among equally
+   * good matches, never enough to bury the best match. Muted products sink.
+   */
+  const { profile, ready } = useReco();
+  const personalOrder = useMemo(() => {
+    if (!personalize || !ready || !hasHistory(profile) || products.length < 3) return null;
+    const TASTE_WEIGHT = 0.3;
+    const taste = deriveTaste(profile, new Map(products.map((p) => [p.id, p])), Date.now());
+    if (taste.confidence === 0) return null;
+    const n = products.length;
+    const scored = products.map((p, i) => ({
+      id: p.id,
+      score: 1 - i / n + TASTE_WEIGHT * tasteScore(p, taste) - (taste.muted.has(p.id) ? 2 : 0),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return new Map(scored.map((s, i) => [s.id, i]));
+  }, [personalize, ready, profile, products]);
   const attrSelections = Object.entries(activeAttrs).filter(([, keys]) => keys.length > 0);
   const attrFilterCount = attrSelections.reduce((n, [, keys]) => n + keys.length, 0);
 
@@ -126,6 +158,9 @@ export default function ShopClient({
     }
 
     switch (sort) {
+      case "featured":
+        if (personalOrder) list.sort((a, b) => (personalOrder.get(a.id) ?? 0) - (personalOrder.get(b.id) ?? 0));
+        break;
       case "sold":
         list.sort((a, b) => b.sold - a.sold);
         break;
@@ -150,7 +185,7 @@ export default function ShopClient({
         break;
     }
     return list;
-  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs, facets]);
+  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs, facets, personalOrder]);
 
   const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
   const BATCH_SIZE = 16;
@@ -309,6 +344,11 @@ export default function ShopClient({
         <p className="text-sm text-slate-500">
           Showing <strong className="text-slate-800">{displayedProducts.length}</strong> of{" "}
           <strong className="text-slate-800">{filtered.length}</strong> products
+          {personalOrder && sort === "featured" && (
+            <span className="ml-2 text-xs text-ocean-700" title="Best matches first, nudged toward what you usually browse and buy">
+              · ✨ tuned to you
+            </span>
+          )}
         </p>
 
         <div className="flex items-center gap-2.5">

@@ -37,6 +37,11 @@ export interface SimilarityIndex {
   /** Product ids grouped by category — the cheap candidate short-list. */
   byCategory: Map<string, string[]>;
   byStore: Map<string, string[]>;
+  /**
+   * Product ids by standard-taxonomy node (lib/taxonomy.ts) — the "same
+   * kind of thing" across stores, whatever each store's category is called.
+   */
+  byStandard: Map<string, string[]>;
 }
 
 /**
@@ -56,13 +61,34 @@ const FACET_WEIGHTS = {
   /** Name words carry more than description words — they are the label. */
   name: 1.5,
   description: 0.45,
+  /**
+   * The standard taxonomy: the node itself, and more weakly its ancestors —
+   * "Dresses" is close, "Clothing" a little, "Apparel" barely (IDF then
+   * discounts whatever is common in this catalogue).
+   */
+  standard: 2.4,
+  standardParent: 1.1,
+  standardRoot: 0.4,
+  /** A shared attribute value — Fabric: cotton, Neckline: V-neck. */
+  attribute: 0.9,
 } as const;
 
-function facetsOf(product: Product): Map<string, number> {
+function facetsOf(product: Product, standardId?: string): Map<string, number> {
   const raw = new Map<string, number>();
   const add = (key: string, weight: number) => {
     raw.set(key, (raw.get(key) ?? 0) + weight);
   };
+
+  if (standardId) {
+    // Ids nest by prefix: "aa" › "aa-1" › "aa-1-4".
+    const parts = standardId.split("-");
+    add(`std:${standardId}`, FACET_WEIGHTS.standard);
+    if (parts.length > 2) add(`std:${parts.slice(0, -1).join("-")}`, FACET_WEIGHTS.standardParent);
+    if (parts.length > 1) add(`std:${parts[0]}`, FACET_WEIGHTS.standardRoot);
+  }
+  for (const [handle, keys] of Object.entries(product.attributes ?? {})) {
+    for (const key of keys) add(`attr:${handle}:${key}`, FACET_WEIGHTS.attribute);
+  }
 
   add(`cat:${product.category}`, FACET_WEIGHTS.category);
   if (product.subcategory) add(`sub:${product.subcategory.toLowerCase()}`, FACET_WEIGHTS.subcategory);
@@ -95,12 +121,16 @@ function colorsOf(product: Product): string[] {
 }
 
 /** Build the index for a whole catalogue. O(n · features). */
-export function buildSimilarityIndex(products: Product[]): SimilarityIndex {
+export function buildSimilarityIndex(
+  products: Product[],
+  /** The standard-taxonomy node of a product's category, when linked. */
+  standardOf: (product: Product) => string | undefined = () => undefined,
+): SimilarityIndex {
   const rawVectors = new Map<string, Map<string, number>>();
   const documentFrequency = new Map<string, number>();
 
   for (const product of products) {
-    const facets = facetsOf(product);
+    const facets = facetsOf(product, standardOf(product));
     rawVectors.set(product.id, facets);
     for (const key of facets.keys()) {
       documentFrequency.set(key, (documentFrequency.get(key) ?? 0) + 1);
@@ -128,12 +158,15 @@ export function buildSimilarityIndex(products: Product[]): SimilarityIndex {
 
   const byCategory = new Map<string, string[]>();
   const byStore = new Map<string, string[]>();
+  const byStandard = new Map<string, string[]>();
   for (const product of products) {
     push(byCategory, product.category, product.id);
     push(byStore, product.store, product.id);
+    const standard = standardOf(product);
+    if (standard) push(byStandard, standard, product.id);
   }
 
-  return { vectors, byCategory, byStore };
+  return { vectors, byCategory, byStore, byStandard };
 }
 
 function push(map: Map<string, string[]>, key: string, value: string): void {

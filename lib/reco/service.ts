@@ -44,7 +44,7 @@ import type {
 import { choosePrompt } from "./prompts";
 import { buildAffinityGraph, type AffinityGraph } from "./affinity";
 import { createBlender } from "./engine";
-import { buildMomentum, shopperCity, type MomentumIndex } from "./momentum";
+import { buildMomentum, buildSales, shopperCity, type MomentumIndex } from "./momentum";
 import { buildBundle, deliveryGoal } from "./psychology";
 import { composeShelves } from "./shelves";
 import { buildSimilarityIndex, type SimilarityIndex } from "./similarity";
@@ -66,6 +66,7 @@ interface CachedIndices {
   index: SimilarityIndex;
   graph: AffinityGraph;
   momentum: MomentumIndex;
+  sales: Map<string, number>;
 }
 
 let cache: CachedIndices | null = null;
@@ -90,8 +91,10 @@ function indicesFor(
   orders: Order[],
   city: string | undefined,
   now: number,
+  categories: Category[],
 ): CachedIndices {
-  const signature = `${signatureOf(products, orders)}:${city ?? ""}`;
+  const signature = `${signatureOf(products, orders)}:${city ?? ""}:${categories.map((c) => c.standardId ?? "").join(",")}`;
+  const standardBySlug = new Map(categories.map((c) => [c.slug, c.standardId]));
   if (cache && cache.signature === signature && now - cache.builtAt < INDEX_TTL_MS) {
     return cache;
   }
@@ -99,9 +102,10 @@ function indicesFor(
   cache = {
     signature,
     builtAt: now,
-    index: buildSimilarityIndex(products),
+    index: buildSimilarityIndex(products, (product) => standardBySlug.get(product.category)),
     graph: buildAffinityGraph(orders, products),
     momentum: buildMomentum(orders, { city, now: new Date(now) }),
+    sales: buildSales(orders, { now: new Date(now) }),
   };
   return cache;
 }
@@ -141,7 +145,7 @@ export async function recommend(
 
   // Only ever the shopper's own past orders — see momentum.ts.
   const city = shopperCity(orders, { email: identity.email, name: identity.name });
-  const { index, graph, momentum } = indicesFor(products, orders, city, now);
+  const { index, graph, momentum, sales } = indicesFor(products, orders, city, now, categoryList);
 
   const profile = request.profile ?? emptyProfile();
   const taste = deriveTaste(profile, byId, now);
@@ -172,6 +176,7 @@ export async function recommend(
     index,
     graph,
     momentum,
+    sales,
     seed: request.seedId ? byId.get(request.seedId) : undefined,
     cartIds,
     pins: livePins(settings, byId, now),
