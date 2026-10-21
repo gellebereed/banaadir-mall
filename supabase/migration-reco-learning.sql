@@ -45,10 +45,11 @@ CREATE OR REPLACE FUNCTION public.reco_strategy_stats(since DATE)
 RETURNS TABLE (via TEXT, impressions BIGINT, clicks BIGINT, carts BIGINT, orders BIGINT)
 LANGUAGE sql STABLE AS $$
   WITH shown AS (
-    SELECT key AS via, sum(value::int)::bigint AS n
-    FROM public.reco_events, jsonb_each_text(items)
-    WHERE kind = 'impression' AND day >= since AND items IS NOT NULL
-    GROUP BY key
+    -- Named columns: reco_events has its own `value` (order revenue).
+    SELECT kv.strategy AS via, sum(kv.cards::int)::bigint AS n
+    FROM public.reco_events e, jsonb_each_text(e.items) AS kv(strategy, cards)
+    WHERE e.kind = 'impression' AND e.day >= since AND e.items IS NOT NULL
+    GROUP BY kv.strategy
   ), acted AS (
     SELECT via,
            count(*) FILTER (WHERE kind = 'click')  AS clicks,
