@@ -235,6 +235,12 @@ async function saveReview(
       verified,
       orderId: submission.orderId?.slice(0, 60) ?? previous?.orderId,
       photos: newPhotos?.slice(0, MAX_REVIEW_PHOTOS) ?? previous?.photos,
+      // Editing a review doesn't undo moderation: a hidden one stays hidden
+      // until the admin decides, and its reports still count.
+      hidden: previous?.hidden,
+      hiddenReason: previous?.hiddenReason,
+      reportedBy: previous?.reportedBy,
+      approved: previous?.approved,
     };
 
     const { upsertReviewInSupabase } = await import("@/lib/supabase/mutations");

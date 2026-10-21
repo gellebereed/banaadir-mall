@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { loginHref, safeNext } from "@/lib/safe-next";
 import { signUpCustomer, type AuthActionState } from "@/app/auth-actions";
 import RequiredMark from "@/components/RequiredMark";
 
@@ -9,6 +10,12 @@ const INITIAL_STATE: AuthActionState = { error: null };
 
 export default function RegisterPage() {
   const [state, formAction, pending] = useActionState(signUpCustomer, INITIAL_STATE);
+  // Where to return after signing up (?next=, checked by safeNext). Read
+  // after mount: useSearchParams would make this page need a Suspense shell.
+  const [next, setNext] = useState("");
+  useEffect(() => {
+    setNext(safeNext(new URLSearchParams(window.location.search).get("next")) ?? "");
+  }, []);
 
   return (
     <div className="mx-auto max-w-md px-4 py-14">
@@ -27,6 +34,7 @@ export default function RegisterPage() {
         </p>
 
         <form action={formAction} className="mt-4 space-y-4">
+          {next && <input type="hidden" name="next" value={next} />}
           <div>
             <label htmlFor="name" className="label">
               Full name
@@ -71,7 +79,7 @@ export default function RegisterPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link href="/login" className="font-bold text-ocean-700 hover:underline">
+          <Link href={next ? loginHref(next) : "/login"} className="font-bold text-ocean-700 hover:underline">
             Sign in
           </Link>
         </p>

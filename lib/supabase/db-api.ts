@@ -674,6 +674,11 @@ async function fetchReviewsFromSupabaseRaw(): Promise<ProductReview[] | null> {
       orderId: row.order_id || undefined,
       // supabase/migration-review-photos.sql
       photos: Array.isArray(row.photos) && row.photos.length ? (row.photos as string[]) : undefined,
+      // supabase/migration-review-moderation.sql
+      hidden: row.hidden ?? false,
+      hiddenReason: row.hidden_reason ?? undefined,
+      reportedBy: Array.isArray(row.reported_by) ? (row.reported_by as string[]) : [],
+      approved: row.approved ?? false,
     }));
   } catch {
     return null;

@@ -15,9 +15,11 @@
  */
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/auth-actions";
 import type { Session } from "@/lib/auth";
+import { loginHref } from "@/lib/safe-next";
 
 export default function AccountMenu({
   session,
@@ -28,6 +30,7 @@ export default function AccountMenu({
 }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!open) return;
@@ -44,10 +47,13 @@ export default function AccountMenu({
   }, [open]);
 
   if (!session) {
+    // Signing in from a product page should come back to it, not to the
+    // account page. (From the home page, a role's own home is better.)
+    const here = pathname && pathname !== "/" ? pathname : "";
     return (
       <div className="flex items-center gap-2">
         <Link
-          href="/login"
+          href={here ? loginHref(here) : "/login"}
           className="rounded-full px-3 py-2 text-sm font-bold text-ocean-800 transition hover:bg-ocean-50"
         >
           Sign in
@@ -55,7 +61,7 @@ export default function AccountMenu({
         {/* Full label on desktop; on a phone the header is already crowded
             and the sign-in page carries a "create an account" link. */}
         <Link
-          href="/register"
+          href={here ? loginHref(here, "/register") : "/register"}
           className="hidden rounded-full bg-ocean-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-ocean-800 sm:inline-flex"
         >
           Sign up

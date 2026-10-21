@@ -937,7 +937,7 @@ export async function getCustomerReviews(): Promise<ProductReview[]> {
  * way to make every review on the site worthless.
  */
 export async function getReviews(product: Product): Promise<Review[]> {
-  const real = (await getCustomerReviews()).filter((r) => r.productId === product.id);
+  const real = (await getCustomerReviews()).filter((r) => r.productId === product.id && !r.hidden);
   if (real.length > 0) {
     return real
       .sort((a, b) => b.date.localeCompare(a.date))
@@ -948,6 +948,7 @@ export async function getReviews(product: Product): Promise<Review[]> {
         text: r.text || "",
         photos: r.photos?.length ? r.photos : undefined,
         verified: r.verified,
+        id: r.id,
       }));
   }
 

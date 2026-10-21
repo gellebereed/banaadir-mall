@@ -12,6 +12,7 @@ import {
   FolderTree,
   History,
   Layers,
+  MessageSquareWarning,
   Images,
   KeyRound,
   Landmark,
@@ -82,7 +83,8 @@ export type ShellIcon =
   | "accounts"
   | "payouts"
   | "activity"
-  | "collections";
+  | "collections"
+  | "reviews";
 
 const ICONS: Record<ShellIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -105,6 +107,7 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   payouts: Wallet,
   activity: History,
   collections: Layers,
+  reviews: MessageSquareWarning,
 };
 
 export interface ShellItem {

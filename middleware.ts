@@ -18,6 +18,10 @@ function redirectTo(request: NextRequest, path: string) {
   const url = request.nextUrl.clone();
   url.pathname = path;
   url.search = "";
+  // Signing in should land on the page that asked for it, not a default.
+  if (path === "/login") {
+    url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
+  }
   return NextResponse.redirect(url);
 }
 

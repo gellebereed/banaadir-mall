@@ -684,6 +684,8 @@ export interface Review {
   photos?: string[];
   /** Tied to a delivered order for this product. */
   verified?: boolean;
+  /** Real reviews only (the generated demo ones have none) — for reporting. */
+  id?: string;
 }
 
 // ── Point of sale: the counter, the pantry and what is made from it ────
@@ -1003,4 +1005,12 @@ export interface ProductReview {
    * thing a review can carry (supabase/migration-review-photos.sql).
    */
   photos?: string[];
+  // ── Moderation (supabase/migration-review-moderation.sql) ──
+  /** Kept out of the shop — by the admin, or automatically after reports. */
+  hidden?: boolean;
+  hiddenReason?: "reports" | "admin";
+  /** Hashed ids of the signed-in shoppers who reported it, one each. */
+  reportedBy?: string[];
+  /** The admin looked and kept it: further reports no longer hide it. */
+  approved?: boolean;
 }

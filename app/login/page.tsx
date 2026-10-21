@@ -16,14 +16,21 @@
  */
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
+import { loginHref, safeNext } from "@/lib/safe-next";
 
 const INITIAL_STATE: SignInState = { error: null };
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [state, formAction, pending] = useActionState(signIn, INITIAL_STATE);
+  // Where to return after signing in (?next=, checked by safeNext). Read
+  // after mount: useSearchParams would make this page need a Suspense shell.
+  const [next, setNext] = useState("");
+  useEffect(() => {
+    setNext(safeNext(new URLSearchParams(window.location.search).get("next")) ?? "");
+  }, []);
 
   return (
     <div className="grid min-h-[calc(100vh-13rem)] lg:grid-cols-2">
@@ -39,6 +46,7 @@ export default function LoginPage() {
           </p>
 
           <form action={formAction} className="mt-8 space-y-4">
+            {next && <input type="hidden" name="next" value={next} />}
             <div>
               <label htmlFor="email" className="label">
                 Email
@@ -108,7 +116,7 @@ export default function LoginPage() {
           <p className="mt-6 text-center text-sm text-slate-500">
             New to Banaadir Mall?{" "}
             <Link
-              href="/register"
+              href={next ? loginHref(next, "/register") : "/register"}
               className="font-bold text-ocean-700 transition hover:text-mango-600"
             >
               Create an account

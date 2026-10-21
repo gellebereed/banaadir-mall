@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { submitReviewFormAction } from "@/app/reco-actions";
+import { reportReviewAction } from "@/app/review-actions";
 import { shortDate } from "@/lib/format";
+import { loginHref } from "@/lib/safe-next";
 import { compressImageFile } from "@/lib/image-compress";
 import type { Review } from "@/lib/types";
 
@@ -34,6 +36,8 @@ export default function ReviewsSection({
   const [filter, setFilter] = useState<"all" | "photos">("all");
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
+  const pathname = usePathname();
+  const [reported, setReported] = useState<Record<string, string>>({});
 
   const photos = reviews.flatMap((r) => r.photos ?? []);
   const withPhotos = reviews.filter((r) => r.photos?.length);
@@ -62,7 +66,7 @@ export default function ReviewsSection({
               ✍️ Write a review
             </button>
           ) : (
-            <Link href="/login" className="btn-secondary !py-2 text-sm">
+            <Link href={loginHref(`${pathname}#reviews`)} className="btn-secondary !py-2 text-sm">
               Sign in to write a review
             </Link>
           ))}
@@ -157,6 +161,30 @@ export default function ReviewsSection({
                         <Image src={src} alt="" fill sizes="64px" className="object-cover" />
                       </button>
                     ))}
+                  </div>
+                )}
+                {/* Only real reviews can be reported; signed-in only, once each. */}
+                {r.id && (
+                  <div className="mt-3 text-right text-xs">
+                    {reported[r.id] ? (
+                      <span className="text-slate-500">{reported[r.id]}</span>
+                    ) : signedIn ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm("Report this review as inappropriate, fake or not about this product?")) return;
+                          const result = await reportReviewAction(r.id!);
+                          setReported((prev) => ({ ...prev, [r.id!]: result.ok ?? result.error ?? "" }));
+                        }}
+                        className="text-slate-400 underline hover:text-coral-600"
+                      >
+                        Report
+                      </button>
+                    ) : (
+                      <Link href={loginHref(`${pathname}#reviews`)} className="text-slate-400 underline hover:text-coral-600">
+                        Report
+                      </Link>
+                    )}
                   </div>
                 )}
               </article>

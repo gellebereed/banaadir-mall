@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import AnnouncementBar from "./AnnouncementBar";
 import AccountMenu from "./AccountMenu";
@@ -11,6 +12,7 @@ import { useCart } from "@/lib/cart-context";
 import { categories as seedCategories } from "@/lib/data/categories";
 import type { Category } from "@/lib/types";
 import type { Session } from "@/lib/auth";
+import { loginHref } from "@/lib/safe-next";
 
 /** The main call-to-action changes with who is signed in. */
 function primaryAction(session: Session | null, storeName?: string) {
@@ -43,6 +45,7 @@ export default function Header({
   categories?: Category[];
 }) {
   const { count, wishlist } = useCart();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const action = primaryAction(session, storeName);
   /**
@@ -245,7 +248,7 @@ export default function Header({
               </Link>
             ) : (
               <Link
-                href="/login"
+                href={pathname && pathname !== "/" ? loginHref(pathname) : "/login"}
                 onClick={() => setMenuOpen(false)}
                 className="btn-primary flex-1 !py-2 text-sm"
               >

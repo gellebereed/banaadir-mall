@@ -6,6 +6,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/safe-next";
 import { authenticate, isReservedEmail } from "@/lib/accounts";
 import { homeForRole, type Session } from "@/lib/auth";
 import { clearSessionCookie, setSessionCookie } from "@/lib/session";
@@ -59,7 +60,9 @@ export async function signIn(
   recordSignInSuccess(email, ip);
 
   await setSessionCookie(result.session);
-  redirect(homeForRole(result.session.role));
+  // Back to the page that sent them here (a product they wanted to review,
+  // the account page they opened) — else their role's home.
+  redirect(safeNext(formData.get("next")) ?? homeForRole(result.session.role));
 }
 
 /** Refused on the sign-up forms — see isReservedEmail. */
@@ -112,7 +115,7 @@ export async function signUpCustomer(
           role: "customer",
         };
         await setSessionCookie(session);
-        redirect("/account");
+        redirect(safeNext(formData.get("next")) ?? "/account");
       }
     } catch (err: unknown) {
       if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) {
@@ -129,7 +132,7 @@ export async function signUpCustomer(
     role: "customer",
   };
   await setSessionCookie(session);
-  redirect("/account");
+  redirect(safeNext(formData.get("next")) ?? "/account");
 }
 
 /** Seller & Store Registration action */

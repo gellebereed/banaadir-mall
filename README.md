@@ -173,6 +173,14 @@ store would see. Run **`supabase/migration-store-collections.sql`** once.
   photos). "Verified purchase" still requires a delivered order. Run
   **`supabase/migration-review-photos.sql`** once; without it reviews save
   without photos.
+- **Review moderation** (`/admin/reviews`, `lib/review-moderation.ts`):
+  signed-in shoppers can report a review once; after 3 reports it is hidden
+  until the team decides. **Keep** restores it for good, **Hide**, remove
+  single photos, or **Delete**. Sellers can report but not remove reviews
+  of their own products. Run **`supabase/migration-review-moderation.sql`**.
+- **Sign-in returns you where you were**: `/login?next=…` (and the sign-up
+  form) go back to the page that sent you; guarded pages pass their own
+  address. Only same-site paths are accepted (`lib/safe-next.ts`).
 
 ## Link previews & search engines
 

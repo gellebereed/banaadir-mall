@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import DashboardShell, { type ShellItem } from "@/components/dashboard/DashboardShell";
-import { getAllStores, getFlashRequests } from "@/lib/api";
+import { getAllStores, getCustomerReviews, getFlashRequests } from "@/lib/api";
+import { needsAttention } from "@/lib/review-moderation";
 import { may } from "@/lib/auth";
 import { getSession } from "@/lib/session";
 
@@ -23,8 +24,13 @@ export default async function AdminLayout({
   if (session?.role !== "admin") redirect("/login");
 
   // Badges surface work that needs a decision without hunting for it.
-  const [flashRequests, stores] = await Promise.all([getFlashRequests(), getAllStores()]);
+  const [flashRequests, stores, reviews] = await Promise.all([
+    getFlashRequests(),
+    getAllStores(),
+    getCustomerReviews(),
+  ]);
   const pendingFlash = flashRequests.filter((r) => r.status === "pending").length;
+  const reportedReviews = reviews.filter(needsAttention).length;
   const pendingStores = stores.filter((s) => s.status === "pending").length;
   const role = session.access ? `Platform staff · ${session.access}` : "Marketplace admin";
   const items: ShellItem[] = [
@@ -34,6 +40,7 @@ export default async function AdminLayout({
     { href: "/admin/products", icon: "products", label: "Products", tab: true },
     { href: "/admin/analytics", icon: "analytics", label: "Analytics" },
     { href: "/admin/categories", icon: "categories", label: "Categories" },
+    { href: "/admin/reviews", icon: "reviews", label: "Reviews", badge: reportedReviews },
     { href: "/admin/marketing", icon: "marketing", label: "Marketing" },
     { href: "/admin/discovery", icon: "discovery", label: "Discovery" },
     { href: "/admin/flash", icon: "flash", label: "Flash deals", badge: pendingFlash },
