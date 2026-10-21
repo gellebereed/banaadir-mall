@@ -201,6 +201,25 @@ store would see. Run **`supabase/migration-store-collections.sql`** once.
 - **Search** results are nudged toward the shopper's taste in their own
   browser ("✨ tuned to you") — relevance still leads.
 
+### Recommendations that learn
+
+Run **`supabase/migration-reco-learning.sql`** after the metrics migration.
+
+- **Shoppers also viewed** (product page): products looked at in the same
+  visit, counted anonymously as pairs (no shopper id). A pair needs at
+  least 2 visits; the shelf shows once a product has 3 such neighbours.
+- **Auto-tuning** (`/admin/discovery` → Results): each card records which
+  strategy picked it; strategies whose picks sell get up to ×1.6 weight,
+  weak ones down to ×0.6. Nothing moves until 2,000 cards have been shown;
+  pushes and the discovery slot are never tuned. Switch off there.
+- **Sync across devices** (My account → Your recommendations): opt-in for
+  signed-in shoppers. Stores the same raw history the browser holds, keyed
+  by a hash of the account. Turning it off on any device deletes the copy
+  and stops sync everywhere; reset clears it on every synced device.
+- Caveat: view and shelf events come from the browser and are not
+  authenticated, so a determined person can inflate them. Pairs need 2+
+  visits and tuning is clamped, which limits the damage.
+
 ## Link previews & search engines
 
 - **WhatsApp / Facebook previews**: every product link shows a generated

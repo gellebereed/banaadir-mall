@@ -62,6 +62,11 @@ export interface TasteProfile {
   muted: string[];
   /** Answers the shopper gave us directly. See ShopperPreferences. */
   prefs?: ShopperPreferences;
+  /**
+   * When "Reset my recommendations" was last pressed. Synced profiles use it
+   * so another device cannot merge the forgotten history back in.
+   */
+  clearedAt?: number;
 }
 
 /**
@@ -127,7 +132,8 @@ export type ReasonKind =
   | "new"
   | "popular"
   | "discover"
-  | "price-drop";
+  | "price-drop"
+  | "viewed-together";
 
 /**
  * Why this product is in front of you, in words a shopper can check.
@@ -175,6 +181,12 @@ export interface Recommendation {
    * stops being useful within a week (see engine.ts, EXPLORE_RATE).
    */
   exploratory?: boolean;
+  /**
+   * The strategy that contributed most to this pick — sent back with shelf
+   * metrics so each strategy's results can be measured and its weight tuned
+   * (lib/reco/tuning.ts).
+   */
+  via?: string;
 }
 
 // ── Shelves ────────────────────────────────────────────────────────────

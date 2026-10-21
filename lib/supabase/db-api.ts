@@ -605,6 +605,7 @@ async function fetchRecoSettingsFromSupabaseRaw(): Promise<RecoSettings | null> 
     return {
       enabled: data.enabled ?? true,
       pinStrength: data.pin_strength ?? 55,
+      autoTune: data.auto_tune ?? true,
       shelves: data.shelves ?? [],
       pins: data.pins ?? [],
       blocked: data.blocked ?? [],

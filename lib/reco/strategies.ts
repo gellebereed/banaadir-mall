@@ -22,6 +22,7 @@
 import type { Category, Product, Store } from "../types";
 import { totalStock } from "../product-utils";
 import type { AffinityGraph } from "./affinity";
+import type { CoviewGraph } from "./coview";
 import { partnersOf, partnersOfSet } from "./affinity";
 import type { MomentumIndex } from "./momentum";
 import { risingProducts } from "./momentum";
@@ -50,6 +51,10 @@ export interface RecoContext {
   momentum: MomentumIndex;
   /** Units really sold per product, last 90 days (momentum.ts#buildSales). */
   sales: Map<string, number>;
+  /** Products viewed in the same visit (coview.ts). */
+  coviews: CoviewGraph;
+  /** Strategy key → learned weight multiplier (tuning.ts). Empty = untuned. */
+  tuning: Map<string, number>;
   /** The product being viewed, on the product surface. */
   seed?: Product;
   /** Product ids in the basket right now. */
@@ -693,6 +698,40 @@ export const discover: Strategy = {
 };
 
 /**
+ * Shoppers who viewed this also viewed — from anonymous co-views
+ * (coview.ts). On a product page it hangs off the product; elsewhere off the
+ * last few products this shopper looked at. Silent until real co-view data
+ * exists, so the shelf built on it simply doesn't appear before then.
+ */
+export const coviewed: Strategy = {
+  key: "coviewed",
+  run: (ctx) => {
+    const seeds = ctx.seed ? [ctx.seed.id] : ctx.taste.viewedRecent.slice(0, 3);
+    const best = new Map<string, Candidate>();
+    for (const [rank, seedId] of seeds.entries()) {
+      const anchor = ctx.byId.get(seedId);
+      for (const hit of ctx.coviews.get(seedId) ?? []) {
+        if (hit.id === ctx.seed?.id || !ctx.byId.has(hit.id)) continue;
+        // Later seeds (viewed longer ago) count for less.
+        const score = hit.score / (1 + rank * 0.5);
+        if ((best.get(hit.id)?.score ?? 0) >= score) continue;
+        best.set(hit.id, {
+          id: hit.id,
+          score,
+          reason: {
+            kind: "viewed-together",
+            text: anchor ? `Shoppers who viewed ${anchor.name} also viewed this` : "Shoppers also viewed this",
+            anchorId: anchor?.id,
+            anchorName: anchor?.name,
+          },
+        });
+      }
+    }
+    return [...best.values()].sort((a, b) => b.score - a.score).slice(0, DEPTH);
+  },
+};
+
+/**
  * Products the admin is pushing (/admin/discovery).
  *
  * A merchandiser has to be able to put something in front of shoppers —
@@ -755,6 +794,7 @@ export const ALL_STRATEGIES: Strategy[] = [
   rising,
   popular,
   discover,
+  coviewed,
 ];
 
 export const STRATEGY_BY_KEY = new Map(ALL_STRATEGIES.map((s) => [s.key, s]));

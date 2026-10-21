@@ -8,8 +8,9 @@
  * changes, and fetches shelves from the server action.
  *
  * ── What it deliberately does not do ─────────────────────────────────────
- * No analytics beacons, no third-party script, no server-side profile, no
- * identifier that survives clearing site data. The profile is a list of the
+ * No third-party script, no server-side profile unless the shopper turns on
+ * sync in their account (lib/reco/sync.ts), no identifier that survives
+ * clearing site data. The profile is a list of the
  * shopper's own actions on their own device, posted to our own server for
  * the length of one request. Everything the recommender knows, the shopper
  * can inspect and delete — which is what makes the "Why am I seeing this?"
@@ -35,14 +36,17 @@ import {
   type ReactNode,
 } from "react";
 import { getRecommendationsAction } from "@/app/reco-actions";
+import { getSyncedProfileAction, saveSyncedProfileAction, stopSyncAction } from "@/app/reco-sync-actions";
 import { CART_KEY, WISHLIST_KEY, useCart } from "@/lib/cart-context";
 import { attributeCart } from "@/lib/reco/metrics-client";
 import { GUEST_SCOPE, scopeFor, scopedKey } from "@/lib/storage-scope";
 import {
+  clearProfile,
   emptyProfile,
   forRequest,
   makeEvent,
   markPromptDone,
+  mergeProfiles,
   markPromptSeen,
   markRated,
   mute as muteProduct,
@@ -79,6 +83,12 @@ interface RecoContextValue {
   setPrefs: (patch: Partial<ShopperPreferences>) => void;
   /** Remember a product has been reviewed. */
   rateProduct: (productId: string) => void;
+  /**
+   * Opt-in sync across devices (lib/reco/sync.ts). `available` is false for
+   * guests; `on` is learned from the server when an account signs in.
+   */
+  sync: { available: boolean; on: boolean; error?: string };
+  setSync: (on: boolean) => Promise<void>;
 }
 
 const RecoCtx = createContext<RecoContextValue | null>(null);
@@ -149,7 +159,7 @@ export function RecoProvider({
     setProfile((current) => muteProduct(current, productId));
   }, []);
 
-  const reset = useCallback(() => setProfile(emptyProfile()), []);
+  const reset = useCallback(() => setProfile(clearProfile()), []);
 
   const seePrompt = useCallback((promptId: string) => {
     setProfile((current) => markPromptSeen(current, promptId));
@@ -167,6 +177,68 @@ export function RecoProvider({
     setProfile((current) => markRated(current, productId));
   }, []);
 
+  /*
+   * Sync. Off unless the account turned it on — which this device learns
+   * by finding a synced copy on sign-in, and then merges into its own. No
+   * write goes out before that first read has answered, or a fresh device
+   * would overwrite the synced history with its own empty profile.
+   */
+  const [syncOn, setSyncOn] = useState(false);
+  const [syncError, setSyncError] = useState<string>();
+  const syncLoaded = useRef(false);
+  const latest = useRef(profile);
+  latest.current = profile;
+
+  useEffect(() => {
+    syncLoaded.current = false;
+    setSyncOn(false);
+    setSyncError(undefined);
+    if (!ready || scope === GUEST_SCOPE) return;
+    let cancelled = false;
+    getSyncedProfileAction()
+      .then((remote) => {
+        if (cancelled) return;
+        if (remote) {
+          setProfile((current) => mergeProfiles(current, remote));
+          setSyncOn(true);
+        }
+        syncLoaded.current = true;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, scope]);
+
+  useEffect(() => {
+    if (!ready || !syncOn || !syncLoaded.current) return;
+    const timer = setTimeout(() => {
+      saveSyncedProfileAction(latest.current).then((r) => {
+        setSyncError(r.error);
+        // Switched off on another device: stop here too.
+        if (r.stopped) setSyncOn(false);
+      });
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [profile, ready, syncOn]);
+
+  const setSync = useCallback(async (on: boolean) => {
+    setSyncError(undefined);
+    if (on) {
+      const result = await saveSyncedProfileAction(latest.current, true);
+      if (result.error) {
+        setSyncError(result.error);
+        return;
+      }
+      syncLoaded.current = true;
+      setSyncOn(true);
+    } else {
+      setSyncOn(false);
+      const result = await stopSyncAction();
+      if (result.error) setSyncError(result.error);
+    }
+  }, []);
+
   const value = useMemo<RecoContextValue>(
     () => ({
       profile,
@@ -180,6 +252,8 @@ export function RecoProvider({
       answerPrompt,
       setPrefs,
       rateProduct,
+      sync: { available: scope !== GUEST_SCOPE, on: syncOn, error: syncError },
+      setSync,
     }),
     [
       profile,
@@ -192,6 +266,10 @@ export function RecoProvider({
       answerPrompt,
       setPrefs,
       rateProduct,
+      scope,
+      syncOn,
+      syncError,
+      setSync,
     ],
   );
 

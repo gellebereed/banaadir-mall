@@ -122,6 +122,14 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     pinnable: true,
   },
   {
+    id: "also-viewed",
+    title: "Shoppers also viewed",
+    surface: "product",
+    slot: "mid",
+    blurb: "What other shoppers looked at in the same visit — anonymous co-views. Appears once there's enough browsing.",
+    pinnable: false,
+  },
+  {
     id: "seed-store",
     title: "More from <this shop>",
     surface: "product",

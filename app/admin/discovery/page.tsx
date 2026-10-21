@@ -3,11 +3,13 @@ import Link from "next/link";
 import PinManager from "@/components/dashboard/discovery/PinManager";
 import PromptSettingsForm from "@/components/dashboard/discovery/PromptSettingsForm";
 import ShelfPerformance from "@/components/dashboard/discovery/ShelfPerformance";
+import StrategyPerformance from "@/components/dashboard/discovery/StrategyPerformance";
 import ShelfSettingsForm from "@/components/dashboard/discovery/ShelfSettingsForm";
 import StoryManager from "@/components/dashboard/discovery/StoryManager";
 import { getAllStories, getBaseProducts, getCategories, getRecoSettings, getStores } from "@/lib/api";
 import { SHELF_CATALOGUE } from "@/lib/reco/catalogue";
-import { shelfStats } from "@/lib/reco/metrics";
+import { shelfStats, strategyStats } from "@/lib/reco/metrics";
+import { currentTuning } from "@/lib/reco/service";
 
 export const metadata: Metadata = { title: "Discovery" };
 
@@ -33,6 +35,8 @@ export default async function AdminDiscoveryPage({
   const { tab = "engine", saved, days: daysParam } = await searchParams;
   const days = daysParam === "7" ? 7 : 30;
   const stats = tab === "results" ? await shelfStats(days) : undefined;
+  const [strategies, tuning] =
+    tab === "results" ? await Promise.all([strategyStats(30), currentTuning()]) : [undefined, undefined];
 
   const [settings, products, stories, categories, stores] = await Promise.all([
     getRecoSettings(),
@@ -117,7 +121,12 @@ export default async function AdminDiscoveryPage({
         )}
 
         {tab === "results" && stats && (
-          <ShelfPerformance rows={stats.rows} stored={stats.stored} days={days} shelves={SHELF_CATALOGUE} />
+          <div className="space-y-5">
+            <ShelfPerformance rows={stats.rows} stored={stats.stored} days={days} shelves={SHELF_CATALOGUE} />
+            {tuning && (
+              <StrategyPerformance rows={strategies ?? null} tuning={tuning} autoTune={settings.autoTune !== false} />
+            )}
+          </div>
         )}
 
         {tab === "pins" && (

@@ -131,6 +131,9 @@ interface Merged {
   pinned?: boolean;
   agreement: number;
   fromDiscovery: boolean;
+  /** Strategy with the largest contribution — becomes Recommendation.via. */
+  lead: string;
+  leadStrength: number;
 }
 
 /**
@@ -166,8 +169,10 @@ export function createBlender(ctx: RecoContext) {
   function blend(spec: BlendSpec): Recommendation[] {
     const merged = new Map<string, Merged>();
 
-    for (const [key, weight] of Object.entries(spec.weights)) {
+    for (const [key, baseWeight] of Object.entries(spec.weights)) {
       const strategy = STRATEGY_BY_KEY.get(key);
+      // Learned from shelf results (tuning.ts); 1 until there's evidence.
+      const weight = baseWeight * (ctx.tuning.get(key) ?? 1);
       if (!strategy || weight <= 0) continue;
 
       const candidates = run(strategy);
@@ -199,6 +204,10 @@ export function createBlender(ctx: RecoContext) {
             existing.reason = candidate.reason;
             existing.reasonStrength = contribution;
           }
+          if (contribution > existing.leadStrength) {
+            existing.lead = key;
+            existing.leadStrength = contribution;
+          }
           if (key === discover.key) existing.fromDiscovery = true;
         } else {
           merged.set(candidate.id, {
@@ -210,6 +219,8 @@ export function createBlender(ctx: RecoContext) {
             pinned: isKeeper,
             agreement: normalised >= AGREEMENT_FLOOR ? 1 : 0,
             fromDiscovery: key === discover.key,
+            lead: key,
+            leadStrength: contribution,
           });
         }
       }
@@ -260,6 +271,7 @@ export function createBlender(ctx: RecoContext) {
         agreement: entry.agreement,
         proof: socialProof(product, ctx),
         exploratory: entry.fromDiscovery || undefined,
+        via: entry.fromDiscovery && !entry.pinned ? "discover" : entry.lead,
       };
     });
   }
@@ -362,6 +374,8 @@ export function createBlender(ctx: RecoContext) {
       reasonStrength: best.score,
       agreement: 1,
       fromDiscovery: true,
+      lead: discover.key,
+      leadStrength: best.score,
     });
     return result;
   }

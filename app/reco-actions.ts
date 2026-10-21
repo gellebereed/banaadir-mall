@@ -4,15 +4,15 @@
  * Server actions for the recommendation engine.
  *
  * The shopper's history is posted from their browser on each call and is
- * used for the length of the request only — nothing is written back, and
- * there is no profile table to leak. See lib/reco/service.ts.
+ * used for the length of the request only — nothing is written back. The
+ * only stored copy is the opt-in sync in lib/reco/sync.ts.
  */
 
 import { revalidateTag } from "next/cache";
 import { getSession } from "@/lib/session";
-import { emptyProfile, PROFILE_EVENT_CAP } from "@/lib/reco/profile";
+import { idList, sanitiseProfile } from "@/lib/reco/sanitise";
 import { recommend } from "@/lib/reco/service";
-import type { RecoRequest, RecoResponse, ShopperPreferences } from "@/lib/reco/types";
+import type { RecoRequest, RecoResponse } from "@/lib/reco/types";
 import type { ProductReview } from "@/lib/types";
 
 /** An empty answer, so callers never have to handle a null. */
@@ -53,18 +53,8 @@ export async function getRecommendationsAction(
   }
 }
 
-function idList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value
-    .filter((id): id is string => typeof id === "string")
-    .slice(0, 200)
-    .map((id) => id.slice(0, 80));
-}
-
 /** Hard caps on everything the client controls. */
 function sanitise(request: RecoRequest): RecoRequest {
-  const profile = request.profile ?? emptyProfile();
-
   return {
     surface: request.surface,
     seedId: typeof request.seedId === "string" ? request.seedId.slice(0, 80) : undefined,
@@ -81,42 +71,7 @@ function sanitise(request: RecoRequest): RecoRequest {
       })),
     wishlist: idList(request.wishlist),
     excludeIds: idList(request.excludeIds),
-    profile: {
-      v: profile.v,
-      updatedAt: Number.isFinite(profile.updatedAt) ? profile.updatedAt : 0,
-      events: (Array.isArray(profile.events) ? profile.events : [])
-        .slice(-PROFILE_EVENT_CAP)
-        .filter((event) => event && typeof event.k === "string" && Number.isFinite(event.at)),
-      muted: (Array.isArray(profile.muted) ? profile.muted : [])
-        .slice(0, 100)
-        .filter((id): id is string => typeof id === "string"),
-      prefs: sanitisePrefs(profile.prefs),
-    },
-  };
-}
-
-/**
- * The shopper's stated answers, bounded.
- *
- * `promptsSeen` matters as much as the answers: it is what stops a prompt
- * reappearing, so dropping it here would quietly turn every prompt into one
- * that asks again on the next page load.
- */
-function sanitisePrefs(prefs: ShopperPreferences | undefined): ShopperPreferences | undefined {
-  if (!prefs || typeof prefs !== "object") return undefined;
-
-  const seen: Record<string, number> = {};
-  for (const [key, value] of Object.entries(prefs.promptsSeen ?? {}).slice(0, 20)) {
-    if (typeof value === "number" && Number.isFinite(value)) seen[key.slice(0, 40)] = value;
-  }
-
-  return {
-    departments: idList(prefs.departments)?.slice(0, 12),
-    budget: typeof prefs.budget === "string" ? prefs.budget.slice(0, 40) : undefined,
-    answeredAt: Number.isFinite(prefs.answeredAt) ? prefs.answeredAt : undefined,
-    promptsSeen: seen,
-    promptsDone: idList(prefs.promptsDone)?.slice(0, 40),
-    rated: idList(prefs.rated)?.slice(0, 80),
+    profile: sanitiseProfile(request.profile),
   };
 }
 

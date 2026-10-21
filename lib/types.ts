@@ -929,6 +929,11 @@ export interface RecoSettings {
    */
   pinStrength: number;
   prompts: PromptSettings;
+  /**
+   * Adjust strategy weights from measured results (lib/reco/tuning.ts).
+   * Undefined counts as on; it only acts once there is enough evidence.
+   */
+  autoTune?: boolean;
 }
 
 /** The timed onboarding / feedback prompts shown to shoppers. */

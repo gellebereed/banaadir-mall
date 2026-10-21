@@ -1425,19 +1425,24 @@ export async function updateRecoSettingsInSupabase(
   if (!useSupabaseMutations()) return false;
   try {
     const supabase = getDataClient();
-    const { error } = await supabase.from("reco_settings").upsert(
-      {
-        id: 1,
-        enabled: settings.enabled,
-        pin_strength: settings.pinStrength,
-        shelves: settings.shelves,
-        pins: settings.pins,
-        blocked: settings.blocked,
-        prompts: settings.prompts,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    );
+    const row = {
+      id: 1,
+      enabled: settings.enabled,
+      pin_strength: settings.pinStrength,
+      shelves: settings.shelves,
+      pins: settings.pins,
+      blocked: settings.blocked,
+      prompts: settings.prompts,
+      updated_at: new Date().toISOString(),
+    };
+    let { error } = await supabase
+      .from("reco_settings")
+      .upsert({ ...row, auto_tune: settings.autoTune !== false }, { onConflict: "id" });
+    // Before migration-reco-learning.sql there is no auto_tune column; the
+    // rest of the settings must still save.
+    if (error && /auto_tune/.test(error.message)) {
+      ({ error } = await supabase.from("reco_settings").upsert(row, { onConflict: "id" }));
+    }
     if (error) {
       // A missing table is the expected case before the discovery migration
       // has been run — the JSON overlay keeps the change, so this is a

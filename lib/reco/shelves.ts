@@ -320,7 +320,7 @@ function homeSpecs(ctx: RecoContext, firstName?: string): ShelfSpec[] {
       when: personal,
       slot: "early",
       feature: true,
-      weights: { taste: 1, saved: 0.55, rising: 0.2, "price-drop": 0.3, popular: 0.1 },
+      weights: { taste: 1, saved: 0.55, coviewed: 0.35, rising: 0.2, "price-drop": 0.3, popular: 0.1 },
     },
     {
       id: "basket",
@@ -447,6 +447,23 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       weights: { completes: 1, basket: 0.3 },
     },
     {
+      // Ahead of "also-like", which also draws on co-views: this shelf is
+      // where that evidence is named, so it claims those products first.
+      id: "also-viewed",
+      eyebrow: "Shoppers compared",
+      title: "Shoppers also viewed",
+      subtitle: seed ? `Looked at by people viewing ${seed.name}` : undefined,
+      why: "Products other shoppers looked at in the same visit as this one — counted anonymously, and scaled so that items everyone glances at don't crowd out the real comparisons. Appears once enough shoppers have browsed.",
+      glyph: "👀",
+      tone: "social",
+      layout: "rail",
+      limit: 8,
+      minimum: 3,
+      reasonFrom: "coviewed",
+      slot: "mid",
+      weights: { coviewed: 1, similar: 0.25 },
+    },
+    {
       id: "also-like",
       eyebrow: "Alternatives",
       title: "You may also like",
@@ -462,7 +479,9 @@ function productSpecs(ctx: RecoContext): ShelfSpec[] {
       reasonFrom: "similar",
       slot: "mid",
       feature: true,
-      weights: { similar: 1, "bought-together": 0.7, taste: 0.45, popular: 0.12 },
+      // Co-views re-rank within the similar candidates: of the look-alikes,
+      // the ones shoppers actually compare with this product come first.
+      weights: { similar: 1, "bought-together": 0.7, coviewed: 0.6, taste: 0.45, popular: 0.12 },
     },
     {
       id: "seed-store",

@@ -3114,6 +3114,15 @@ export async function updatePromptSettings(formData: FormData): Promise<void> {
   });
 }
 
+/** Let measured results nudge the strategy weights (lib/reco/tuning.ts). */
+export async function updateAutoTune(formData: FormData): Promise<void> {
+  const on = formData.get("autoTune") === "on";
+  await mutateReco((settings) => {
+    settings.autoTune = on;
+  });
+  await logActivity("platform", "reco.auto-tune", `Turned auto-tuning ${on ? "on" : "off"}`, "reco");
+}
+
 /** Push a product. See RecoPin — a pin is an opinion, not an override. */
 export async function addRecoPin(formData: FormData): Promise<void> {
   const productId = String(formData.get("productId") ?? "").trim();

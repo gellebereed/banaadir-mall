@@ -119,9 +119,59 @@ export function unmute(profile: TasteProfile, productId: string): TasteProfile {
   return { ...profile, muted: profile.muted.filter((id) => id !== productId) };
 }
 
-/** Forget everything. Wired to the "Reset my recommendations" control. */
-export function clearProfile(): TasteProfile {
-  return emptyProfile();
+/**
+ * Forget everything. Wired to the "Reset my recommendations" control. The
+ * stamp stops a synced device from merging the old history back in.
+ */
+export function clearProfile(now = Date.now()): TasteProfile {
+  return { ...emptyProfile(), updatedAt: now, clearedAt: now };
+}
+
+/**
+ * Combine this device's profile with the synced copy (lib/reco/sync.ts).
+ *
+ * Events are a union — the same view recorded on both sides is one event —
+ * trimmed to the cap, minus anything older than the latest reset on either
+ * side. Stated answers come from whichever side answered last; the lists
+ * that stop prompts repeating are unions, so a prompt answered on the phone
+ * is not asked again on the laptop.
+ */
+export function mergeProfiles(local: TasteProfile, remote: TasteProfile): TasteProfile {
+  const clearedAt = Math.max(local.clearedAt ?? 0, remote.clearedAt ?? 0);
+  const seen = new Set<string>();
+  const events = [...local.events, ...remote.events]
+    .filter((e) => e.at > clearedAt)
+    .sort((a, b) => a.at - b.at)
+    .filter((e) => {
+      const key = `${e.k}|${e.id ?? ""}|${e.q ?? ""}|${e.at}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-PROFILE_EVENT_CAP);
+
+  const a = local.prefs ?? {};
+  const b = remote.prefs ?? {};
+  const newer = (b.answeredAt ?? 0) > (a.answeredAt ?? 0) ? b : a;
+  const union = (x?: string[], y?: string[]) => [...new Set([...(x ?? []), ...(y ?? [])])];
+  const promptsSeen = { ...a.promptsSeen };
+  for (const [key, at] of Object.entries(b.promptsSeen ?? {})) {
+    promptsSeen[key] = Math.max(promptsSeen[key] ?? 0, at);
+  }
+
+  return {
+    v: PROFILE_VERSION,
+    updatedAt: Math.max(local.updatedAt, remote.updatedAt),
+    events,
+    muted: union(local.muted, remote.muted).slice(0, MUTE_CAP),
+    prefs: {
+      ...newer,
+      promptsSeen,
+      promptsDone: union(a.promptsDone, b.promptsDone).slice(-40),
+      rated: union(a.rated, b.rated).slice(-60),
+    },
+    ...(clearedAt ? { clearedAt } : {}),
+  };
 }
 
 // ── Stated preferences ─────────────────────────────────────────────────
@@ -224,6 +274,7 @@ export function readProfile(scope: string = GUEST_SCOPE): TasteProfile {
       events: parsed.events.slice(-PROFILE_EVENT_CAP),
       muted: Array.isArray(parsed.muted) ? parsed.muted.slice(0, MUTE_CAP) : [],
       prefs: parsed.prefs ?? {},
+      ...(parsed.clearedAt ? { clearedAt: parsed.clearedAt } : {}),
     };
   } catch {
     return emptyProfile();

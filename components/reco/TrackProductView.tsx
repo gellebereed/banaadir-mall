@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { recordView } from "@/lib/reco/metrics-client";
 import { useReco } from "./RecoProvider";
 
 /**
@@ -27,6 +28,7 @@ export default function TrackProductView({ productId }: { productId: string }) {
     if (!ready) return;
 
     track("view", { id: productId });
+    recordView(productId);
 
     visibleSince.current = document.visibilityState === "visible" ? Date.now() : 0;
     accumulated.current = 0;

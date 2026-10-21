@@ -84,6 +84,7 @@ const TONES: Record<Shelf["tone"], Tone> = {
 
 /** Visual anchors per reason kind. */
 const REASON_ICONS: Record<string, string> = {
+  "viewed-together": "👀",
   viewed: "👁",
   saved: "♥",
   "in-cart": "🛒",
@@ -110,6 +111,7 @@ const REASON_ICONS: Record<string, string> = {
  * the badge's tooltip and in the card's own footer, so nothing is lost.
  */
 const REASON_LABELS: Record<string, string> = {
+  "viewed-together": "Also viewed",
   viewed: "You viewed",
   saved: "You saved",
   "in-cart": "In your cart",
@@ -135,6 +137,7 @@ const REASON_LABELS: Record<string, string> = {
  * is opaque with white text, so the label holds against any photo.
  */
 const REASON_BADGE_STYLES: Record<string, string> = {
+  "viewed-together": "bg-violet-600/95 text-white",
   viewed: "bg-slate-700/95 text-white",
   saved: "bg-coral-600/95 text-white",
   "in-cart": "bg-ocean-700/95 text-white",
@@ -168,7 +171,10 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          trackImpression(surface, shelf.id);
+          // Cards per strategy, so each strategy's results can be measured.
+          const items: Record<string, number> = {};
+          for (const item of shelf.items) if (item.via) items[item.via] = (items[item.via] ?? 0) + 1;
+          trackImpression(surface, shelf.id, items);
           observer.disconnect();
         }
       },
@@ -176,12 +182,13 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
     );
     observer.observe(node);
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per shelf, with its first items
   }, [surface, shelf.id]);
   const clicked = useRef(new Set<string>());
   const onCardClick = (productId: string) => {
     if (clicked.current.has(productId)) return;
     clicked.current.add(productId);
-    trackShelfClick(surface, shelf.id, productId);
+    trackShelfClick(surface, shelf.id, productId, shelf.items.find((i) => i.product.id === productId)?.via);
   };
 
   const items = shelf.items.filter((item) => !dismissed.includes(item.product.id));

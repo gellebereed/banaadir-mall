@@ -44,6 +44,7 @@ import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types"
 import type { CategoryMapping } from "./category-mappings";
 import type { StoreCollection } from "./collections";
 import type { RecoMetricEvent } from "./reco/metrics";
+import type { TasteProfile } from "./reco/types";
 
 export interface DB {
   /** Field-level edits per product id (price, stock, hidden, …). */
@@ -102,6 +103,8 @@ export interface DB {
   collections?: StoreCollection[];
   /** Recommendation shelf metrics, demo mode (lib/reco/metrics.ts). */
   recoEvents?: RecoMetricEvent[];
+  /** Opted-in synced taste profiles, demo mode (lib/reco/sync.ts). */
+  recoProfiles?: { account: string; profile: TasteProfile; updatedAt: string }[];
 }
 
 /**

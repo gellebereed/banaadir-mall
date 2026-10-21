@@ -41,7 +41,10 @@ import type {
   RecoSettings,
   Store,
 } from "../types";
+import { buildCoviewGraph, type CoviewGraph } from "./coview";
+import { coviewPairs, strategyStats } from "./metrics";
 import { choosePrompt } from "./prompts";
+import { computeTuning, type Tuning } from "./tuning";
 import { buildAffinityGraph, type AffinityGraph } from "./affinity";
 import { createBlender } from "./engine";
 import { buildMomentum, buildSales, shopperCity, type MomentumIndex } from "./momentum";
@@ -70,6 +73,24 @@ interface CachedIndices {
 }
 
 let cache: CachedIndices | null = null;
+
+/*
+ * What the marketplace has learned from behaviour — co-views and strategy
+ * results. Read from the metrics store, so on a slower clock than the
+ * catalogue indices: it changes over days, not seconds.
+ */
+const LEARNED_TTL_MS = 10 * 60_000;
+let learned: { builtAt: number; coviews: CoviewGraph; tuning: Tuning } | null = null;
+
+async function learnedSignals(now: number) {
+  if (learned && now - learned.builtAt < LEARNED_TTL_MS) return learned;
+  const [pairs, stats] = await Promise.all([
+    coviewPairs().catch(() => []),
+    strategyStats().catch(() => null),
+  ]);
+  learned = { builtAt: now, coviews: buildCoviewGraph(pairs), tuning: computeTuning(stats) };
+  return learned;
+}
 
 /**
  * Cheap change detector. Catches products added, removed, re-priced or
@@ -146,6 +167,7 @@ export async function recommend(
   // Only ever the shopper's own past orders — see momentum.ts.
   const city = shopperCity(orders, { email: identity.email, name: identity.name });
   const { index, graph, momentum, sales } = indicesFor(products, orders, city, now, categoryList);
+  const { coviews, tuning } = await learnedSignals(now);
 
   const profile = request.profile ?? emptyProfile();
   const taste = deriveTaste(profile, byId, now);
@@ -177,6 +199,9 @@ export async function recommend(
     graph,
     momentum,
     sales,
+    coviews,
+    // The admin can switch learning off; undefined counts as on.
+    tuning: settings.autoTune === false ? new Map() : tuning.multipliers,
     seed: request.seedId ? byId.get(request.seedId) : undefined,
     cartIds,
     pins: livePins(settings, byId, now),
@@ -260,4 +285,10 @@ function goalFor(
 /** Test/debug hook — drops the memoised indices. */
 export function resetRecoCache(): void {
   cache = null;
+  learned = null;
+}
+
+/** For the admin Results tab: what tuning is doing right now. */
+export async function currentTuning(): Promise<Tuning> {
+  return (await learnedSignals(Date.now())).tuning;
 }

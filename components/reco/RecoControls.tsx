@@ -20,7 +20,8 @@ import { useMemo, useState } from "react";
 import { useReco } from "./RecoProvider";
 
 export default function RecoControls() {
-  const { profile, ready, reset } = useReco();
+  const { profile, ready, reset, sync, setSync } = useReco();
+  const [syncBusy, setSyncBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [cleared, setCleared] = useState(false);
 
@@ -64,10 +65,34 @@ export default function RecoControls() {
         Your recommendations
       </h2>
       <p className="mt-1 text-sm text-slate-500">
-        Everything below is stored in this browser, on this device. It is sent
-        to us only while a page is loading its suggestions, and never saved on
-        our side.
+        {sync.on
+          ? "Everything below is stored in this browser and, because sync is on, in your account so your other devices see the same suggestions."
+          : "Everything below is stored in this browser, on this device. It is sent to us only while a page is loading its suggestions, and never saved on our side."}
       </p>
+
+      {sync.available && (
+        <label className="mt-4 flex items-start gap-3 rounded-xl bg-sand-50 p-4 text-sm">
+          <input
+            type="checkbox"
+            checked={sync.on}
+            disabled={syncBusy}
+            onChange={async (e) => {
+              setSyncBusy(true);
+              await setSync(e.target.checked);
+              setSyncBusy(false);
+            }}
+            className="mt-0.5 h-4 w-4 accent-ocean-700"
+          />
+          <span>
+            <span className="font-semibold text-slate-700">Keep my recommendations in sync across devices</span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              Saves this browsing history to your account. Turning it off deletes the saved copy; this
+              device keeps its own.
+            </span>
+            {sync.error && <span className="mt-1 block text-xs font-semibold text-coral-600">{sync.error}</span>}
+          </span>
+        </label>
+      )}
 
       {empty ? (
         <p className="mt-4 rounded-xl bg-sand-50 p-4 text-sm text-slate-500">
@@ -121,7 +146,7 @@ export default function RecoControls() {
             )}
             <span className="text-xs text-slate-400">
               Your orders and wishlist are kept — only the browsing history
-              behind the suggestions is cleared.
+              behind the suggestions is cleared{sync.on ? ", here and on your synced devices" : ""}.
             </span>
           </div>
         </>
