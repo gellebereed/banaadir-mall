@@ -12,7 +12,6 @@ import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import { money } from "@/lib/format";
 import {
-  categoryCovers,
   getBestsellers,
   getCategories,
   getFlashDeal,
@@ -22,7 +21,7 @@ import {
   getMarketplaceProducts,
   getNewArrivals,
 } from "@/lib/api";
-import type { Category, MarketingSettings, Product, SectionKey, Store } from "@/lib/types";
+import type { MarketingSettings, Product, SectionKey, Store } from "@/lib/types";
 
 /**
  * Home page. The admin controls the content and the ORDER of every section
@@ -46,8 +45,6 @@ export default async function HomePage() {
 
   // Department artwork: the admin's chosen cover, or the best-selling
   // product's photo from inside that department. See categoryCovers().
-  const covers = await categoryCovers(categories, allProducts);
-
   const officialBrands = stores.filter((s) => s.official);
   const localStores = stores.filter((s) => !s.official).slice(0, 4);
   const activeBanners = marketing.banners.filter((b) => b.active);
@@ -103,8 +100,9 @@ export default async function HomePage() {
         .filter(Boolean)
         .join(" "),
       subtitle: marketing.heroSubtitle,
+      // Sellers have their own band lower down and in the footer; here a
+      // second button only competed with shopping for every visitor.
       cta: "Start Shopping",
-      secondaryCta: { label: "Open Your Store", href: "/sell" },
       from: "#0c2b34",
       to: "#217987",
       brand: true,
@@ -131,21 +129,27 @@ export default async function HomePage() {
     // of its own. Its visibility switch still governs whether they appear.
     banners: () => null,
     promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} /> : null),
-    categories: () => (
-      <CategoryRail categories={categories} products={allProducts} covers={covers} />
-    ),
+    // Pinned under the hero instead (QuickNav / TrustStrip): their switches
+    // still decide whether they show, their position no longer moves them.
+    categories: () => null,
     brands: () => (officialBrands.length > 0 ? <OfficialBrands brands={officialBrands} /> : null),
     flash: () =>
       flashProducts.length > 0 ? (
         <FlashDealsRail deals={flashProducts} name={flash.name} endsAt={flash.endsAt} />
       ) : null,
-    value: () => <ValueProps />,
+    value: () => null,
     trending: () => <Bestsellers products={bestsellers} />,
     stores: () => (localStores.length > 0 ? <StoreSpotlight stores={localStores} /> : null),
     new: () => (newArrivals.length > 0 ? <NewArrivals products={newArrivals} /> : null),
   };
 
-  const visibleSections = marketing.sections.filter((s) => s.visible);
+  const isVisible = (key: SectionKey) => marketing.sections.some((s) => s.key === key && s.visible);
+  const showQuickNav = isVisible("categories");
+  const showTrust = isVisible("value");
+  // The pinned two are left out so the shelf windows below count real rows.
+  const visibleSections = marketing.sections.filter(
+    (s) => s.visible && s.key !== "categories" && s.key !== "value",
+  );
 
   /**
    * Where the personalised rows land.
@@ -164,7 +168,7 @@ export default async function HomePage() {
    * Every one of these <RecoStack>s shares a single server call — the fetch
    * layer de-duplicates by request key, and slot filtering is local.
    */
-  const priority = ["banners", "promoTiles", "categories", "brands", "flash"];
+  const priority = ["banners", "promoTiles", "brands", "flash"];
   const lastPriorityIdx = visibleSections.reduce(
     (best, s, i) => (priority.includes(s.key) ? i : best),
     -1,
@@ -200,18 +204,22 @@ export default async function HomePage() {
       />
       {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
 
-      {/* The launcher. Directly under the hero, above everything else —
-          it is the fastest route to the four or five things a returning
-          shopper opens the app for. */}
-      <QuickNav categories={categories} />
+      {/* Why to buy here, in one line, before anything asks for a decision. */}
+      {showTrust && <TrustStrip delivery={marketing.delivery} />}
+
+      {/* The launcher: the one set of department shortcuts on the page, and
+          on a phone part of the first screen. */}
+      {showQuickNav && <QuickNav categories={categories} />}
 
       {/*
-        The unfinished-business strip, immediately under the hero. For a
-        returning shopper the most useful thing on the page is the product
-        they were looking at when they were interrupted — not a new
-        suggestion. Renders nothing at all for a first-time visitor.
+        The unfinished-business strip. For a returning shopper the most
+        useful thing on the page is the product they were looking at when
+        they were interrupted; with the compact phone hero it lands on the
+        first screen. Renders nothing for a first-time visitor — and holds
+        no placeholder, so their page doesn't jump when it turns out empty.
+        (Above the hero was tried: that jump moved the whole page.)
       */}
-      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="top" />
+      <RecoStack surface="home" useCartLines excludeIds={alreadyOnPage} slot="top" placeholder={false} />
 
       {visibleSections.map((section, index) => (
         <div key={section.key}>
@@ -354,157 +362,6 @@ function PromoTiles({ tiles }: { tiles: MarketingSettings["promoTiles"] }) {
   );
 }
 
-/* ── Category rail ────────────────────────────────────────────────── */
-
-/**
- * The department row: TOP-LEVEL categories only, filtered to those that
- * actually contain products.
- *
- * `getCategories()` returns the whole tree flattened, so rendering it as-is
- * put every child beside every root — a supplier import that created
- * thirteen menswear categories pushed "Bags", "Bracelets" and "Socks" onto
- * the front page next to "Electronics", each with the same placeholder
- * icon. Departments belong here; the categories underneath them belong on
- * the department's own page.
- */
-function CategoryRail({
-  categories,
-  products,
-  covers,
-}: {
-  categories: Category[];
-  products: Product[];
-  /** Department slug → cover photo. See categoryCovers(). */
-  covers: Record<string, string>;
-}) {
-  const roots = categories.filter((c) => !c.parentSlug && !c.hidden);
-
-  // Count what sits under each root, so a department can say how much is in
-  // it rather than looking identical to an empty one.
-  const childCount = new Map<string, number>();
-  for (const category of categories) {
-    if (!category.parentSlug || category.hidden) continue;
-    childCount.set(category.parentSlug, (childCount.get(category.parentSlug) ?? 0) + 1);
-  }
-
-  // Build a set of root slugs that actually have products (direct or via children)
-  const childToRoot = new Map<string, string>();
-  for (const category of categories) {
-    if (category.parentSlug) {
-      // Walk up to root
-      let parent = category.parentSlug;
-      let visited = 0;
-      while (visited < 10) {
-        const parentCat = categories.find((c) => c.slug === parent);
-        if (!parentCat?.parentSlug) break;
-        parent = parentCat.parentSlug;
-        visited++;
-      }
-      childToRoot.set(category.slug, parent);
-    }
-  }
-
-  const populatedRoots = new Set<string>();
-  for (const product of products) {
-    const catSlug = product.category;
-    // Direct match to a root
-    if (roots.some((r) => r.slug === catSlug)) {
-      populatedRoots.add(catSlug);
-      continue;
-    }
-    // Product is in a child — map to root
-    const root = childToRoot.get(catSlug);
-    if (root) populatedRoots.add(root);
-  }
-
-  // Only show categories that have products
-  const visibleRoots = roots.filter((r) => populatedRoots.has(r.slug));
-
-  if (visibleRoots.length === 0) return null;
-
-  // Count products per root category for the subtitle
-  const productCount = new Map<string, number>();
-  for (const product of products) {
-    const catSlug = product.category;
-    const root = roots.some((r) => r.slug === catSlug)
-      ? catSlug
-      : childToRoot.get(catSlug);
-    if (root) productCount.set(root, (productCount.get(root) ?? 0) + 1);
-  }
-
-  /*
-   * Photo tiles, not emoji.
-   *
-   * A row of emoji on coloured squares is the tell of a template. Real
-   * product photography is what makes a department row look like stock
-   * somebody actually has — and where the admin hasn't chosen a cover,
-   * categoryCovers() borrows the best-selling product's photo from inside
-   * that department, so this looks right before anybody uploads anything.
-   *
-   * Six across rather than eight: at eight the tiles were too small for a
-   * photograph to read as anything.
-   */
-  return (
-    <section className="mx-auto max-w-7xl px-4 pt-10">
-      <SectionHeader
-        title="Shop by department"
-        subtitle="Everything in the mall, grouped the way you'd walk it"
-        href="/products"
-        linkLabel="All products"
-      />
-      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-6">
-        {visibleRoots.map((c) => {
-          const count = productCount.get(c.slug) ?? 0;
-          const children = childCount.get(c.slug) ?? 0;
-          const cover = covers[c.slug];
-
-          return (
-            <Link
-              key={c.slug}
-              href={`/category/${c.slug}`}
-              className="group relative flex aspect-[4/5] flex-col justify-end overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/5 transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/15"
-            >
-              {cover ? (
-                <Image
-                  src={cover}
-                  alt=""
-                  fill
-                  sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 200px"
-                  className="object-cover transition duration-500 group-hover:scale-110"
-                />
-              ) : (
-                <div
-                  className="absolute inset-0 flex items-center justify-center text-4xl"
-                  style={{ background: `linear-gradient(135deg, ${c.art.from}, ${c.art.to})` }}
-                >
-                  {c.icon}
-                </div>
-              )}
-
-              {/* A scrim, not a wash: the label has to stay legible over a
-                  photo we did not art-direct. */}
-              <div className="absolute inset-0 bg-gradient-to-t from-ocean-950/85 via-ocean-950/25 to-transparent" />
-
-              <div className="relative p-2.5 sm:p-3">
-                <p className="font-display text-[13px] font-extrabold leading-tight text-white drop-shadow sm:text-sm">
-                  {c.name}
-                </p>
-                <p className="mt-0.5 text-[10px] font-medium text-white/70">
-                  {count > 0
-                    ? `${count} item${count === 1 ? "" : "s"}`
-                    : children > 0
-                      ? `${children} categories`
-                      : "Browse"}
-                </p>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 /* ── Official brand stores ────────────────────────────────────────── */
 
 function OfficialBrands({ brands }: { brands: Store[] }) {
@@ -591,26 +448,40 @@ function FlashDeals({
   );
 }
 
-/* ── Value props ──────────────────────────────────────────────────── */
+/* ── Trust strip ──────────────────────────────────────────────────── */
 
-function ValueProps() {
-  const props = [
-    { icon: "🚚", title: "Fast Delivery", text: "Same-day in Mogadishu, 2–4 days nationwide" },
-    { icon: "📲", title: "Mobile Money", text: "EVC Plus, Zaad & eDahab accepted everywhere" },
-    { icon: "🛡️", title: "Buyer Protection", text: "7-day returns and money-back guarantee" },
-    { icon: "🏪", title: "Local Stores", text: "Every purchase supports a Somali business" },
+/**
+ * The reasons to buy here, as one slim line under the hero. They used to
+ * be four large cards further down, after the first deals — the strongest
+ * arguments on the page, arriving after the shopper had already decided
+ * whether to scroll. Swipes sideways on a phone rather than wrapping.
+ */
+function TrustStrip({ delivery }: { delivery: MarketingSettings["delivery"] }) {
+  const items = [
+    {
+      icon: "🚚",
+      text:
+        delivery.freeThreshold > 0
+          ? `Free delivery over ${money(delivery.freeThreshold)}`
+          : delivery.estimate
+            ? `Delivery ${delivery.estimate}`
+            : "Fast delivery",
+    },
+    { icon: "📲", text: "EVC Plus · Zaad · eDahab" },
+    { icon: "💵", text: "Cash on delivery" },
+    { icon: "↩️", text: "7-day returns" },
+    { icon: "🏪", text: "Trusted Somali stores" },
   ];
   return (
-    <section className="mx-auto grid max-w-7xl grid-cols-2 gap-3 px-4 pt-14 lg:grid-cols-4">
-      {props.map((p) => (
-        <div key={p.title} className="card flex items-start gap-3 p-4">
-          <span className="text-2xl">{p.icon}</span>
-          <div>
-            <h3 className="text-sm font-bold text-ocean-950">{p.title}</h3>
-            <p className="mt-0.5 text-xs text-slate-500">{p.text}</p>
-          </div>
-        </div>
-      ))}
+    <section aria-label="Why shop with us" className="border-b border-sand-200 bg-white">
+      <ul className="rail-scroll mx-auto flex max-w-7xl gap-5 overflow-x-auto px-4 py-2.5 text-xs font-semibold text-slate-600 sm:justify-between sm:text-sm">
+        {items.map((item) => (
+          <li key={item.text} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+            <span aria-hidden>{item.icon}</span>
+            {item.text}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

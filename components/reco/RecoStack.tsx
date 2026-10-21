@@ -29,6 +29,7 @@ export default function RecoStack({
   exclude,
   max,
   enabled = true,
+  placeholder = true,
 }: {
   surface: Parameters<typeof useRecommendations>[0]["surface"];
   seedId?: string;
@@ -54,6 +55,12 @@ export default function RecoStack({
   exclude?: string[];
   max?: number;
   enabled?: boolean;
+  /**
+   * Hold a placeholder while loading. Off for a row that most visitors
+   * never get (the home "top" strip is empty for anyone new): a
+   * placeholder that then collapses makes the page jump for everyone.
+   */
+  placeholder?: boolean;
 }) {
   const { data, loading } = useRecommendations({
     surface,
@@ -74,7 +81,7 @@ export default function RecoStack({
     // A single placeholder while the first answer is in flight. Repeating
     // it per unknown shelf would reserve space for rows that may never
     // exist and make the page jump when they don't.
-    return loading && enabled ? <ShelfSkeleton /> : null;
+    return loading && enabled && placeholder ? <ShelfSkeleton /> : null;
   }
 
   return (

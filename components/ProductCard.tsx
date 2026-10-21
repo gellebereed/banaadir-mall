@@ -210,13 +210,14 @@ export default function ProductCard({
           {product.name}
         </Link>
         
-        {/* Same height either way, so a row of cards stays aligned. */}
+        {/*
+          Same height either way, so a row of cards stays aligned. Nothing
+          is written when there are no reviews: "No reviews yet" repeated
+          down a whole page made the shop look empty, and the sales count
+          under the price already says the product is real.
+        */}
         <div className="mt-1 min-h-5">
-          {product.reviewCount > 0 ? (
-            <Rating value={product.rating} count={product.reviewCount} />
-          ) : (
-            <span className="text-xs text-slate-400">No reviews yet</span>
-          )}
+          {product.reviewCount > 0 && <Rating value={product.rating} count={product.reviewCount} />}
         </div>
 
         {/* Variant options at a glance — reserved slot for uniform height */}

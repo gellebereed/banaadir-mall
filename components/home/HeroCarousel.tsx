@@ -126,8 +126,13 @@ export default function HeroCarousel({
         Aspect ratios look tidy until a long headline in a narrow column
         overflows the box — a height floor lets the copy push the frame down
         on the one phone where it needs to, and never crops it.
+
+        On phones the floor is 80vw — exactly the 5:4 mobile banner artwork
+        (1000 × 800, see README) — rather than a whole screen: a hero that
+        filled the first screen left a phone visitor with no product, price
+        or category to look at until they scrolled.
       */}
-      <div className="relative min-h-[440px] sm:min-h-[480px] lg:min-h-[560px]">
+      <div className="relative min-h-[80vw] sm:min-h-[480px] lg:min-h-[560px]">
         {slides.map((slide, i) => (
           <HeroSlideView
             key={slide.id}
@@ -147,7 +152,7 @@ export default function HeroCarousel({
           {/* Dots. The active one stretches into a pill rather than merely
               brightening — position in a set is far easier to read as a
               change of SHAPE than as a change of opacity. */}
-          <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center gap-2">
+          <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center gap-2 sm:bottom-5">
             {slides.map((slide, i) => (
               <button
                 key={slide.id}
@@ -239,26 +244,26 @@ function HeroSlideView({
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/35 to-black/10 sm:bg-gradient-to-r sm:from-black/70 sm:via-black/30 sm:to-transparent" />
       )}
 
-      <div className="relative mx-auto grid h-full max-w-7xl items-end gap-8 px-5 pb-16 pt-10 sm:items-center sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
+      <div className="relative mx-auto grid h-full max-w-7xl items-end gap-8 px-5 pb-10 pt-6 sm:items-center sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
         <div className={active ? "animate-fade-up" : ""}>
           {slide.eyebrow && (
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm">
+            <span className="hidden items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 sm:inline-flex text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm">
               {slide.eyebrow}
             </span>
           )}
 
           {slide.title && (
-            <h2 className="mt-4 max-w-xl font-display text-[2rem] font-extrabold leading-[1.1] text-white sm:text-5xl lg:text-6xl">
+            <h2 className="max-w-xl font-display text-[1.75rem] font-extrabold leading-[1.1] text-white sm:mt-4 sm:text-5xl lg:text-6xl">
               {slide.title}
             </h2>
           )}
 
           {slide.subtitle && (
-            <p className="mt-3 max-w-md text-sm text-white/85 sm:text-lg">{slide.subtitle}</p>
+            <p className="mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg">{slide.subtitle}</p>
           )}
 
           {(slide.cta || slide.secondaryCta) && (
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center gap-3 sm:mt-6">
               {slide.cta && (
                 <Link href={slide.href} className="btn-primary !px-7">
                   {slide.cta}

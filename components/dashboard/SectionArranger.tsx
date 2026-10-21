@@ -9,10 +9,10 @@ import type { HomeSection, SectionKey } from "@/lib/types";
 const LABELS: Record<SectionKey, { name: string; hint: string }> = {
   banners: { name: "🖼️ Banner carousel", hint: "Your big promotional banners" },
   promoTiles: { name: "🏷️ Campaign tiles", hint: "Discount tiles strip" },
-  categories: { name: "📱 Category circles", hint: "Shop by category" },
+  categories: { name: "📱 Category circles", hint: "Shortcuts — always just under the banner" },
   brands: { name: "🏆 Official brand stores", hint: "Franchised brands" },
   flash: { name: "⚡ Flash deals", hint: "Countdown campaign rail" },
-  value: { name: "🚚 Trust badges", hint: "Delivery, payment, returns" },
+  value: { name: "🚚 Trust badges", hint: "One line under the banner — delivery, payment, returns" },
   trending: { name: "🔥 Trending now", hint: "Bestselling products" },
   stores: { name: "🏪 Featured stores", hint: "Local seller spotlight" },
   new: { name: "✨ Just landed", hint: "Newest products" },

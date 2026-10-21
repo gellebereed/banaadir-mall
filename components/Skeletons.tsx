@@ -58,6 +58,31 @@ export function ProductDetailSkeleton() {
   );
 }
 
+/**
+ * Home page placeholder, shaped like the real page: the hero at its real
+ * height (app/page.tsx, HeroCarousel), the trust line, the shortcut
+ * circles and a product row. The generic spinner was half a screen tall,
+ * so the footer sat in view under it and was thrown down the page when
+ * the content arrived — the layout jump measured on desktop.
+ */
+export function HomeSkeleton() {
+  return (
+    <div>
+      <div className="min-h-[80vw] animate-pulse bg-ocean-950/90 sm:min-h-[480px] lg:min-h-[560px]" />
+      <div className="h-10 border-b border-sand-200 bg-white" />
+      <div className="mx-auto flex max-w-7xl gap-4 overflow-hidden px-4 py-5">
+        {Array.from({ length: 10 }, (_, i) => (
+          <div key={i} className="flex shrink-0 flex-col items-center gap-2">
+            <Shimmer className="h-16 w-16 !rounded-full" />
+            <Shimmer className="h-3 w-14" />
+          </div>
+        ))}
+      </div>
+      <ProductGridSkeleton />
+    </div>
+  );
+}
+
 /** Generic centered spinner for everything else. */
 export function PageSpinner() {
   return (

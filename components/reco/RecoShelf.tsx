@@ -325,15 +325,15 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
  * `title`, so nothing is actually hidden — it is just not shouted.
  */
 function shortReason(text: string): string {
-  if (text.length <= 35) return text;
+  if (text.length <= 60) return text;
 
   const words = text.split(" ");
   let result = "";
   for (const word of words) {
-    if ((result + " " + word).trim().length > 32) break;
+    if ((result + " " + word).trim().length > 56) break;
     result = (result + " " + word).trim();
   }
-  return result ? `${result}…` : `${text.slice(0, 32)}…`;
+  return result ? `${result}…` : `${text.slice(0, 56)}…`;
 }
 
 /**
@@ -395,8 +395,10 @@ function RecoCard({
           </span>
         }
         footer={
-          <div className="flex min-h-[1.25rem] items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+          <div className="flex min-h-[1.75rem] items-center gap-2">
+            {/* Two lines, not one: on a phone-width card one line cut every
+                note off mid-word ("2 bought in the last …"). */}
+            <span className="line-clamp-2 min-w-0 flex-1 text-[11px] leading-tight">
               {/*
                 The strongest true thing about this card, in priority order:
                 scarcity, then momentum, then the reason itself. Something

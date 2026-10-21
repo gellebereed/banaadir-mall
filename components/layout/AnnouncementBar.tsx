@@ -33,12 +33,14 @@ export default function AnnouncementBar({
       }}
     >
       {autoScroll ? (
+        // Each half carries pr-12 so the seam where one half meets the next
+        // keeps the same gap as the copies inside it.
         <div
           className="group flex py-2 cursor-pointer"
           title="Hover to pause announcement"
         >
           <div
-            className="flex min-w-full shrink-0 items-center justify-around gap-12 whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused]"
+            className="flex min-w-full shrink-0 items-center justify-around gap-12 whitespace-nowrap pr-12 animate-marquee group-hover:[animation-play-state:paused]"
             style={{ animationDuration: `${speed}s` }}
           >
             <AnnouncementContent text={announcement} />
@@ -46,7 +48,7 @@ export default function AnnouncementBar({
             <AnnouncementContent text={announcement} />
           </div>
           <div
-            className="flex min-w-full shrink-0 items-center justify-around gap-12 whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused]"
+            className="flex min-w-full shrink-0 items-center justify-around gap-12 whitespace-nowrap pr-12 animate-marquee group-hover:[animation-play-state:paused]"
             style={{ animationDuration: `${speed}s` }}
             aria-hidden="true"
           >

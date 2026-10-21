@@ -113,17 +113,19 @@ export default function QuickNav({ categories }: { categories: Category[] }) {
   return (
     <nav
       aria-label="Shop by department"
-      className="mx-auto max-w-7xl px-4 pt-6 sm:pt-8"
+      className="mx-auto max-w-7xl px-4 pt-4 sm:pt-8"
     >
       {/*
-        Five across on a phone, exactly like the reference: ten links land
-        as two clean rows. It widens to ten across on a large screen rather
-        than growing the tiles, because a 96px circle on a desktop looks
-        like a mistake.
+        One swipeable row below the large breakpoint — the half-visible
+        tile at the edge says "more this way". Two wrapped rows of five cost
+        a phone ~110px of its first screen, enough to push "Pick up where
+        you left off" out of it. Ten across on a large screen rather than
+        growing the tiles, because a 96px circle on a desktop looks like a
+        mistake.
       */}
-      <ul className="grid grid-cols-5 gap-x-2 gap-y-5 sm:gap-x-4 lg:grid-cols-10">
+      <ul className="rail-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 pt-1 sm:gap-4 lg:mx-0 lg:grid lg:grid-cols-10 lg:overflow-visible lg:px-0">
         {links.map((link) => (
-          <li key={link.href}>
+          <li key={link.href} className="w-[3.9rem] shrink-0 sm:w-20 lg:w-auto">
             <Link
               href={link.href}
               className="group flex flex-col items-center gap-2 text-center"
