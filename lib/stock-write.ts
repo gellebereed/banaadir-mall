@@ -22,6 +22,61 @@ export async function saveStock(productId: string, fields: Pick<Product, "stock"
   return true;
 }
 
+/** A line the shop cannot fill: what was asked for and what is on the shelf. */
+export interface StockShortage {
+  productId: string;
+  name: string;
+  selectedColor?: string;
+  selectedSize?: string;
+  requested: number;
+  available: number;
+}
+
+/**
+ * The lines of an order the shelf can't cover — checked before the order is
+ * written, with the same per-variant rules deductStock uses.
+ *
+ * Orders used to be accepted whatever the count: a cart holding 3 kettles
+ * went through after the shop had dropped its stock to 1, and deductStock
+ * quietly clamped the shelf at zero. The shop had sold two kettles that did
+ * not exist and found out only when it went to pack them.
+ *
+ * Quantities of the same product/variant on separate lines are added up,
+ * so splitting a basket across lines can't get round the check.
+ */
+export async function findShortages(
+  lines: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+): Promise<StockShortage[]> {
+  const wanted = new Map<string, { line: (typeof lines)[number]; qty: number }>();
+  for (const line of lines) {
+    const key = `${line.productId}|${line.selectedColor ?? ""}|${line.selectedSize ?? ""}`;
+    const prev = wanted.get(key);
+    wanted.set(key, { line, qty: (prev?.qty ?? 0) + line.qty });
+  }
+
+  const shortages: StockShortage[] = [];
+  for (const { line, qty } of wanted.values()) {
+    const product = await getBaseProduct(line.productId);
+    // A product the catalogue no longer knows is priced and filed elsewhere;
+    // it is not this check's to refuse.
+    if (!product) continue;
+    const variant = product.variants?.length ? findVariant(product, line.selectedColor, line.selectedSize) : undefined;
+    if (product.variants?.length && !variant) continue;
+    const available = Math.max(0, variant ? variant.stock : product.stock);
+    if (qty > available) {
+      shortages.push({
+        productId: line.productId,
+        name: product.name,
+        selectedColor: line.selectedColor,
+        selectedSize: line.selectedSize,
+        requested: qty,
+        available,
+      });
+    }
+  }
+  return shortages;
+}
+
 /**
  * Take sold items off the shelf — the size/colour they chose when the
  * product has variants. Never below zero: the order is already placed, and

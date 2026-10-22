@@ -10,7 +10,7 @@ import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
 import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
-import { useCart } from "@/lib/cart-context";
+import { cartLineKey, useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import { groupByStore } from "@/lib/order-utils";
 import { readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
@@ -52,8 +52,8 @@ export default function CartClient({
   // Priced by the server: today's prices, shop offers, the promo code for
   // the shops that accepted it. Until it answers, the cart's own prices.
   const { pricing, promo: promoStatus } = useCartPricing(lines, applied);
-  const positionOf = new Map(lines.map((l, i) => [l.productId, String(i)]));
-  const pricedLine = (productId: string) => pricing?.lines[positionOf.get(productId) ?? ""];
+  const positionOf = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
+  const pricedLine = (key: string) => pricing?.lines[positionOf.get(key) ?? ""];
   const listTotal = pricing?.listTotal ?? subtotal;
   const itemsTotal = pricing?.total ?? subtotal;
   const qualifiesFree = freeThreshold > 0 && itemsTotal >= freeThreshold;
@@ -169,7 +169,7 @@ export default function CartClient({
 
                   <ul className="divide-y divide-sand-100">
                     {storeLines.map((line) => (
-                      <li key={line.productId} className="flex gap-3 p-4 sm:gap-4">
+                      <li key={cartLineKey(line)} className="flex gap-3 p-4 sm:gap-4">
                         <Link
                           href={`/product/${line.product.slug}`}
                           className="shrink-0"
@@ -198,7 +198,7 @@ export default function CartClient({
                               )}
                             </div>
                             <LinePrice
-                              line={pricedLine(line.productId)}
+                              line={pricedLine(cartLineKey(line))}
                               fallbackTotal={line.product.price * line.qty}
                               unitPrice={line.product.price}
                               qty={line.qty}
@@ -212,8 +212,8 @@ export default function CartClient({
                                 aria-label={line.qty === 1 ? t("cart.remove") : t("cart.qtyDec")}
                                 onClick={() =>
                                   line.qty === 1
-                                    ? removeFromCart(line.productId)
-                                    : updateQty(line.productId, line.qty - 1)
+                                    ? removeFromCart(cartLineKey(line))
+                                    : updateQty(cartLineKey(line), line.qty - 1)
                                 }
                                 className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-sand-100"
                               >
@@ -231,7 +231,7 @@ export default function CartClient({
                               <button
                                 type="button"
                                 aria-label={t("cart.qtyInc")}
-                                onClick={() => updateQty(line.productId, line.qty + 1)}
+                                onClick={() => updateQty(cartLineKey(line), line.qty + 1)}
                                 className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-sand-100"
                               >
                                 +
@@ -241,7 +241,7 @@ export default function CartClient({
                               type="button"
                               onClick={() => {
                                 if (!isWishlisted(line.productId)) toggleWishlist(line.productId, line.product);
-                                removeFromCart(line.productId);
+                                removeFromCart(cartLineKey(line));
                               }}
                               className="text-xs font-semibold text-ocean-700 hover:underline"
                             >
@@ -249,7 +249,7 @@ export default function CartClient({
                             </button>
                             <button
                               type="button"
-                              onClick={() => removeFromCart(line.productId)}
+                              onClick={() => removeFromCart(cartLineKey(line))}
                               className="text-xs font-semibold text-slate-500 hover:text-coral-600 hover:underline"
                             >
                               {t("cart.remove")}

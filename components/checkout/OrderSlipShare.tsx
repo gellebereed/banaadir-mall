@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ export default function OrderSlipShare({
   storeName: string;
   className?: string;
 }) {
+  const { t } = usePrefs();
   const [state, setState] = useState<"idle" | "working" | "shared" | "downloaded" | "error">(
     "idle",
   );
@@ -81,14 +83,14 @@ export default function OrderSlipShare({
 
   const label =
     state === "working"
-      ? "Preparing slip…"
+      ? t("slip.working")
       : state === "shared"
-        ? "✓ Slip shared"
+        ? t("slip.shared")
         : state === "downloaded"
-          ? "✓ Slip downloaded"
+          ? t("slip.downloaded")
           : state === "error"
-            ? "Couldn't build the slip — try again"
-            : "🧾 Send as image";
+            ? t("slip.error")
+            : t("slip.send");
 
   return (
     <div className={className}>
@@ -107,12 +109,11 @@ export default function OrderSlipShare({
           rel="noopener noreferrer"
           className="rounded-xl border border-sand-200 px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-sand-100"
         >
-          Preview
+          {t("slip.preview")}
         </a>
       </div>
       <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-        On a phone this opens your share sheet, so the slip lands in the chat
-        as a real photo. On a computer it downloads instead.
+        {t("slip.hint")}
       </p>
     </div>
   );

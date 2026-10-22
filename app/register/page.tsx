@@ -13,8 +13,17 @@ export default function RegisterPage() {
   // Where to return after signing up (?next=, checked by safeNext). Read
   // after mount: useSearchParams would make this page need a Suspense shell.
   const [next, setNext] = useState("");
+  // Details the shopper already typed at checkout ("Save this order to an
+  // account" on the confirmation screen) — so signing up is one password.
+  const [prefill, setPrefill] = useState({ name: "", email: "", phone: "" });
   useEffect(() => {
-    setNext(safeNext(new URLSearchParams(window.location.search).get("next")) ?? "");
+    const params = new URLSearchParams(window.location.search);
+    setNext(safeNext(params.get("next")) ?? "");
+    setPrefill({
+      name: params.get("name") ?? "",
+      email: params.get("email") ?? "",
+      phone: params.get("phone") ?? "",
+    });
   }, []);
 
   return (
@@ -40,21 +49,21 @@ export default function RegisterPage() {
               Full name
               <RequiredMark />
             </label>
-            <input id="name" name="name" required placeholder="Ayaan Warsame" className="input" />
+            <input key={`n${prefill.name}`} defaultValue={prefill.name} id="name" name="name" required placeholder="Ayaan Warsame" className="input" />
           </div>
           <div>
             <label htmlFor="email" className="label">
               Email address
               <RequiredMark />
             </label>
-            <input id="email" name="email" required type="email" placeholder="ayaan@banaadirmall.com" className="input" />
+            <input key={`e${prefill.email}`} defaultValue={prefill.email} id="email" name="email" required type="email" placeholder="ayaan@banaadirmall.com" className="input" />
           </div>
           <div>
             <label htmlFor="phone" className="label">
               Phone number
               <RequiredMark />
             </label>
-            <input id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
+            <input key={`p${prefill.phone}`} defaultValue={prefill.phone} id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
           </div>
           <div>
             <label htmlFor="password" className="label">

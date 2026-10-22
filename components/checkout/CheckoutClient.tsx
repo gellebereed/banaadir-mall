@@ -22,7 +22,9 @@ import { CartSkeleton } from "@/components/cart/CartClient";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
 import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
-import { useCart } from "@/lib/cart-context";
+import { cartLineKey, useCart } from "@/lib/cart-context";
+import { internationalPhone } from "@/lib/whatsapp";
+import { GUEST_SCOPE } from "@/lib/storage-scope";
 import { money } from "@/lib/format";
 import type { CartLineRef } from "@/lib/reco/types";
 import { scopedKey } from "@/lib/storage-scope";
@@ -67,7 +69,7 @@ export default function CheckoutClient({
   const { fee, freeThreshold, estimate } = settings.delivery;
   const promo = settings.promo;
   const { t, lang } = usePrefs();
-  const { lines, ready, clearCart, scope } = useCart();
+  const { lines, ready, clearCart, updateQty, scope } = useCart();
 
   /*
    * Saved delivery details and the browser-side order history, namespaced
@@ -325,10 +327,10 @@ export default function CheckoutClient({
    * added, so a changed price is pointed out rather than discovered later.
    */
   const { pricing, promo: promoStatus } = useCartPricing(lines, appliedPromo);
-  const lineIndex = new Map(lines.map((l, i) => [l.productId, String(i)]));
-  const pricedLine = (productId: string) => pricing?.lines[lineIndex.get(productId) ?? ""];
+  const lineIndex = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
+  const pricedLine = (key: string) => pricing?.lines[lineIndex.get(key) ?? ""];
   const priceOf = (line: (typeof lines)[number]) =>
-    pricedLine(line.productId)?.units[0]?.listPrice ?? line.product.price;
+    pricedLine(cartLineKey(line))?.units[0]?.listPrice ?? line.product.price;
   const subtotal = pricing?.listTotal ?? lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
   const repriced = pricing ? lines.filter((l) => Math.abs(priceOf(l) - l.product.price) > 0.004) : [];
   const discount = pricing ? pricing.offerDiscount + pricing.promoDiscount : 0;
@@ -352,6 +354,8 @@ export default function CheckoutClient({
   // Our own messages instead of the browser's bubbles: they speak the
   // shopper's language, say what is wrong, and every problem shows at once.
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  /** Set when the server refused the order because the shelf ran short. */
+  const [stockError, setStockError] = useState<string | null>(null);
   const clearError = (field: Field) =>
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
 
@@ -384,7 +388,7 @@ export default function CheckoutClient({
     setIsSubmitting(true);
 
     const orderId = `BM-${Math.floor(10000 + Math.random() * 90000)}`;
-    const fullPhone = `${selectedCountry.phoneCode} ${phone}`;
+    const fullPhone = internationalPhone(selectedCountry.phoneCode, phone);
     const destinationCity = city === "Other" ? customCity : city;
     const fullAddress = `${district ? district + ", " : ""}${destinationCity}, ${selectedCountry.name}`;
 
@@ -484,6 +488,34 @@ export default function CheckoutClient({
         paymentMethod: payment,
         promoCode: appliedPromo ?? undefined,
       });
+      /*
+       * The shelf ran short while this basket waited (another buyer, or the
+       * shop recounted). Bring each line down to what is really there, say
+       * so, and stop — the order was NOT placed, so this must never fall
+       * through to the confirmation screen.
+       */
+      if (result?.shortages?.length) {
+        for (const short of result.shortages) {
+          const line = lines.find(
+            (l) => l.product.id === short.productId && (l.color ?? undefined) === short.selectedColor && (l.size ?? undefined) === short.selectedSize,
+          );
+          if (line) updateQty(cartLineKey(line), short.available);
+        }
+        setStockError(
+          t("checkout.err.stock", {
+            items: result.shortages
+              .map((s) =>
+                s.available > 0
+                  ? t("checkout.err.stockLeft", { name: s.name, n: s.available })
+                  : t("checkout.err.stockOut", { name: s.name }),
+              )
+              .join(" · "),
+          }),
+        );
+        setIsSubmitting(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       if (result?.parcels?.length) serverParcels = result.parcels;
       if (typeof result?.discount === "number") savedOnServer = result.discount;
     } catch (err) {
@@ -510,6 +542,7 @@ export default function CheckoutClient({
       address: fullAddress,
       city: destinationCity,
       paymentLabel,
+      paymentMethod: payment,
       subtotal: Math.round((placedItems + savedOnServer) * 100) / 100,
       discount: savedOnServer,
       delivery,
@@ -571,6 +604,16 @@ export default function CheckoutClient({
         order={placedOrder}
         deliveryEstimate={arrival || estimate}
         purchased={purchased}
+        signUpHref={
+          scope === GUEST_SCOPE
+            ? `/register?${new URLSearchParams({
+                name: placedOrder.customerName,
+                phone: placedOrder.customerPhone,
+                ...(email.trim() ? { email: email.trim() } : {}),
+                next: "/account",
+              })}`
+            : undefined
+        }
       />
     );
   }
@@ -634,7 +677,7 @@ export default function CheckoutClient({
             <ParcelOffers store={pricing?.stores[slug]} compact />
             <ul className="space-y-3">
               {storeLines.map((line) => (
-                <li key={line.productId} className="flex items-center gap-3 text-sm">
+                <li key={cartLineKey(line)} className="flex items-center gap-3 text-sm">
                   <span className="relative shrink-0">
                     <ProductImage
                       product={line.product}
@@ -655,7 +698,7 @@ export default function CheckoutClient({
                     )}
                   </span>
                   <LinePrice
-                    line={pricedLine(line.productId)}
+                    line={pricedLine(cartLineKey(line))}
                     fallbackTotal={priceOf(line) * line.qty}
                     unitPrice={priceOf(line)}
                     qty={line.qty}
@@ -807,6 +850,11 @@ export default function CheckoutClient({
           {hasErrors && (
             <p className="rounded-2xl border border-coral-100 bg-coral-100/60 px-4 py-3 text-sm font-semibold text-coral-700" role="alert">
               {t("checkout.err.summary")}
+            </p>
+          )}
+          {stockError && (
+            <p className="rounded-2xl border border-coral-100 bg-coral-100/60 px-4 py-3 text-sm font-semibold text-coral-700" role="alert">
+              {stockError}
             </p>
           )}
 

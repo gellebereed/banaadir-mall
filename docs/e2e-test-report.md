@@ -6,6 +6,19 @@
 (390 × 844), clicking what a person would click. Screenshots were taken at
 every step.
 
+## Status
+
+Fixed and re-tested in the browser: **#1** cart sizes/colours · **#2**
+overselling · **#3** phone numbers · **#4** name-only order matching ·
+**#6** order status saves on change (Cancel asks first) · **#7/#22**
+confirmation screen in Somali, with a 3-step "what happens next" (**#26**) ·
+**#7 (shop notification)** WhatsApp is now optional, the placeholder number
+is never offered (confirmation, account, Help page) · **#19** Buy Now goes to
+checkout · **#20** guest orders appear in the account created after them.
+
+Waiting: **#5** mobile money (to be connected later). Everything else below is
+still open.
+
 ## Who was tested
 
 | Persona | Device | Journey |

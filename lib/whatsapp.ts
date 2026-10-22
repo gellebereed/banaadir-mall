@@ -49,6 +49,16 @@ export const SUPPORT_WHATSAPP =
   process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || "252610000000";
 
 /**
+ * The support number only when one is really configured — "" otherwise.
+ *
+ * Anything a customer is ASKED to message or call must use this, not
+ * SUPPORT_WHATSAPP: on a site where the variable was never set, the
+ * fallback is a placeholder, and order details sent there (name, phone,
+ * address) reach nobody — or a stranger.
+ */
+export const SUPPORT_WHATSAPP_CONFIGURED = normalizeWhatsAppNumber(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP);
+
+/**
  * wa.me needs bare international digits: no `+`, spaces, dashes or
  * brackets, and no `00` trunk prefix. Sellers type numbers every one of
  * those ways, so normalise rather than reject.
@@ -96,6 +106,29 @@ export function formatWhatsAppNumber(raw: string | null | undefined): string {
     groups.unshift(digits.slice(Math.max(0, end - 3), end));
   }
   return `+${groups.join(" ")}`;
+}
+
+/**
+ * The number a customer typed at checkout, as a full international number
+ * for the country they picked: ("+252", "0615 22 33 44") → "+252 615 223 344".
+ *
+ * Checkout used to glue the country code onto whatever was typed, so the way
+ * most Somalis write their own number — with the leading 0 — was saved as
+ * "+252 0615…", a number the courier's call can never reach. The trunk 0 is
+ * dropped, and a country code the customer typed themselves is not doubled.
+ */
+export function internationalPhone(countryCode: string, typed: string): string {
+  const code = countryCode.replace(/\D/g, "");
+  const raw = typed.trim();
+  let digits = raw.replace(/\D/g, "");
+  if (raw.startsWith("+") || digits.startsWith("00")) {
+    // Already international ("+254…", "00252…") — trust their country code.
+    digits = digits.replace(/^00/, "");
+    return formatWhatsAppNumber(digits) || `+${digits}`;
+  }
+  if (digits.startsWith(code) && digits.length - code.length >= 7) digits = digits.slice(code.length);
+  digits = digits.replace(/^0+/, "");
+  return formatWhatsAppNumber(code + digits) || `${countryCode} ${digits}`;
 }
 
 /**

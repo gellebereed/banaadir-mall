@@ -2592,8 +2592,40 @@ export async function submitOrderAction(payload: {
    * message addressed to "*Store:*" with nothing after it.
    */
   parcels: ResolvedParcel[];
+  /** Set when the order was refused because the shelf can't cover it. */
+  shortages?: import("@/lib/stock-write").StockShortage[];
 }> {
-  const { id, customerName, customerPhone, customerEmail, address, city } = payload;
+  const { id, customerName, customerPhone, address, city } = payload;
+
+  /*
+   * A signed-in shopper's order is filed under THEIR account's email,
+   * whatever the optional email box said. Orders are matched to accounts
+   * by email alone (lib/order-utils.ts), so one placed with the box
+   * cleared would otherwise never appear under "My orders".
+   */
+  const session = await getSession();
+  const customerEmail = session?.role === "customer" ? session.email : payload.customerEmail;
+
+  // Refuse before anything is written — see findShortages.
+  const { findShortages } = await import("@/lib/stock-write");
+  const shortages = await findShortages(
+    payload.items.map((i) => ({
+      productId: i.productId,
+      qty: i.qty,
+      selectedColor: i.selectedColor,
+      selectedSize: i.selectedSize,
+    })),
+  );
+  if (shortages.length > 0) {
+    return {
+      ok: false,
+      message: shortages.map((s) => `${s.name}: only ${s.available} left`).join(" · "),
+      orderId: id,
+      discount: 0,
+      parcels: [],
+      shortages,
+    };
+  }
 
   /**
    * Resolve every line's store from the CATALOGUE, not from what the

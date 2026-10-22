@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { updateParcelDelivery, type SaveState } from "@/app/actions";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
@@ -51,12 +51,35 @@ export default function ParcelDispatch({
 
   const needsCourier = status === "shipped" || status === "delivered";
 
+  /*
+   * Choosing a status saves it.
+   *
+   * It used to wait for a small "Save" button that appeared beside the
+   * dropdown. Sellers changed the status, saw it change, and moved on — the
+   * order stayed "Order placed" and the customer's tracking page never moved.
+   * The submit runs after the re-render so the form posts the NEW status.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const [autoSave, setAutoSave] = useState(false);
+  useEffect(() => {
+    if (!autoSave) return;
+    setAutoSave(false);
+    formRef.current?.requestSubmit();
+  }, [autoSave]);
+
   function handleStatusChange(newStatus: OrderStatus) {
+    // One mis-tap must not cancel somebody's order.
+    if (newStatus === "cancelled" && !window.confirm("Cancel this order? The customer will see it as cancelled.")) {
+      return;
+    }
     setStatus(newStatus);
-    // Automatically open courier drawer if switching to shipped/delivered without driver details
+    // Shipped/delivered need a driver the customer can call: open the driver
+    // form instead, which saves with its own "Update Parcel" button.
     if ((newStatus === "shipped" || newStatus === "delivered") && !name) {
       setIsExpanded(true);
+      return;
     }
+    setAutoSave(true);
   }
 
   function useCourier(c: Courier) {
@@ -66,7 +89,7 @@ export default function ParcelDispatch({
   }
 
   return (
-    <form action={formAction} className="relative space-y-2">
+    <form ref={formRef} action={formAction} className="relative space-y-2">
       <input type="hidden" name="orderId" value={order.id} />
 
       {/* Main compact bar inside table cell */}
@@ -112,7 +135,7 @@ export default function ParcelDispatch({
           </button>
         ) : null}
 
-        {/* Quick Submit button if only status changed or panel open */}
+        {/* Retry if the automatic save didn't go through. */}
         {(!needsCourier || !isExpanded) && status !== order.status && (
           <SubmitButton className="rounded-full bg-ocean-700 px-3 py-1 text-[11px] font-bold text-white transition hover:bg-ocean-800">
             Save

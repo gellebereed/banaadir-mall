@@ -10,7 +10,8 @@ import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
 import { offerHeadline, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
-import { useCart } from "@/lib/cart-context";
+import { cartLineKey, useCart } from "@/lib/cart-context";
+import { useRouter } from "next/navigation";
 import { compact, discountPct, money } from "@/lib/format";
 import {
   colorOptions,
@@ -46,7 +47,8 @@ export default function ProductView({
   delivery?: MarketingSettings["delivery"];
   children?: ReactNode;
 }) {
-  const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const { addToCart, toggleWishlist, isWishlisted, lines } = useCart();
+  const router = useRouter();
   const t = useT();
 
   const withVariants = hasVariants(product);
@@ -172,6 +174,19 @@ export default function ProductView({
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);
+  }
+
+  /*
+   * Buy Now goes to checkout. It used to open the cart — Add to Cart plus an
+   * extra tap — which is not what anyone pressing "Buy Now" expects. A line
+   * already in the basket (same size and colour) is not added a second time:
+   * pressing Buy Now after Add to Cart must not quietly order two.
+   */
+  function handleBuyNow() {
+    if (soldOut) return;
+    const key = cartLineKey({ productId: product.id, variantId: variant?.id, color, size });
+    if (!lines.some((l) => cartLineKey(l) === key)) handleAdd();
+    router.push("/checkout");
   }
 
   /*
@@ -473,13 +488,14 @@ export default function ProductView({
             >
               {added ? t("product.added") : soldOut ? t("product.soldOut") : t("product.addToCart")}
             </button>
-            <Link
-              href="/cart"
-              onClick={handleAdd}
-              className={`btn-secondary whitespace-nowrap ${soldOut ? "pointer-events-none opacity-50" : ""}`}
+            <button
+              type="button"
+              onClick={handleBuyNow}
+              disabled={soldOut}
+              className="btn-secondary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("product.buyNow")}
-            </Link>
+            </button>
           </div>
         </div>
 
