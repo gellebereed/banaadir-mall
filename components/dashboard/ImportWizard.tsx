@@ -26,6 +26,7 @@ import {
   type PreviewPayload,
   type PreviewProduct,
 } from "@/app/vendor/products/import/actions";
+import { aiConversionPrompt } from "@/lib/import/ai-prompt";
 import type { CategoryScan, InspectResult } from "@/lib/import/pipeline";
 import {
   IMPORT_FIELDS,
@@ -509,8 +510,74 @@ function FileStep({
           choose which of your columns feeds each of ours — we pre-match
           everything we recognise.
         </p>
+
+        <AiPromptPanel />
       </div>
     </div>
+  );
+}
+
+/**
+ * The copy-ready prompt for sellers who convert their file with an AI chat.
+ * Collapsed by default: most files map themselves, and a wall of prompt
+ * text on the first screen would read as "you must do this first".
+ */
+function AiPromptPanel() {
+  const prompt = useMemo(() => aiConversionPrompt(), []);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+    } catch {
+      // The clipboard API is refused outside HTTPS and in some in-app
+      // browsers. Selecting the text still lets the seller copy it by hand.
+      textRef.current?.select();
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <details className="group mt-6 rounded-xl border border-sand-200 bg-white p-4 text-sm">
+      <summary className="cursor-pointer list-none font-semibold text-ocean-950">
+        <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
+        Converting your file with an AI tool?
+      </summary>
+
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-slate-600">
+        <li>Download the template above.</li>
+        <li>
+          Open an AI tool that accepts files (ChatGPT, Claude, Gemini) and
+          attach <strong>your file</strong> and <strong>the template</strong>.
+        </li>
+        <li>Copy the prompt below, paste it in and send.</li>
+        <li>
+          Download the CSV it gives back and upload it here. Check the row
+          count it reports matches your file.
+        </li>
+      </ol>
+
+      <textarea
+        ref={textRef}
+        readOnly
+        value={prompt}
+        rows={8}
+        aria-label="AI conversion prompt"
+        className="input mt-3 w-full resize-y font-mono !text-xs leading-relaxed"
+      />
+
+      <button type="button" onClick={copy} className="btn-primary mt-3 !px-5 !py-2 text-sm">
+        {copied ? "✓ Copied" : "Copy prompt"}
+      </button>
+
+      <p className="mt-3 text-xs text-slate-500">
+        AI tools can still make mistakes. The review step shows every product
+        before anything is saved — look it over there.
+      </p>
+    </details>
   );
 }
 
