@@ -207,7 +207,7 @@ export default function ProductView({
 
   return (
     <>
-    <div className="grid gap-8 lg:grid-cols-2">
+    <div className="grid gap-5 sm:gap-8 lg:grid-cols-2">
       {/* Sticky buy bar — phones only (the bottom nav is md:hidden too). */}
       <div
         aria-hidden={!showBar}
@@ -227,7 +227,7 @@ export default function ProductView({
             tabIndex={showBar ? 0 : -1}
             onClick={handleAdd}
             disabled={soldOut}
-            className="btn-primary !px-5 !py-2.5 text-sm disabled:opacity-50"
+            className="btn-primary shrink-0 whitespace-nowrap !px-5 !py-2.5 text-sm disabled:opacity-50"
           >
             {added ? "✓" : soldOut ? t("product.outOfStock") : t("product.addToCart")}
           </button>
@@ -331,8 +331,9 @@ export default function ProductView({
           </p>
         )}
 
-        {/* Price reflects the selected variant */}
-        <div className="mt-4 flex items-baseline gap-3">
+        {/* Price reflects the selected variant. Wraps on a narrow phone
+            rather than squeezing the "Save" pill against the edge. */}
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-display text-4xl font-extrabold text-ocean-950">
             {money(price)}
           </span>

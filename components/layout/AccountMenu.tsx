@@ -56,7 +56,7 @@ export default function AccountMenu({
       <div className="flex items-center gap-2">
         <Link
           href={here ? loginHref(here) : "/login"}
-          className="rounded-full px-3 py-2 text-sm font-bold text-ocean-800 transition hover:bg-ocean-50"
+          className="whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-bold text-ocean-800 transition hover:bg-ocean-50 sm:px-3"
         >
           {t("nav.signIn")}
         </Link>

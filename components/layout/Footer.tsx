@@ -92,7 +92,9 @@ export default async function Footer({ session }: { session: Session | null }) {
       )}
 
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        {/* grid-cols-1, not the implicit column: that one sizes to its widest
+            unbreakable line, which pushed 320px phones sideways on every page. */}
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           {/* Brand + newsletter */}
           <div>
             <div className="flex items-center gap-2.5">

@@ -126,16 +126,20 @@ export default async function ProductPage({ params }: Props) {
         Nesting them inside a max-width container turns each one into a
         coloured rectangle floating in the middle of the page.
       */}
-      <div className="mx-auto max-w-7xl px-4 pt-8">
+      <div className="mx-auto max-w-7xl px-4 pt-4 sm:pt-8">
       {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="mb-5 whitespace-nowrap text-sm text-slate-400">
-        <Link href="/" className="hover:text-ocean-700">Home</Link>
-        <span className="mx-2">/</span>
-        <Link href={`/category/${product.category}`} className="hover:text-ocean-700">
+      {/* One line that never runs past the screen: the product name takes
+          whatever is left and truncates. (A fixed 50vw for it pushed a 320px
+          phone's page sideways — sticky buy bar included.) On a phone the
+          "Home" step goes; the header logo already does that job. */}
+      <nav aria-label="Breadcrumb" className="mb-4 flex min-w-0 items-center whitespace-nowrap text-sm text-slate-400 sm:mb-5">
+        <Link href="/" className="hidden hover:text-ocean-700 sm:inline">Home</Link>
+        <span className="mx-2 hidden sm:inline">/</span>
+        <Link href={`/category/${product.category}`} className="shrink-0 hover:text-ocean-700">
           {category?.name}
         </Link>
-        <span className="mx-2">/</span>
-        <span className="inline-block max-w-[50vw] truncate align-bottom text-slate-600 sm:max-w-md">{product.name}</span>
+        <span className="mx-2 shrink-0">/</span>
+        <span className="min-w-0 truncate text-slate-600 sm:max-w-md">{product.name}</span>
       </nav>
 
       {/* Gallery + buy box (client) with the store card passed through */}
