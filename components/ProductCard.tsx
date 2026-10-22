@@ -194,7 +194,7 @@ export default function ProductCard({
         because a discount percentage is money and outranks everything.
       */}
       {(cornerBadge || product.badge) && (
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-col items-start gap-1.5">
+        <div className="absolute left-2 top-2 flex max-w-[calc(100%-3.25rem)] flex-col items-start gap-1.5 sm:left-3 sm:top-3 sm:max-w-[calc(100%-4rem)]">
           {cornerBadge}
           {product.badge && (!cornerBadge || product.badge === "Sale") && (
             <span
@@ -217,14 +217,14 @@ export default function ProductCard({
             images: mainImage ? [mainImage] : product.images,
           })
         }
-        className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full shadow-md transition active:scale-90 ${
+        className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition active:scale-90 sm:right-3 sm:top-3 sm:h-9 sm:w-9 ${
           wished ? "bg-coral-500 text-white" : "bg-white/90 text-slate-500 hover:text-coral-500"
         }`}
       >
         {wished ? "♥" : "♡"}
       </button>
 
-      <div className="flex flex-1 flex-col p-3.5">
+      <div className="flex flex-1 flex-col p-3 sm:p-3.5">
         <Link
           href={`/product/${product.slug}`}
           className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-slate-800 hover:text-ocean-700"
@@ -268,7 +268,7 @@ export default function ProductCard({
                 </span>
               )}
               {sizes.length > 0 && (
-                <span className="ml-auto text-[10px] font-medium text-slate-400">
+                <span className="ml-auto whitespace-nowrap text-[10px] font-medium text-slate-400">
                   {t("product.sizes", { n: sizes.length })}
                 </span>
               )}
@@ -284,11 +284,16 @@ export default function ProductCard({
         {/* Hairline above the price — separates "what it is" from "what it
             costs", and gives the row of cards a shared horizontal line to
             settle on instead of ending at whatever height the title left. */}
+        {/*
+          On a narrow phone card the old-price strike-through wraps under the
+          price rather than shoving the button out of the card — which is
+          what clipped "Options" in half.
+        */}
         <div className="mt-auto flex items-end justify-between gap-2 border-t border-sand-100 pt-2.5">
-          <div>
-            <div className="flex items-baseline gap-1.5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-1.5">
               {showFrom && <span className="text-[11px] text-slate-400">{t("product.from")}</span>}
-              <span className="font-display text-lg font-bold text-ocean-950">
+              <span className="font-display text-base font-bold text-ocean-950 sm:text-lg">
                 {money(price)}
               </span>
               {product.compareAt && product.compareAt > price && (
@@ -311,7 +316,7 @@ export default function ProductCard({
             <Link
               href={`/product/${product.slug}`}
               aria-label={`Choose options for ${product.name}`}
-              className="flex h-9 items-center rounded-full bg-ocean-700 px-3 text-[11px] font-bold text-white shadow-md transition hover:bg-mango-500"
+              className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-ocean-700 px-2.5 text-[11px] font-bold text-white shadow-md transition hover:bg-mango-500 sm:px-3"
             >
               {t("product.options")}
             </Link>
@@ -334,7 +339,7 @@ export default function ProductCard({
                   },
                 })
               }
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-ocean-700 text-lg text-white shadow-md transition hover:bg-mango-500 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ocean-700 text-lg text-white shadow-md transition hover:bg-mango-500 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               +
             </button>

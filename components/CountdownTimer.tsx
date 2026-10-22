@@ -41,8 +41,8 @@ export default function CountdownTimer({ endsAt }: { endsAt?: string }) {
         ];
 
   return (
-    <div className="flex items-center gap-1.5" aria-label="Deal ends in">
-      <span className="text-xs font-medium text-coral-600">{t("section.endsIn")}</span>
+    <div className="flex flex-wrap items-center gap-1.5" aria-label="Deal ends in">
+      <span className="whitespace-nowrap text-xs font-medium text-coral-600">{t("section.endsIn")}</span>
       {days > 0 && (
         <span className="rounded-md bg-coral-500 px-1.5 py-0.5 font-mono text-xs font-bold text-white">
           {days}d

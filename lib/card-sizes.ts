@@ -9,7 +9,7 @@
  */
 export const RAIL_ROW = "rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:gap-4";
 export const RAIL_CARD =
-  "flex w-[44%] shrink-0 snap-start md:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-3rem)/4)]";
+  "flex w-[46%] shrink-0 snap-start md:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-3rem)/4)]";
 
 /**
  * The same width for a row inside a padded panel (Flash Deals: p-4, p-6
@@ -17,4 +17,4 @@ export const RAIL_CARD =
  * is added back to land on the page-row width above.
  */
 export const PANEL_RAIL_CARD =
-  "flex w-[calc((100%+2rem)*0.44)] shrink-0 snap-start md:w-[calc((100%+1rem)/3)] lg:w-1/4";
+  "flex w-[calc((100%+2rem)*0.46)] shrink-0 snap-start md:w-[calc((100%+1rem)/3)] lg:w-1/4";

@@ -162,7 +162,7 @@ export default function HeroCarousel({
         filled the first screen left a phone visitor with no product, price
         or category to look at until they scrolled.
       */}
-      <div className="relative min-h-[80vw] sm:min-h-[480px] lg:min-h-[560px]">
+      <div className="relative min-h-[84vw] sm:min-h-[480px] lg:min-h-[560px]">
         {slides.map((slide, i) => (
           <HeroSlideView
             key={slide.id}
@@ -261,7 +261,7 @@ function HeroSlideView({
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/35 to-black/10 sm:bg-gradient-to-r sm:from-black/70 sm:via-black/30 sm:to-transparent" />
       )}
 
-      <div className="relative mx-auto grid h-full max-w-7xl content-end items-end gap-4 px-5 pb-10 pt-6 sm:content-center sm:items-center sm:gap-8 sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
+      <div className="relative mx-auto grid h-full max-w-7xl content-end items-end gap-3.5 px-5 pb-9 pt-5 sm:content-center sm:items-center sm:gap-8 sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
         <div className={active ? "animate-fade-up" : ""}>
           {slide.eyebrow && (
             <span className="hidden items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 sm:inline-flex text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm">
@@ -276,11 +276,11 @@ function HeroSlideView({
           )}
 
           {slide.subtitle && (
-            // A slide with something underneath (the countdown) drops its
-            // subtitle on a phone — the frame there has room for one.
+            // A slide with a picture side or a countdown drops its subtitle
+            // on a phone — the frame there has room for one or the other.
             <p
               className={`mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg ${
-                slide.below ? "hidden sm:block" : ""
+                slide.below || slide.visual ? "hidden sm:block" : ""
               }`}
             >
               {slide.subtitle}
@@ -292,7 +292,7 @@ function HeroSlideView({
           {(slide.cta || slide.secondaryCta) && (
             <div className="mt-4 flex flex-wrap items-center gap-3 sm:mt-6">
               {slide.cta && (
-                <Link href={slide.href} className="btn-primary !px-7">
+                <Link href={slide.href} className={`btn-primary !px-7 ${slide.visual ? "max-sm:!py-2.5 max-sm:text-sm" : ""}`}>
                   {slide.cta}
                 </Link>
               )}

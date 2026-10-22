@@ -397,37 +397,38 @@ function isVisibleSection(marketing: MarketingSettings, key: SectionKey): boolea
 }
 
 /**
- * A smart slide's products: three thumbnails on a phone (a row above the
- * headline), a 2 × 2 of cards with name and price on a computer. The
- * photos are lazy and small — the hero's first slide never waits on them.
+ * A smart slide's products: on a phone, three cards spanning the full width
+ * above the headline (they were 72px thumbnails huddled on the left); a row
+ * on a tablet; a 2 × 2 with name and price on a computer. Photos are lazy —
+ * the hero's first slide never waits on them.
  */
 function HeroShelf({ products }: { products: Product[] }) {
   return (
-    <div className="flex gap-2 sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
+    <div className="grid grid-cols-3 gap-2.5 sm:flex sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
       {products.map((p, i) => {
         const off = p.compareAt && p.compareAt > p.price ? discountPct(p.price, p.compareAt) : 0;
         return (
           <Link
             key={p.id}
             href={`/product/${p.slug}`}
-            className={`group relative block w-[4.5rem] shrink-0 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 lg:w-auto lg:rounded-2xl ${
+            className={`group relative block min-w-0 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 sm:shrink-0 lg:w-auto lg:rounded-2xl ${
               i === 3 ? "hidden sm:block" : ""
             }`}
           >
             <ProductImage
               product={p}
               iconClass="text-3xl lg:text-5xl"
-              sizes="(max-width: 1023px) 96px, 220px"
-              className="aspect-square w-full lg:aspect-[4/3]"
+              sizes="(max-width: 639px) 33vw, (max-width: 1023px) 96px, 220px"
+              className="aspect-[4/3] w-full sm:aspect-square lg:aspect-[4/3]"
             />
             {off > 0 && (
               <span className="absolute left-1.5 top-1.5 rounded-full bg-coral-500 px-1.5 py-0.5 text-[10px] font-extrabold text-white shadow-sm lg:left-2 lg:top-2 lg:text-xs">
                 −{off}%
               </span>
             )}
-            <div className="px-1.5 py-1 lg:px-3 lg:py-2">
+            <div className="px-2 py-1 lg:px-3 lg:py-2">
               <p className="hidden truncate text-xs font-semibold text-slate-700 group-hover:text-ocean-700 lg:block">{p.name}</p>
-              <p className="font-display text-[11px] font-extrabold text-ocean-950 lg:text-sm">
+              <p className="truncate font-display text-xs font-extrabold text-ocean-950 lg:text-sm">
                 {money(p.price)}
                 {off > 0 && p.compareAt && (
                   <span className="ml-1 hidden font-sans text-[11px] font-medium text-slate-400 line-through lg:inline">
@@ -446,16 +447,16 @@ function HeroShelf({ products }: { products: Product[] }) {
 /** The official brands' logos, on white tiles so every logo reads. */
 function BrandWall({ brands }: { brands: Store[] }) {
   return (
-    <div className="flex gap-2 sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
+    <div className="grid grid-cols-3 gap-2.5 sm:flex sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
       {brands.map((b, i) => (
         <Link
           key={b.slug}
           href={`/store/${b.slug}`}
-          className={`flex w-[4.5rem] shrink-0 flex-col items-center gap-1.5 rounded-xl bg-white p-2 shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 lg:w-auto lg:rounded-2xl lg:p-4 ${
+          className={`flex min-w-0 flex-col items-center gap-1.5 rounded-xl bg-white p-2.5 shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 sm:shrink-0 lg:w-auto lg:rounded-2xl lg:p-4 ${
             i === 3 ? "hidden sm:flex" : ""
           }`}
         >
-          <StoreAvatar store={b} size={64} className="h-10 w-10 rounded-lg lg:h-16 lg:w-16 lg:rounded-xl" />
+          <StoreAvatar store={b} size={64} className="h-12 w-12 rounded-lg lg:h-16 lg:w-16 lg:rounded-xl" />
           <span className="w-full truncate text-center text-[10px] font-bold text-slate-700 lg:text-sm">{b.name}</span>
         </Link>
       ))}
@@ -586,7 +587,7 @@ function OfficialBrands({ brands, t }: { brands: Store[]; t: T }) {
           <Link
             key={b.slug}
             href={`/store/${b.slug}`}
-            className="group relative flex aspect-[4/5] w-[44%] shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl p-5 text-white shadow-md transition hover:-translate-y-1 hover:shadow-2xl sm:aspect-[4/3] sm:w-auto"
+            className="group relative flex aspect-[4/5] w-[46%] shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl p-3.5 text-white shadow-md transition hover:-translate-y-1 hover:shadow-2xl sm:aspect-[4/3] sm:w-auto sm:p-5"
           >
             {b.banner ? (
               <Image
@@ -609,7 +610,7 @@ function OfficialBrands({ brands, t }: { brands: Store[]; t: T }) {
                 {b.name}
               </h3>
               <p className="mt-0.5 line-clamp-2 text-[11px] text-white/80">{b.tagline}</p>
-              <span className="mt-2.5 inline-block rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-bold ring-1 ring-white/30 backdrop-blur">
+              <span className="mt-2.5 inline-block whitespace-nowrap rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-bold ring-1 ring-white/30 backdrop-blur">
                 ★ {b.rating} · {t("brand.shopNow")}
               </span>
             </div>

@@ -62,9 +62,11 @@ export default function StoreCard({ store }: { store: Store }) {
           )}
         </div>
         <p className="text-xs text-slate-500">{store.tagline}</p>
-        <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
+        {/* Wraps as two tidy lines on a narrow card instead of splitting
+            "8.9k followers" across the rating. */}
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
           <Rating value={store.rating} />
-          <span>
+          <span className="whitespace-nowrap">
             📍 {store.city} · {compact(store.followers)} followers
           </span>
         </div>
