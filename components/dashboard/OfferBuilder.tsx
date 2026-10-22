@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { createOffer, type SaveState } from "@/app/actions";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { money } from "@/lib/format";
-import { offerHeadline, offerProblem, offerTerms, priceCart } from "@/lib/offers";
+import { offerCoverage, offerHeadline, offerProblem, offerTerms, priceCart } from "@/lib/offers";
 import type { Category, Offer, OfferKind, OfferProductRef, Product } from "@/lib/types";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
@@ -212,6 +212,7 @@ export default function OfferBuilder({
   const problem = kind ? offerProblem(offer) : null;
 
   const basket = kind ? exampleBasket(offer, products) : [];
+  const coverage = offerCoverage({ ...offer, productIds: [] }, products);
   const preview = priceCart(
     basket.map((b) => ({
       key: b.product.id,
@@ -291,8 +292,10 @@ export default function OfferBuilder({
               bundleIds: draft.bundle?.map((b) => b.productId),
               giftId: draft.gift?.productId,
               name: shownName,
-              startsAt,
-              endsAt,
+              // The browser knows the seller's time zone; the server doesn't.
+              // Send the exact moment, or "9:00" would start at 9:00 UTC.
+              startsAt: startsAt ? new Date(startsAt).toISOString() : "",
+              endsAt: endsAt ? new Date(endsAt).toISOString() : "",
             })}
           />
 
@@ -414,6 +417,17 @@ export default function OfferBuilder({
               <span className="block text-xs text-slate-500">
                 Items already on sale don&apos;t count — so a markdown and this offer never stack.
               </span>
+              {draft.fullPriceOnly && coverage.onSaleSkipped > 0 && (
+                <span
+                  className={`mt-2 block rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                    coverage.eligible === 0 ? "bg-coral-100 text-coral-700" : "bg-amber-50 text-amber-900"
+                  }`}
+                >
+                  {coverage.eligible === 0
+                    ? `⚠ Every one of your ${coverage.onSaleSkipped} products has a "was" price, so with this ticked the offer would apply to nothing and customers would never see it. Untick it.`
+                    : `${coverage.onSaleSkipped} of your products have a "was" price and won't count — ${coverage.eligible} will.`}
+                </span>
+              )}
             </span>
           </label>
 
@@ -514,7 +528,13 @@ export default function OfferBuilder({
             {problem ? (
               <p className="mt-3 text-sm font-semibold text-coral-600">⚠ {problem}</p>
             ) : basket.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">Add products to your shop to see an example.</p>
+              <p className="mt-3 text-sm text-slate-500">
+                {products.length === 0
+                  ? "Add products to your shop to see an example."
+                  : draft.fullPriceOnly && coverage.eligible === 0
+                    ? "None of your products qualify — they all have a \"was\" price. Untick \"Full-price items only\"."
+                    : "Choose the products for this offer to see an example."}
+              </p>
             ) : (
               <>
                 <ul className="mt-3 space-y-1.5 text-sm">

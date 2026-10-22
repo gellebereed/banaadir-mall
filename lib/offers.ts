@@ -511,6 +511,39 @@ export function priceCart(
 }
 
 /**
+ * Which of a shop's products an offer can actually reach — and why the
+ * rest can't. An offer that reaches nothing shows no badge and saves
+ * nobody anything, so the seller has to be told rather than left guessing.
+ */
+export interface OfferCoverage {
+  /** Products the offer applies to (and shows its badge on). */
+  eligible: number;
+  /** In scope, but skipped because they already have a "was" price. */
+  onSaleSkipped: number;
+  /** All the shop's visible products. */
+  total: number;
+}
+
+export function offerCoverage(
+  offer: Offer,
+  products: { id: string; price: number; compareAt?: number; hidden?: boolean }[],
+): OfferCoverage {
+  const visible = products.filter((p) => !p.hidden);
+  let eligible = 0;
+  let onSaleSkipped = 0;
+  for (const p of visible) {
+    const inScope =
+      offer.kind === "bundle"
+        ? (offer.bundle ?? []).some((b) => b.productId === p.id)
+        : !offer.productIds?.length || offer.productIds.includes(p.id);
+    if (!inScope) continue;
+    if (offer.fullPriceOnly && (p.compareAt ?? 0) > p.price) onSaleSkipped += 1;
+    else eligible += 1;
+  }
+  return { eligible, onSaleSkipped, total: visible.length };
+}
+
+/**
  * A line's units grouped by what was charged — one order item per price,
  * so "1 × Shirt $75" and "1 × Shirt $1 (Next for $1)" are separate lines a
  * picker and an accountant can both read.

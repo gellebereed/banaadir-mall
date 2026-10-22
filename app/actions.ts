@@ -1490,6 +1490,24 @@ export async function toggleOffer(id: string): Promise<void> {
   refresh();
 }
 
+/**
+ * Let a "full price only" offer count marked-down items too — the one-tap
+ * fix when every product already carries a "was" price and the offer
+ * reaches nothing.
+ */
+export async function includeSaleItemsInOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  const next = { ...found.offer, fullPriceOnly: false };
+  if (useSupabaseMutations()) await upsertOfferInSupabase(next);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).map((o) => (o.id === id ? next : o));
+    });
+  await logActivity(next.store, "offer.update", `Offer "${next.name}" now counts sale items too`, id);
+  refresh();
+}
+
 export async function deleteOffer(id: string): Promise<void> {
   const found = await findOwnOffer(id);
   if (!found) return;

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { deleteOffer, deletePromotion, toggleOffer, togglePromotion } from "@/app/actions";
+import { deleteOffer, deletePromotion, includeSaleItemsInOffer, toggleOffer, togglePromotion } from "@/app/actions";
 import MarketplaceOptIn from "@/components/dashboard/MarketplaceOptIn";
 import OfferBuilder from "@/components/dashboard/OfferBuilder";
 import PromotionForm from "@/components/dashboard/PromotionForm";
@@ -16,7 +16,7 @@ import {
   getPromotionsByStore,
   isPromotionLive,
 } from "@/lib/api";
-import { isOfferLive, offerHeadline, offerTerms, offerUsageFrom } from "@/lib/offers";
+import { isOfferLive, offerCoverage, offerHeadline, offerTerms, offerUsageFrom } from "@/lib/offers";
 import { getT } from "@/lib/prefs-server";
 import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
@@ -111,6 +111,7 @@ export default async function VendorPromotionsPage() {
             const live = isOfferLive(offer);
             const targeted = offer.productIds?.length ?? 0;
             const byId = usageById[offer.id];
+            const coverage = offerCoverage(offer, pricedProducts);
             const result = byId ? { orders: byId.uses, saved: byId.saved } : offerResults.get(offer.name);
             return (
               <div key={offer.id} className="card flex flex-wrap items-center gap-4 p-4">
@@ -162,6 +163,34 @@ export default async function VendorPromotionsPage() {
                           {money(result?.saved ?? 0)} of {money(offer.budget)} budget
                         </span>
                       )}
+                    </p>
+                  )}
+                  {/* Where customers will (and won't) see it — an offer that
+                      reaches no product is otherwise invisible to everyone. */}
+                  {coverage.eligible === 0 && coverage.onSaleSkipped > 0 ? (
+                    <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+                      <p className="font-semibold">
+                        ⚠ Customers can&apos;t see this offer: all {coverage.onSaleSkipped} product
+                        {coverage.onSaleSkipped === 1 ? "" : "s"} it covers already have a &ldquo;was&rdquo;
+                        price, and it is set to full-price items only.
+                      </p>
+                      <form action={includeSaleItemsInOffer.bind(null, offer.id)} className="mt-1.5">
+                        <button className="rounded-full bg-amber-600 px-3 py-1 font-bold text-white hover:bg-amber-700">
+                          Count sale items too
+                        </button>
+                      </form>
+                    </div>
+                  ) : coverage.eligible === 0 ? (
+                    <p className="mt-1 text-xs font-semibold text-amber-700">
+                      ⚠ This offer covers none of your visible products.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {offer.code
+                        ? `Coupon-only: applies to ${coverage.eligible} product${coverage.eligible === 1 ? "" : "s"} when the code is entered — no public badge, by design.`
+                        : `Shows on ${coverage.eligible} of your ${coverage.total} products`}
+                      {coverage.onSaleSkipped > 0 && ` · ${coverage.onSaleSkipped} skipped (already on sale)`}
+                      {!live && !offer.code && " — once it is live"}
                     </p>
                   )}
                 </div>
