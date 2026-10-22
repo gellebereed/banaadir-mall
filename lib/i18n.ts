@@ -117,6 +117,7 @@ const M = {
     so: "Summado caalami ah oo si gaar ah ugu jira Banaadir Mall",
   },
   "section.flash": { en: "Flash Deals", so: "Qiimo-dhimis Degdeg ah" },
+  "section.ended": { en: "Ended", so: "Wuu dhammaaday" },
   "section.flash.all": { en: "See all deals →", so: "Eeg dhammaan →" },
   "section.endsIn": { en: "Ends in", so: "Wuxuu dhammaanayaa" },
   "section.trending": { en: "Trending Now", so: "Hadda La Jecel Yahay" },

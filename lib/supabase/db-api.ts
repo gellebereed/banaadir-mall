@@ -8,6 +8,8 @@ import { getDataClient } from "./service";
 import type {
   Category,
   Employee,
+  FlashDeal,
+  FlashRequest,
   MarketingSettings,
   Order,
   Product,
@@ -430,6 +432,55 @@ async function fetchOffersFromSupabaseRaw(): Promise<Offer[] | null> {
   }
 }
 
+/**
+ * The flash-deal campaign (one row, id 1). Null when the table is missing
+ * or empty — the caller falls back to data/db.json.
+ */
+async function fetchFlashFromSupabaseRaw(): Promise<FlashDeal | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await getDataClient().from("flash_deals").select("*").eq("id", 1).maybeSingle();
+    if (error || !data) return null;
+    return {
+      active: data.active !== false,
+      name: data.name || "Flash Deals",
+      endsAt: data.ends_at || "",
+      productIds: Array.isArray(data.product_ids) ? data.product_ids.map(String) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sellers' flash applications. `select("*")` so a table still in the older
+ * shape (original_price / deal_price, no pct) reads rather than erroring;
+ * supabase/migration-flash.sql brings it up to date.
+ */
+async function fetchFlashRequestsFromSupabaseRaw(): Promise<FlashRequest[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getDataClient();
+    const data = await fetchAllRows((from, to) => supabase.from("flash_requests").select("*").range(from, to));
+    if (!data) return null;
+    return data.map((r) => {
+      const legacyPct =
+        r.original_price && r.deal_price ? Math.round((1 - Number(r.deal_price) / Number(r.original_price)) * 100) : 10;
+      return {
+        id: String(r.id),
+        store: r.store,
+        productId: r.product_id,
+        pct: Number(r.pct ?? legacyPct) || 10,
+        note: r.note || undefined,
+        status: (["pending", "approved", "rejected"].includes(r.status) ? r.status : "pending") as FlashRequest["status"],
+        date: r.date || r.submitted_at || String(r.created_at ?? "").slice(0, 10),
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** One `employees` row as the app's Employee. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEmployee(e: any): Employee {
@@ -603,6 +654,12 @@ export const fetchPromotionsFromSupabase = cached(
 
 export const fetchOffersFromSupabase = cached(
   fetchOffersFromSupabaseRaw, "offers", CACHE_TAGS.offers);
+
+export const fetchFlashFromSupabase = cached(
+  fetchFlashFromSupabaseRaw, "flash", CACHE_TAGS.flash);
+
+export const fetchFlashRequestsFromSupabase = cached(
+  fetchFlashRequestsFromSupabaseRaw, "flash-requests", CACHE_TAGS.flash);
 
 export const fetchEmployeesFromSupabase = cached(
   fetchEmployeesFromSupabaseRaw, "employees", CACHE_TAGS.employees);

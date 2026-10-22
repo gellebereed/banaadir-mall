@@ -171,11 +171,11 @@ export default async function HomePage() {
       title: best > 0 ? t("hero.flash.title", { pct: best }) : flash.name,
       subtitle: best > 0 ? flash.name : undefined,
       cta: t("hero.flash.cta"),
-      below: (
+      below: flash.endsAt ? (
         <span className="inline-flex rounded-full bg-white/95 px-3 py-1.5 shadow-sm">
           <CountdownTimer endsAt={flash.endsAt} />
         </span>
-      ),
+      ) : undefined,
       from: "#5c1a10",
       to: "#d9542c",
       visual: <HeroShelf products={flashProducts.slice(0, 4)} />,

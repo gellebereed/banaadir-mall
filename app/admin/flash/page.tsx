@@ -3,7 +3,10 @@ import Link from "next/link";
 import { decideFlashRequest } from "@/app/actions";
 import FlashDealForm from "@/components/dashboard/FlashDealForm";
 import ProductImage from "@/components/ProductImage";
+import { dealProblem, flashState } from "@/lib/flash";
+import { formatShopTime } from "@/lib/shop-time";
 import {
+  getAllProducts,
   getBaseProducts,
   getCategories,
   getFlashDeal,
@@ -20,13 +23,24 @@ export const metadata: Metadata = { title: "Flash Deals" };
  * application adds the product and creates the discount the seller offered.
  */
 export default async function AdminFlashPage() {
-  const [flash, requests, products, stores, categories] = await Promise.all([
+  const [flash, requests, products, priced, stores, categories] = await Promise.all([
     getFlashDeal(),
     getFlashRequests(),
     getBaseProducts(),
+    getAllProducts(),
     getStores(),
     getCategories(),
   ]);
+
+  const state = flashState(flash);
+  // Products in the campaign that the site will leave out, and why — so a
+  // full-price or sold-out product isn't a silent gap in the rail.
+  const pricedById = new Map(priced.map((p) => [p.id, p]));
+  // Only meaningful while live: paused, every flash price is off by design.
+  const problems = (state === "live" ? flash.productIds : [])
+    .map((id) => ({ id, product: pricedById.get(id), problem: dealProblem(pricedById.get(id)) }))
+    .filter((x) => x.problem);
+  const showing = flash.productIds.length - problems.length;
 
   const pending = requests.filter((r) => r.status === "pending");
   const decided = requests.filter((r) => r.status !== "pending").slice(0, 8);
@@ -40,9 +54,28 @@ export default async function AdminFlashPage() {
           <h1 className="font-display text-2xl font-extrabold text-ocean-950">
             ⚡ Flash Deals
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {flash.productIds.length} products in the campaign · {pending.length}{" "}
-            seller application{pending.length === 1 ? "" : "s"} waiting
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-extrabold ${
+                state === "live"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : state === "ended"
+                    ? "bg-coral-100 text-coral-700"
+                    : "bg-sand-200 text-slate-600"
+              }`}
+            >
+              {state === "live"
+                ? flash.endsAt
+                  ? `● Live until ${formatShopTime(flash.endsAt)}`
+                  : "● Live · no end time"
+                : state === "ended"
+                  ? `Ended ${formatShopTime(flash.endsAt)}`
+                  : "Paused"}
+            </span>
+            {flash.productIds.length > 0
+              ? `${showing} of ${flash.productIds.length} products showing`
+              : "Showing the best current markdowns"}{" "}
+            · {pending.length} seller application{pending.length === 1 ? "" : "s"} waiting
           </p>
         </div>
         <Link href="/admin/marketing" className="btn-secondary !px-4 !py-2 text-sm">
@@ -102,6 +135,30 @@ export default async function AdminFlashPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {state !== "live" && (
+        <p className="mt-5 rounded-xl bg-sand-100 px-4 py-3 text-sm text-slate-600">
+          {state === "ended"
+            ? "The end time has passed, so the flash rail is hidden and every flash price is back to normal. Set a new end time (or clear it) to run it again."
+            : "The campaign is paused: the rail is hidden and flash prices are off. Tick Active to start it."}
+        </p>
+      )}
+
+      {problems.length > 0 && (
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <h2 className="text-sm font-bold text-amber-900">
+            ⚠ {problems.length} product{problems.length === 1 ? "" : "s"} in the campaign {problems.length === 1 ? "isn't" : "aren't"} showing
+          </h2>
+          <ul className="mt-2 space-y-1 text-xs text-amber-900">
+            {problems.map((x) => (
+              <li key={x.id}>
+                <strong>{x.product?.name ?? productById(x.id)?.name ?? x.id}</strong>
+                {x.product && ` · ${storeName(x.product.store)}`} — {x.problem}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

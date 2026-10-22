@@ -5,6 +5,7 @@ import { updateFlashDeal, type SaveState } from "@/app/actions";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
+import { toShopInput } from "@/lib/shop-time";
 import type { Category, Product, Store } from "@/lib/types";
 
 const INITIAL: SaveState = { ok: false, message: "" };
@@ -42,9 +43,9 @@ export default function FlashDealForm({
         <div>
           <label htmlFor="flash-ends" className="label">
             Countdown ends{" "}
-            <span className="font-normal text-slate-400">(blank = midnight)</span>
+            <span className="font-normal text-slate-400">(Mogadishu time · blank = no end)</span>
           </label>
-          <input id="flash-ends" name="endsAt" type="datetime-local" defaultValue={flash.endsAt} className="input" />
+          <input id="flash-ends" name="endsAt" type="datetime-local" defaultValue={toShopInput(flash.endsAt)} className="input" />
         </div>
       </div>
 
@@ -57,7 +58,10 @@ export default function FlashDealForm({
           initial={flash.productIds}
         />
         <p className="mt-2 text-xs text-slate-400">
-          Leave empty to fall back to whatever is currently on sale.
+          Only products that are actually discounted and in stock appear on the site. Approved
+          seller applications get their discount while the campaign is on, and lose it the moment
+          it is paused, ends, or the product is taken out. Leave empty to show the best current
+          markdowns instead.
         </p>
       </div>
 

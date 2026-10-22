@@ -31,6 +31,17 @@ export function normaliseShopTime(value: unknown): string | undefined {
   return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
 }
 
+/**
+ * A stored moment as a `datetime-local` value ("2026-10-22T18:00") in
+ * Mogadishu time. The field rejects anything with a zone or seconds and
+ * shows blank instead — so a form re-saved without retyping lost its time.
+ */
+export function toShopInput(value: string | undefined): string {
+  const ms = value ? parseShopTime(value) : NaN;
+  if (Number.isNaN(ms)) return "";
+  return new Date(ms + 3 * 3600_000).toISOString().slice(0, 16);
+}
+
 /** Is a schedule window open at `now`? Empty ends mean "no limit". */
 export function inShopWindow(startsAt: string | undefined, endsAt: string | undefined, now = Date.now()): boolean {
   if (startsAt && parseShopTime(startsAt) > now) return false;

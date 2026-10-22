@@ -20,6 +20,8 @@ import type {
   CommissionSettings,
   Employee,
   EmployeeRole,
+  FlashDeal,
+  FlashRequest,
   EmployeeStatus,
   MarketingSettings,
   Permission,
@@ -684,6 +686,68 @@ export async function deleteOfferFromSupabase(id: string): Promise<boolean> {
   } catch (err) {
     console.error("[Supabase Mutations] deleteOffer exception:", err);
     return false;
+  }
+}
+
+// ── Flash deals ────────────────────────────────────────────────────────
+// Tables from supabase/migration-flash.sql.
+
+type FlashWrite = "ok" | "missing-table" | "error";
+
+function flashWriteResult(error: { code?: string; message?: string } | null, what: string): FlashWrite {
+  if (!error) return "ok";
+  console.error(`[Supabase Mutations] ${what} error:`, error.message);
+  return error.code === "42P01" || error.code === "42703" || error.code === "PGRST204" ||
+    /does not exist|Could not find the/i.test(error.message ?? "")
+    ? "missing-table"
+    : "error";
+}
+
+export async function saveFlashInSupabase(flash: FlashDeal): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { error } = await getDataClient().from("flash_deals").upsert(
+      { id: 1, active: flash.active, name: flash.name, ends_at: flash.endsAt, product_ids: flash.productIds },
+      { onConflict: "id" },
+    );
+    return flashWriteResult(error, "saveFlash");
+  } catch (err) {
+    console.error("[Supabase Mutations] saveFlash exception:", err);
+    return "error";
+  }
+}
+
+export async function upsertFlashRequestsInSupabase(requests: FlashRequest[]): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  if (requests.length === 0) return "ok";
+  try {
+    const { error } = await getDataClient().from("flash_requests").upsert(
+      requests.map((r) => ({
+        id: r.id,
+        store: r.store,
+        product_id: r.productId,
+        pct: r.pct,
+        note: r.note ?? null,
+        status: r.status,
+        date: r.date,
+      })),
+      { onConflict: "id" },
+    );
+    return flashWriteResult(error, "upsertFlashRequests");
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertFlashRequests exception:", err);
+    return "error";
+  }
+}
+
+export async function deleteFlashRequestFromSupabase(id: string): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { error } = await getDataClient().from("flash_requests").delete().eq("id", id);
+    return flashWriteResult(error, "deleteFlashRequest");
+  } catch (err) {
+    console.error("[Supabase Mutations] deleteFlashRequest exception:", err);
+    return "error";
   }
 }
 

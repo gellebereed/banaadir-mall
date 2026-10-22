@@ -17,7 +17,7 @@ export default function FlashRequestForm({
   products,
   categories,
 }: {
-  /** Products without an open application. */
+  /** Products not already waiting or in the campaign. */
   products: Product[];
   categories: Category[];
 }) {
@@ -27,7 +27,7 @@ export default function FlashRequestForm({
   if (products.length === 0) {
     return (
       <p className="mt-4 rounded-xl bg-sand-100 px-4 py-3 text-sm text-slate-600">
-        Every product already has an open application.
+        Every product is already waiting for review or in the campaign.
       </p>
     );
   }

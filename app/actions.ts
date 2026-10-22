@@ -19,6 +19,8 @@ import {
   getBaseProduct,
   getBaseProducts,
   getCategoryWithDescendants,
+  getFlashDeal,
+  getFlashRequests,
   getStore,
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
@@ -47,8 +49,10 @@ import {
   newInviteToken,
   saveEmployeeChange,
 } from "@/lib/employees";
-import { getSession } from "@/lib/session";
+import { getSession, requireVendor } from "@/lib/session";
 import type {
+  FlashDeal,
+  FlashRequest,
   Offer,
   Banner,
   CommissionRule,
@@ -71,6 +75,9 @@ import type {
 import { isUploadPlaceholder } from "@/lib/product-utils";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
+  saveFlashInSupabase,
+  upsertFlashRequestsInSupabase,
+  deleteFlashRequestFromSupabase,
   useSupabaseMutations,
   upsertProduct,
   fetchProductPhotoState,
@@ -3120,35 +3127,81 @@ export async function togglePromoTile(id: string): Promise<void> {
 
 // ── Flash deals ────────────────────────────────────────────────────────
 
+/**
+ * Saves flash-deal changes where they survive: Supabase (the tables from
+ * supabase/migration-flash.sql) and the local file. The local file alone is
+ * per-server memory on Netlify — which is how a campaign used to report
+ * "saved" and then disappear. Returns a message when the save failed.
+ */
+async function persistFlash(change: {
+  flash?: FlashDeal;
+  upsert?: FlashRequest[];
+  remove?: string[];
+}): Promise<string | null> {
+  if (useSupabaseMutations()) {
+    const results = await Promise.all([
+      change.flash ? saveFlashInSupabase(change.flash) : "ok",
+      change.upsert?.length ? upsertFlashRequestsInSupabase(change.upsert) : "ok",
+      ...(change.remove ?? []).map((id) => deleteFlashRequestFromSupabase(id)),
+    ]);
+    if (results.includes("missing-table")) {
+      return "Flash deals can't be saved yet — run supabase/migration-flash.sql in the Supabase SQL editor once.";
+    }
+    if (results.includes("error")) return "Couldn't save — please try again.";
+  }
+  await mutateDB((db) => {
+    if (change.flash) db.flash = change.flash;
+    for (const r of change.upsert ?? []) {
+      const i = db.flashRequests.findIndex((x) => x.id === r.id);
+      if (i >= 0) db.flashRequests[i] = r;
+      else db.flashRequests.push(r);
+    }
+    if (change.remove?.length) db.flashRequests = db.flashRequests.filter((r) => !change.remove!.includes(r.id));
+  });
+  refresh();
+  return null;
+}
+
 /** Admin: campaign name, countdown target and which products take part. */
 export async function updateFlashDeal(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
   await requireMarketing();
-  await mutateDB((db) => {
-    db.flash = {
-      active: formData.get("active") === "on",
-      name: String(formData.get("name")).trim() || "Flash Deals",
-      endsAt: normaliseShopTime(formData.get("endsAt")) ?? "",
-      productIds: formData.getAll("productIds").map(String),
-    };
-  });
-  refresh();
-  return { ok: true, message: "Flash deal campaign saved." };
+  const flash: FlashDeal = {
+    active: formData.get("active") === "on",
+    name: String(formData.get("name") ?? "").trim() || "Flash Deals",
+    endsAt: normaliseShopTime(formData.get("endsAt")) ?? "",
+    productIds: [...new Set(formData.getAll("productIds").map(String).filter(Boolean))],
+  };
+  if (flash.active && flash.endsAt && Date.parse(flash.endsAt) <= Date.now()) {
+    return { ok: false, message: "That end time has already passed — pick a later one, or clear it." };
+  }
+  const failed = await persistFlash({ flash });
+  if (failed) return { ok: false, message: failed };
+  return {
+    ok: true,
+    message: !flash.active
+      ? "Saved. The campaign is paused — flash prices are off."
+      : flash.endsAt
+        ? `Saved. Live until ${formatShopTime(flash.endsAt)} (Mogadishu time).`
+        : "Saved. Live with no end time.",
+  };
 }
 
 /**
  * Seller: apply for one or more products to join the flash-deal campaign.
- * Products already having an open application are skipped.
+ * Products already waiting or already in the campaign are skipped.
  */
 export async function requestFlashDeal(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
   const session = await requirePermission("promotions.manage");
-  const storeSlug =
-    session.role === "seller" && session.store ? session.store : "sahra-fashion";
+  // The store whose dashboard this is — an admin previewing a shop applies
+  // for THAT shop, not for whichever store used to be hard-coded here.
+  const { storeSlug } = await requireVendor();
+  if (session.role !== "admin") assertOwnsStore(session, storeSlug);
 
   const productIds = formData.getAll("productIds").map(String).filter(Boolean);
   if (productIds.length === 0) {
@@ -3162,78 +3215,80 @@ export async function requestFlashDeal(
     return { ok: false, message: "You can only submit your own products." };
   }
 
-  const pct = Math.min(90, Math.max(1, Number(formData.get("pct")) || 10));
-  const note = String(formData.get("note") ?? "").trim() || undefined;
+  const pct = Math.min(90, Math.max(1, Math.round(Number(formData.get("pct")) || 10)));
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300) || undefined;
   const stamp = Date.now().toString(36);
-  let added = 0;
+  const existing = await getFlashRequests(storeSlug);
+  // One open application per product, and none for a product already in.
+  const taken = new Set(existing.filter((r) => r.status !== "rejected").map((r) => r.productId));
+  const fresh: FlashRequest[] = owned
+    .filter((product) => !taken.has(product.id))
+    .map((product, i) => ({
+      id: `fr-${stamp}-${i}`,
+      store: storeSlug,
+      productId: product.id,
+      pct,
+      note,
+      status: "pending",
+      date: new Date().toISOString().slice(0, 10),
+    }));
 
-  await mutateDB((db) => {
-    owned.forEach((product, i) => {
-      // One open application per product.
-      if (db.flashRequests.some((r) => r.productId === product.id && r.status === "pending")) {
-        return;
-      }
-      db.flashRequests.push({
-        id: `fr-${stamp}-${i}`,
-        store: storeSlug,
-        productId: product.id,
-        pct,
-        note,
-        status: "pending",
-        date: new Date().toISOString().slice(0, 10),
-      });
-      added += 1;
-    });
-  });
-  refresh();
-
-  return added === 0
-    ? { ok: false, message: "Those products already have open applications." }
-    : {
-        ok: true,
-        message: `${added} application${added === 1 ? "" : "s"} submitted — our team will review them.`,
-      };
+  if (fresh.length === 0) {
+    return { ok: false, message: "Those products are already waiting or already in the campaign." };
+  }
+  const failed = await persistFlash({ upsert: fresh });
+  if (failed) return { ok: false, message: failed };
+  const skipped = owned.length - fresh.length;
+  return {
+    ok: true,
+    message:
+      `${fresh.length} application${fresh.length === 1 ? "" : "s"} submitted — our team will review them.` +
+      (skipped ? ` ${skipped} skipped (already applied).` : ""),
+  };
 }
 
 /**
- * Admin decision on a seller's flash-deal application. Approving adds the
- * product to the campaign and creates the discount the seller offered.
+ * Admin decision on a seller's flash-deal application. Approving puts the
+ * product in the campaign; its discount then runs exactly as long as the
+ * campaign does (lib/flash.ts) — no separate promotion to forget about.
  */
 export async function decideFlashRequest(
   id: string,
   decision: "approved" | "rejected",
 ): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const request = db.flashRequests.find((r) => r.id === id);
-    if (!request) return;
-    request.status = decision;
-    if (decision !== "approved") return;
-
-    if (!db.flash.productIds.includes(request.productId)) {
-      db.flash.productIds.push(request.productId);
-    }
-    db.promotions.push({
-      id: "promo-flash-" + request.id,
-      store: request.store,
-      name: `${db.flash.name} — approved`,
-      pct: request.pct,
-      active: true,
-      productIds: [request.productId],
-    });
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  const request = requests.find((r) => r.id === id);
+  if (!request) return;
+  const productIds =
+    decision === "approved"
+      ? [...new Set([...flash.productIds, request.productId])]
+      : flash.productIds.filter((p) => p !== request.productId);
+  const failed = await persistFlash({
+    upsert: [{ ...request, status: decision }],
+    flash: { ...flash, productIds },
   });
-  refresh();
+  if (failed) throw new Error(failed);
 }
 
+/**
+ * Seller: withdraw an application — or, once approved, leave the campaign.
+ * Leaving takes the product out, so its flash price ends with it.
+ */
 export async function withdrawFlashRequest(id: string): Promise<void> {
   const session = await requirePermission("promotions.manage");
-  await mutateDB((db) => {
-    const request = db.flashRequests.find((r) => r.id === id);
-    if (!request) return;
-    if (session.role !== "admin") assertOwnsStore(session, request.store);
-    db.flashRequests = db.flashRequests.filter((r) => r.id !== id);
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  const request = requests.find((r) => r.id === id);
+  if (!request) return;
+  if (session.role !== "admin") assertOwnsStore(session, request.store);
+  const failed = await persistFlash({
+    remove: [id],
+    flash:
+      request.status === "approved"
+        ? { ...flash, productIds: flash.productIds.filter((p) => p !== request.productId) }
+        : undefined,
   });
-  refresh();
+  if (failed) throw new Error(failed);
 }
 
 // ── Admin Category Actions ─────────────────────────────────────────────

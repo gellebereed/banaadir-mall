@@ -9,6 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal } from "./flash";
 import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
 import { orders as seedOrders } from "./data/orders";
@@ -28,6 +29,8 @@ import {
   fetchProductsFromSupabase,
   fetchPromotionsFromSupabase,
   fetchOffersFromSupabase,
+  fetchFlashFromSupabase,
+  fetchFlashRequestsFromSupabase,
   fetchRecoSettingsFromSupabase,
   fetchReviewsFromSupabase,
   fetchStoriesFromSupabase,
@@ -298,17 +301,27 @@ function discountPctFor(
   product: Product,
   promotions: Promotion[],
   campaign: Campaign,
+  flash: Map<string, number> = new Map(),
 ): number {
   const promo = promotions
     .filter(
       (p) =>
         isPromotionLive(p) &&
+        // Approvals used to create one of these, and it never ended. The
+        // flash discount now comes from the campaign itself (flashPct).
+        !isLegacyFlashPromotion(p.id) &&
         p.store === product.store &&
         (!p.productIds?.length || p.productIds.includes(product.id)),
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
   const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
-  return Math.max(promo, campaignPct);
+  return Math.max(promo, campaignPct, flash.get(product.id) ?? 0);
+}
+
+/** The flash discounts in force right now (lib/flash.ts). */
+async function flashPct(): Promise<Map<string, number>> {
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  return flashDiscounts(flash, requests);
 }
 
 interface Campaign {
@@ -324,15 +337,16 @@ async function campaignPct(): Promise<Campaign> {
 
 /** Discount percentage per product id, for dashboard tables and notices. */
 export async function getDiscountMap(storeSlug?: string): Promise<Record<string, number>> {
-  const [promotions, campaign, products] = await Promise.all([
+  const [promotions, campaign, products, flash] = await Promise.all([
     getPromotions(),
     campaignPct(),
     getBaseProducts(),
+    flashPct(),
   ]);
   const map: Record<string, number> = {};
   for (const p of products) {
     if (storeSlug && p.store !== storeSlug) continue;
-    const pct = discountPctFor(p, promotions, campaign);
+    const pct = discountPctFor(p, promotions, campaign, flash);
     if (pct > 0) map[p.id] = pct;
   }
   return map;
@@ -345,16 +359,17 @@ export async function getDiscountMap(storeSlug?: string): Promise<Record<string,
  * Includes hidden products; use getProducts() for the storefront.
  */
 export async function getAllProducts(): Promise<Product[]> {
-  const [base, promotions, campaign, offers] = await Promise.all([
+  const [base, promotions, campaign, offers, flash] = await Promise.all([
     getBaseProducts(),
     getPromotions(),
     campaignPct(),
     getOffers(),
+    flashPct(),
   ]);
   const live = offers.filter((o) => isOfferLive(o));
 
   return base.map((p) => {
-    const pct = discountPctFor(p, promotions, campaign);
+    const pct = discountPctFor(p, promotions, campaign, flash);
     const priced =
       pct <= 0
         ? p
@@ -784,29 +799,39 @@ export async function getSupplyMap(storeSlug: string): Promise<Map<string, Suppl
 
 // ── Flash deals ────────────────────────────────────────────────────────
 
+/**
+ * The campaign. Supabase when its table exists (migration-flash.sql) —
+ * data/db.json alone is per-server memory on Netlify, which is how edits
+ * used to report "saved" and then vanish.
+ */
 export async function getFlashDeal(): Promise<FlashDeal> {
-  return (await getDB()).flash;
+  return (await fetchFlashFromSupabase()) ?? (await getDB()).flash;
 }
 
 /**
- * Products in the flash-deal campaign. When the admin hasn't curated a
- * list yet, fall back to whatever is on sale so the rail is never empty.
+ * The flash rail: products in a LIVE campaign that are genuinely marked
+ * down and can be bought. A paused or ended campaign shows nothing; a
+ * product at full price or sold out is left out rather than sitting under
+ * "⚡ Flash Deals" as an advert for nothing. With no products picked, the
+ * best current markdowns stand in.
  */
 export async function getFlashProducts(): Promise<Product[]> {
   const [flash, products] = await Promise.all([
     getFlashDeal(),
     getMarketplaceProducts(),
   ]);
-  if (!flash.active) return [];
+  if (!isFlashLive(flash)) return [];
   if (flash.productIds.length > 0) {
-    return products.filter((p) => flash.productIds.includes(p.id));
+    const byId = new Map(products.map((p) => [p.id, p]));
+    return flash.productIds.map((id) => byId.get(id)).filter((p): p is Product => !!p && isRealDeal(p));
   }
-  return products.filter((p) => p.compareAt).slice(0, 8);
+  const pct = (p: Product) => 1 - p.price / (p.compareAt ?? p.price);
+  return products.filter(isRealDeal).sort((a, b) => pct(b) - pct(a)).slice(0, 8);
 }
 
 /** Flash-deal applications; pass a store slug to see just that seller's. */
 export async function getFlashRequests(storeSlug?: string): Promise<FlashRequest[]> {
-  const requests = (await getDB()).flashRequests;
+  const requests = (await fetchFlashRequestsFromSupabase()) ?? (await getDB()).flashRequests;
   return storeSlug ? requests.filter((r) => r.store === storeSlug) : requests;
 }
 
