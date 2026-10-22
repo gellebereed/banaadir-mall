@@ -5,6 +5,23 @@ export interface Country {
   phoneCode: string;
 }
 
+/**
+ * "+252 61 777 8899" → { countryCode: "SO", local: "617778899" }, for the
+ * checkout's separate country and number fields. A number without a known
+ * country code is taken as Somali and keeps its own digits.
+ */
+export function splitPhone(raw: string): { countryCode: string; local: string } {
+  const digits = raw.replace(/\D/g, "").replace(/^00/, "");
+  if (raw.trim().startsWith("+") || raw.trim().startsWith("00")) {
+    // Longest code first, so +2525… is never read as a +25 country.
+    const match = [...COUNTRIES]
+      .sort((a, b) => b.phoneCode.length - a.phoneCode.length)
+      .find((c) => digits.startsWith(c.phoneCode.replace(/\D/g, "")));
+    if (match) return { countryCode: match.code, local: digits.slice(match.phoneCode.replace(/\D/g, "").length) };
+  }
+  return { countryCode: "SO", local: digits };
+}
+
 export const COUNTRIES: Country[] = [
   { code: "SO", name: "Somalia", flag: "🇸🇴", phoneCode: "+252" },
   { code: "KE", name: "Kenya", flag: "🇰🇪", phoneCode: "+254" },

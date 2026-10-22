@@ -5,6 +5,7 @@ import { getBaseProducts, getOrders, getStore, getVendorStats } from "@/lib/api"
 import { money } from "@/lib/format";
 import { orderBelongsTo } from "@/lib/order-utils";
 import { getSession } from "@/lib/session";
+import StoreApplicationStatus from "@/components/account/StoreApplicationStatus";
 import SignOutButton from "@/components/SignOutButton";
 import StoreAvatar from "@/components/StoreAvatar";
 import AccountOrdersClient from "@/components/account/AccountOrdersClient";
@@ -55,6 +56,7 @@ export default async function AccountPage() {
   const isAdmin = session.role === "admin";
 
   const store = isSeller && session.store ? await getStore(session.store) : undefined;
+  const appliedStore = !isSeller && session.appliedStore ? await getStore(session.appliedStore) : undefined;
   const stats = store ? await getVendorStats(store.slug) : undefined;
 
   const allOrders = await getOrders();
@@ -144,6 +146,7 @@ export default async function AccountPage() {
       {/* `relative` puts these cards ABOVE the header they overlap — without
           it the header painted over the top half of the first card. */}
       <div className="relative mx-auto -mt-16 max-w-5xl space-y-4 px-4">
+        {appliedStore && <StoreApplicationStatus store={appliedStore} />}
         {/* ── My orders ────────────────────────────────────────────── */}
         <section className="card p-5">
           <div className="flex items-center justify-between gap-2">

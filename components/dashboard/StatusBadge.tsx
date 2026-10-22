@@ -1,3 +1,4 @@
+import type { MessageKey, T } from "@/lib/i18n";
 import type { OrderStatus } from "@/lib/types";
 
 const STATUS_CONFIG: Record<
@@ -50,9 +51,15 @@ const STATUS_CONFIG: Record<
 export default function StatusBadge({
   status,
   size = "md",
+  t,
 }: {
   status: OrderStatus;
   size?: "sm" | "md" | "lg";
+  /**
+   * The shopper's translator, on customer-facing screens. Absent on the
+   * admin and seller dashboards, which are English.
+   */
+  t?: T;
 }) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
   const padding = size === "sm" ? "px-2 py-0.5 text-[10px]" : size === "lg" ? "px-3.5 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]";
@@ -63,7 +70,7 @@ export default function StatusBadge({
     >
       <span className={`h-1.5 w-1.5 rounded-full ${config.dot} ${status === "delivered" ? "animate-pulse" : ""}`} />
       <span>{config.icon}</span>
-      <span>{config.label}</span>
+      <span>{t && STATUS_CONFIG[status] ? t(`status.${status}` as MessageKey) : config.label}</span>
     </span>
   );
 }

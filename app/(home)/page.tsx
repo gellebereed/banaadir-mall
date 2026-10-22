@@ -14,7 +14,8 @@ import ProductImage from "@/components/ProductImage";
 import { discountPct, money } from "@/lib/format";
 import { offerHeadline } from "@/lib/offers";
 import { getSession } from "@/lib/session";
-import { getT } from "@/lib/prefs-server";
+import { getLang, getT } from "@/lib/prefs-server";
+import { localizeMarketing } from "@/lib/marketing-copy";
 import { RAIL_CARD } from "@/lib/card-sizes";
 import type { T } from "@/lib/i18n";
 import {
@@ -38,7 +39,7 @@ import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, flashProducts, flash, bestsellers, newArrivals, stores, marketing, allProducts] =
+  const [categories, flashProducts, flash, bestsellers, newArrivals, stores, rawMarketing, allProducts] =
     await Promise.all([
       getCategories(),
       getFlashProducts(),
@@ -52,7 +53,9 @@ export default async function HomePage() {
 
   // Department artwork: the admin's chosen cover, or the best-selling
   // product's photo from inside that department. See categoryCovers().
-  const [session, t] = await Promise.all([getSession(), getT()]);
+  const [session, t, lang] = await Promise.all([getSession(), getT(), getLang()]);
+  // The hero copy in the shopper's language — lib/marketing-copy.ts.
+  const marketing = localizeMarketing(rawMarketing, lang);
   const myOrder = session?.role === "customer" ? await activeOrderFor(session.email) : null;
   // Capitalised: accounts created from an email address carry a
   // lower-case name ("ayaan"), which reads as a bug in a greeting.

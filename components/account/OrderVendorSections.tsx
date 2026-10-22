@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import OrderProgress, { LiveIndicator } from "@/components/track/OrderProgress";
@@ -48,6 +49,7 @@ export default function OrderVendorSections({
   fallbackStatus: OrderStatus;
   storeLabel: (slug: string, items: VendorLine[]) => string;
 }) {
+  const t = useT();
   const { parcels, justChanged, lastCheckedAt, live, refresh } = useLiveOrder(orderId);
 
   const byStore = new Map(parcels.map((parcel) => [parcel.order.store, parcel]));
@@ -106,7 +108,7 @@ export default function OrderVendorSections({
               </div>
 
               <div className="flex items-center gap-2">
-                <StatusBadge status={status} />
+                <StatusBadge status={status} t={t} />
                 {target && (
                   <a
                     href={whatsappLink(target, message)}

@@ -177,7 +177,45 @@ export async function resolveSession(email: string, authUser: User | null): Prom
     };
   }
 
-  return { session: { name: displayName(clean, authUser), email: clean, role: "customer" } };
+  /*
+   * ── Applied for a store, not bound as its owner ───────────────────────
+   * Approval is supposed to bind the applicant (bindStoreOwner). When that
+   * step didn't take — it only logs a warning on failure — the approved
+   * applicant kept signing in as a shopper and was sent away from the
+   * dashboard with nothing to say why. Their application is server-written
+   * app_metadata and only the admin can make the store active, so an active
+   * store here IS the approval: finish the binding now.
+   *
+   * `role === null` means the admin removed this owner (removeStoreOwner
+   * writes explicit nulls) — that must never be undone from here.
+   */
+  const applied = typeof authUser?.app_metadata?.applied_store === "string" ? authUser.app_metadata.applied_store : undefined;
+  if (authUser && applied && authUser.app_metadata?.role === undefined) {
+    const store = await getStore(applied);
+    if (store?.status === "active" && accountsEnabled()) {
+      const { error } = await adminClient().auth.admin.updateUserById(authUser.id, {
+        app_metadata: { ...authUser.app_metadata, role: "seller", store: applied },
+      });
+      if (!error) {
+        ownersChanged();
+        return { session: { name: store.name, email: clean, role: "seller", store: applied } };
+      }
+      console.warn(`[Accounts] Could not finish binding ${clean} to ${applied}:`, error.message);
+    }
+    if (store && store.status !== "active") {
+      return {
+        session: { name: displayName(clean, authUser), email: clean, role: "customer", appliedStore: applied, phone: phoneOf(authUser) },
+      };
+    }
+  }
+
+  return { session: { name: displayName(clean, authUser), email: clean, role: "customer", phone: phoneOf(authUser) } };
+}
+
+/** The phone the shopper registered with — theirs to edit, so only ever used to pre-fill their own forms. */
+function phoneOf(user: User | null): string | undefined {
+  const phone = user?.user_metadata?.phone;
+  return typeof phone === "string" && phone.trim() ? phone.trim() : undefined;
 }
 
 function displayName(email: string, user: User | null): string {
@@ -565,7 +603,9 @@ export async function removeStoreOwner(slug: string, email: string): Promise<voi
   // Explicit nulls: Supabase MERGES app_metadata, so leaving a key out
   // would leave it in place.
   const { error } = await adminClient().auth.admin.updateUserById(user.id, {
-    app_metadata: { role: null, store: null },
+    // applied_store too: otherwise the sign-in check above would see an
+    // approved application and make them the owner again.
+    app_metadata: { role: null, store: null, applied_store: null },
   });
   if (error) throw new Error(error.message);
   ownersChanged();

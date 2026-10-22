@@ -325,7 +325,7 @@ export default function AccountOrdersClient({
                       </p>
                       <p className="font-mono text-sm font-bold text-ocean-950">{t("orders.order", { id: order.id })}</p>
                     </div>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} t={t} />
                   </div>
 
                   {/* What's in it — the photos say more than a list. */}

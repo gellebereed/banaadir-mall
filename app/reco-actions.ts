@@ -167,12 +167,13 @@ async function saveReview(
     }
 
     const email = session.email.trim().toLowerCase();
-    const name = session.name.trim().toLowerCase();
+    // "Verified buyer" means THEIR delivered order — by email, never by a
+    // shared name (lib/order-utils.ts).
+    const { orderBelongsTo } = await import("@/lib/order-utils");
     const verified = orders.some(
       (order) =>
         order.status === "delivered" &&
-        (order.email?.trim().toLowerCase() === email ||
-          order.customer?.trim().toLowerCase() === name) &&
+        orderBelongsTo(order, session) &&
         (order.items ?? []).some((item) => item.productId === productId),
     );
 

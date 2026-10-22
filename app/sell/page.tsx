@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import StoreApplicationForm from "@/components/StoreApplicationForm";
+import { openApprovedStore } from "@/app/auth-actions";
 
 export const metadata: Metadata = {
   title: "Sell on Banaadir Mall",
@@ -30,6 +31,12 @@ const PERKS = [
  * application is in and what happens next.
  */
 const STATUS_NOTICES: Record<string, { icon: string; title: string; body: string; tone: string }> = {
+  approved: {
+    icon: "🎉",
+    title: "Your store is approved",
+    body: "Open your dashboard to add your products and start selling.",
+    tone: "border-emerald-300 bg-emerald-50 text-emerald-900",
+  },
   pending: {
     icon: "⏳",
     title: "Your store is awaiting approval",
@@ -75,6 +82,13 @@ export default async function SellPage({
               {notice.title}
             </p>
             <p className="mt-1.5 text-sm leading-relaxed opacity-90">{notice.body}</p>
+            {status === "approved" && (
+              <form action={openApprovedStore} className="mt-3">
+                <button type="submit" className="btn-primary !py-2 text-sm">
+                  Open my store dashboard →
+                </button>
+              </form>
+            )}
             {status === "pending" && (
               <Link
                 href="/help"

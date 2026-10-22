@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
+import type { MessageKey } from "@/lib/i18n";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { money } from "@/lib/format";
@@ -36,7 +38,12 @@ export default function ParcelCard({
   total: number;
   sharedWith?: string[];
 }) {
-  const journey = parcelJourney(order);
+  const t = useT();
+  const journey = parcelJourney(order).map((step) => ({
+    ...step,
+    label: t(`journey.${step.status}` as MessageKey),
+    text: t(`journey.${step.status}.text` as MessageKey),
+  }));
   const courier = order.delivery?.courier;
   const cancelled = order.status === "cancelled";
   const eta = estimateLabel(order.delivery?.estimatedAt);
@@ -61,7 +68,7 @@ export default function ParcelCard({
             </p>
           </div>
         </div>
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} t={t} />
       </div>
 
       {/* ── What's inside ─────────────────────────────────────────── */}

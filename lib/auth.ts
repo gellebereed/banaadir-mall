@@ -60,6 +60,20 @@ export interface Session {
    * before permissions existed, correctly falls back to.
    */
   permissions?: Permission[];
+  /**
+   * A shopper who has applied to open a store that isn't open yet. Their
+   * account page says so — before this, an applicant signing in landed on
+   * the shopper view with no sign that the application existed at all.
+   * The status shown is re-read live (app/account/page.tsx); this only
+   * says which store to look up.
+   */
+  appliedStore?: string;
+  /**
+   * The phone number the shopper gave when registering, as they typed it.
+   * Checkout fills it in — asking a signed-in customer for it again on
+   * every first order was the shop not paying attention.
+   */
+  phone?: string;
 }
 
 interface DemoUser extends Session {

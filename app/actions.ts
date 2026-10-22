@@ -50,6 +50,7 @@ import {
   saveEmployeeChange,
 } from "@/lib/employees";
 import { getSession, requireVendor } from "@/lib/session";
+import { MARKETING_COPY_FIELDS } from "@/lib/marketing-copy";
 import type {
   FlashDeal,
   FlashRequest,
@@ -2202,6 +2203,11 @@ export async function updateMarketing(
     heroTitleTop: String(formData.get("heroTitleTop")),
     heroTitleHighlight: String(formData.get("heroTitleHighlight")),
     heroSubtitle: String(formData.get("heroSubtitle")),
+    translations: {
+      so: Object.fromEntries(
+        MARKETING_COPY_FIELDS.map((field) => [field, String(formData.get(`${field}So`) ?? "").trim()]),
+      ),
+    },
     campaign: {
       active: formData.get("campaignActive") === "on",
       name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
@@ -2595,7 +2601,18 @@ export async function submitOrderAction(payload: {
   /** Set when the order was refused because the shelf can't cover it. */
   shortages?: import("@/lib/stock-write").StockShortage[];
 }> {
-  const { id, customerName, customerPhone, address, city } = payload;
+  const { customerName, customerPhone, address, city } = payload;
+
+  /*
+   * The number is the browser's suggestion, not a fact: a number already on
+   * an order would file two customers' parcels under one id. Issue a fresh
+   * one instead; the confirmation screen uses whatever comes back.
+   */
+  const { baseOrderId, newOrderId } = await import("@/lib/order-utils");
+  const { getOrders } = await import("@/lib/api");
+  const taken = new Set((await getOrders()).map((o) => baseOrderId(o.id).toLowerCase()));
+  let id = payload.id.trim();
+  while (!/^BM-\d{4,}$/.test(id) || taken.has(id.toLowerCase())) id = newOrderId();
 
   /*
    * A signed-in shopper's order is filed under THEIR account's email,

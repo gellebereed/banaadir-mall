@@ -26,7 +26,7 @@ import type { CoviewGraph } from "./coview";
 import { partnersOf, partnersOfSet } from "./affinity";
 import type { MomentumIndex } from "./momentum";
 import { risingProducts } from "./momentum";
-import type { SimilarityIndex } from "./similarity";
+import type { FeatureVector, SimilarityIndex } from "./similarity";
 import { nearestTo, similarity } from "./similarity";
 import type { Taste } from "./taste";
 import { tasteScore, topKeys } from "./taste";
@@ -215,27 +215,56 @@ export const completesSeed: Strategy = {
 
     /**
      * No purchase evidence yet — which is the normal case for a young
-     * marketplace and for every product listed this week. Two weaker but
-     * still defensible signals stand in, and the reason text says which
-     * one is being used rather than dressing either up as a co-purchase:
+     * marketplace and for every product listed this week. Weaker but still
+     * defensible signals stand in, and the reason text says which one is
+     * being used rather than dressing it up as a co-purchase:
      *
-     *   SAME SHOP, DIFFERENT DEPARTMENT. Sellers curate coherent ranges;
-     *   the shop selling the coffee maker is the one selling the mugs.
-     *   The claim on the card is only that they share a seller, which is
-     *   a fact the shopper can check by tapping through.
+     *   SAME SHOP. Sellers curate coherent ranges; the shop selling the
+     *   coffee maker is the one selling the mugs. The card only claims they
+     *   share a seller, which the shopper can check by tapping through.
      *
-     *   SHARED MATERIALS AND STYLE. Cross-category content similarity —
-     *   the same brand, season, fabric or design language.
+     *   A SMALLER ITEM FROM THE SAME DEPARTMENT. The charger for the phone,
+     *   the cap for the blazer. This used to skip the seed's own department
+     *   entirely — which is exactly where most add-ons live — and fill the
+     *   row from other departments instead.
+     *
+     *   A REAL SHARED TRAIT ACROSS DEPARTMENTS — the same brand, season or
+     *   attribute. Any overlap at all used to be enough (a 0.06 score), so
+     *   a football matched earbuds on a shared colour and the word "Pro",
+     *   and the card called that "brand and materials".
      */
     const seedVector = ctx.index.vectors.get(seed.id);
+    const department = ctx.categories.get(seed.category)?.name ?? "Same department";
     const contextual: Candidate[] = [];
 
     for (const product of ctx.products) {
-      if (product.category === seed.category) continue;
-
-      const content = similarity(seedVector, ctx.index.vectors.get(product.id));
+      if (product.id === seed.id) continue;
+      const vector = ctx.index.vectors.get(product.id);
+      const content = similarity(seedVector, vector);
       const sameStore = product.store === seed.store;
-      if (!sameStore && content < 0.06) continue;
+
+      if (product.category === seed.category) {
+        // An add-on, not another version of the same thing — that is
+        // "You may also like". Clearly cheaper, and not the same subcategory.
+        const addOn =
+          product.price <= seed.price * 0.6 &&
+          !(product.subcategory && product.subcategory === seed.subcategory);
+        if (!addOn) continue;
+        contextual.push({
+          id: product.id,
+          score: 0.2 + content * 0.5 + (sameStore ? 0.12 : 0),
+          reason: {
+            kind: "completes" as const,
+            text: `${department} add-on for ${seed.name}`,
+            anchorId: seed.id,
+            anchorName: seed.name,
+          },
+        });
+        continue;
+      }
+
+      const trait = sharedTrait(seedVector, vector);
+      if (!sameStore && !trait) continue;
 
       contextual.push({
         id: product.id,
@@ -249,7 +278,7 @@ export const completesSeed: Strategy = {
             }
           : {
               kind: "completes" as const,
-              text: `Matches ${seed.name} on brand and materials`,
+              text: `Same ${trait} as ${seed.name}`,
               anchorId: seed.id,
               anchorName: seed.name,
             },
@@ -260,6 +289,22 @@ export const completesSeed: Strategy = {
     return [...fromOrders, ...contextual.slice(0, DEPTH)];
   },
 };
+
+/**
+ * The first trait two products really share — "brand", "season" or an
+ * attribute like "fabric" — or undefined. Colours, price bands and loose
+ * words don't count: they are what made a football "match" earbuds.
+ */
+function sharedTrait(a: FeatureVector | undefined, b: FeatureVector | undefined): string | undefined {
+  if (!a || !b) return undefined;
+  for (const key of a.keys()) {
+    if (!b.has(key)) continue;
+    if (key.startsWith("brand:")) return "brand";
+    if (key.startsWith("season:")) return "season";
+    if (key.startsWith("attr:")) return key.split(":")[1]?.replace(/[-_]/g, " ") || "style";
+  }
+  return undefined;
+}
 
 export const moreFromSeedStore: Strategy = {
   key: "seed-store",
@@ -404,7 +449,10 @@ export const becauseYouSaved: Strategy = {
           id: hit.id,
           score: hit.score,
           reason: {
-            kind: "saved",
+            // "similar", not "saved": these are NOT on the wishlist, and a
+            // "You saved" badge on them told shoppers they had saved things
+            // they never had.
+            kind: "similar",
             text: `Like ${anchor.name}, which you saved`,
             anchorId: anchor.id,
             anchorName: anchor.name,
@@ -501,6 +549,26 @@ export const completesBasket: Strategy = {
         together: `Bought together with your ${name}`,
       }),
     ),
+};
+
+/**
+ * The saved items themselves, minus what is already in the basket — for
+ * the cart's "Still on your wishlist" shelf. That shelf used to be filled
+ * by becauseYouSaved, which leaves the saved items OUT by design, so under
+ * "Products you saved earlier" it showed only things nobody had saved.
+ */
+export const stillWished: Strategy = {
+  key: "wished",
+  run: (ctx) =>
+    [...ctx.taste.wished]
+      // The wishlist is kept oldest first; the latest saves lead the shelf.
+      .reverse()
+      .filter((id) => ctx.byId.has(id) && !ctx.cartIds.includes(id))
+      .map((id, i) => ({
+        id,
+        score: 1 - i * 0.01,
+        reason: { kind: "saved" as const, text: "You saved this", anchorId: id, anchorName: ctx.byId.get(id)!.name },
+      })),
 };
 
 /** The same idea seeded from the wishlist, for the saved-items page. */
@@ -787,6 +855,7 @@ export const ALL_STRATEGIES: Strategy[] = [
   fromTaste,
   continueBrowsing,
   becauseYouSaved,
+  stillWished,
   completesBasket,
   completesSaved,
   priceDrops,

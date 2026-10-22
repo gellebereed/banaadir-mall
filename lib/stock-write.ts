@@ -14,7 +14,10 @@ import { updateProductFields, useSupabaseMutations } from "./supabase/mutations"
 import type { Product } from "./types";
 
 /** Save new stock fields for one product. */
-export async function saveStock(productId: string, fields: Pick<Product, "stock"> & Partial<Pick<Product, "variants">>): Promise<boolean> {
+export async function saveStock(
+  productId: string,
+  fields: Pick<Product, "stock"> & Partial<Pick<Product, "variants" | "sold">>,
+): Promise<boolean> {
   if (useSupabaseMutations()) return updateProductFields(productId, fields);
   await mutateDB((db) => {
     db.productOverrides[productId] = { ...db.productOverrides[productId], ...fields };
@@ -91,6 +94,9 @@ export async function deductStock(
   for (const [productId, productLines] of byProduct) {
     const product = await getBaseProduct(productId);
     if (!product) continue;
+    // The "sold" count on product cards and the seller's list. It never
+    // moved with real orders — a product kept saying "Sold 0" after selling.
+    const sold = productLines.reduce((t, l) => t + l.qty, 0);
     if (product.variants?.length) {
       const changes = new Map<string, number>();
       for (const line of productLines) {
@@ -100,10 +106,12 @@ export async function deductStock(
         changes.set(variant.id, Math.max(0, current - line.qty));
       }
       if (changes.size === 0) continue;
-      await saveStock(productId, applyToProduct(product, [...changes].map(([variantId, to]) => ({ variantId, to }))));
+      await saveStock(productId, {
+        ...applyToProduct(product, [...changes].map(([variantId, to]) => ({ variantId, to }))),
+        sold: (product.sold ?? 0) + sold,
+      });
     } else {
-      const sold = productLines.reduce((t, l) => t + l.qty, 0);
-      await saveStock(productId, { stock: Math.max(0, product.stock - sold) });
+      await saveStock(productId, { stock: Math.max(0, product.stock - sold), sold: (product.sold ?? 0) + sold });
     }
   }
 }

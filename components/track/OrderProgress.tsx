@@ -1,6 +1,8 @@
 "use client";
 
 import { JOURNEY_STEPS, parcelJourney, stampLabel } from "@/lib/delivery";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
+import type { MessageKey } from "@/lib/i18n";
 import type { Order } from "@/lib/types";
 
 /**
@@ -33,16 +35,21 @@ export default function OrderProgress({
   highlight?: boolean;
   compact?: boolean;
 }) {
+  const { t } = usePrefs();
   if (order.status === "cancelled") {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-coral-100/60 px-3 py-2 text-xs font-semibold text-coral-700">
         <span>✕</span>
-        <span>This parcel was cancelled. The rest of the order is unaffected.</span>
+        <span>{t("journey.cancelled")}</span>
       </div>
     );
   }
 
-  const journey = parcelJourney(order);
+  const journey = parcelJourney(order).map((step) => ({
+    ...step,
+    label: t(`journey.${step.status}` as MessageKey),
+    text: t(`journey.${step.status}.text` as MessageKey),
+  }));
   const currentIndex = journey.findIndex((step) => step.current);
   const lastIndex = JOURNEY_STEPS.length - 1;
 

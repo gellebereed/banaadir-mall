@@ -112,9 +112,14 @@ export async function clearSessionCookie(): Promise<void> {
 export async function requireVendor(): Promise<{ session: Session; storeSlug: string }> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role === "customer") redirect("/sell");
-
   const { getStore, getStores } = await import("./api");
+
+  if (session.role === "customer") {
+    // An applicant is told where their application stands, not handed the
+    // application form again as if nothing had happened.
+    const applied = session.appliedStore ? await getStore(session.appliedStore) : undefined;
+    redirect(applied ? `/sell?status=${applied.status === "active" ? "approved" : applied.status}` : "/sell");
+  }
 
   if (session.role === "admin") {
     // An admin who has picked a store through the switcher stays in it;

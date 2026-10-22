@@ -595,7 +595,7 @@ function ZoomableImage({
   const [origin, setOrigin] = useState("50% 50%");
   const [zooming, setZooming] = useState(false);
   // Light data mode: screen width at normal quality (the zoom gets softer).
-  const { lite } = usePrefs();
+  const { lite, t } = usePrefs();
   const [lightbox, setLightbox] = useState(false);
   const touchStartX = useRef<number | null>(null);
 
@@ -702,8 +702,10 @@ function ZoomableImage({
           </>
         )}
 
-        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
-          🔍 Hover to zoom · click to expand
+        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 pointer-coarse:opacity-100">
+          {/* Phones can't hover — they were told to. */}
+          <span className="pointer-coarse:hidden">{t("product.zoomHint")}</span>
+          <span className="hidden pointer-coarse:inline">{t("product.zoomHintTouch")}</span>
         </span>
       </div>
 

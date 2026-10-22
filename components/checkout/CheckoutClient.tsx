@@ -39,7 +39,7 @@ import {
   type SavedAddress,
 } from "@/lib/addresses";
 import type { CheckoutDefaults } from "@/app/checkout/page";
-import { groupByStore, vendorOrderIds } from "@/lib/order-utils";
+import { groupByStore, newOrderId, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
 import type { MarketingSettings, Store } from "@/lib/types";
 import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
@@ -354,8 +354,8 @@ export default function CheckoutClient({
   // Our own messages instead of the browser's bubbles: they speak the
   // shopper's language, say what is wrong, and every problem shows at once.
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
-  /** Set when the server refused the order because the shelf ran short. */
-  const [stockError, setStockError] = useState<string | null>(null);
+  /** Why the order was not placed — the shelf ran short, or it never reached us. */
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const clearError = (field: Field) =>
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
 
@@ -386,8 +386,10 @@ export default function CheckoutClient({
     }
 
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    const orderId = `BM-${Math.floor(10000 + Math.random() * 90000)}`;
+    // The server may issue a different number (submitOrderAction) — `let`.
+    let orderId = newOrderId();
     const fullPhone = internationalPhone(selectedCountry.phoneCode, phone);
     const destinationCity = city === "Other" ? customCity : city;
     const fullAddress = `${district ? district + ", " : ""}${destinationCity}, ${selectedCountry.name}`;
@@ -413,47 +415,57 @@ export default function CheckoutClient({
         isDefault: addresses.length === 0,
       });
       writeAddresses(scope, book);
-
-      // Save order to user's order history
-      const existingUserOrders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
-      const newOrderEntry = {
-        id: orderId,
-        date: new Date().toISOString().slice(0, 10),
-        customer: name,
-        // Stored alongside the name because the account page matches on it
-        // first — without it, this browser-side copy can only ever be found
-        // by name, which is not unique.
-        email,
-        phone: fullPhone,
-        city: destinationCity,
-        address: fullAddress,
-        total,
-        status: "pending",
-        items: lines.map((l) => ({
-          productId: l.product.id,
-          name: l.product.name,
-          price: priceOf(l),
-          qty: l.qty,
-          store: l.product.store,
-          // Captured now so tracking can name the shop properly later,
-          // without depending on the order having reached the server.
-          storeName: stores.find((s) => s.slug === l.product.store)?.name,
-          image: l.product.images?.[0] || l.product.art?.from,
-          selectedColor: l.color,
-          selectedSize: l.size,
-        })),
-      };
-      localStorage.setItem(ordersKey, JSON.stringify([newOrderEntry, ...existingUserOrders]));
     } catch {
       // Ignore storage errors
     }
+
+    /*
+     * This phone's copy of the order — what "My orders" and /track show from
+     * this device. Written only once the server has the order: it used to be
+     * saved first, so an order that failed, or was refused for stock, still
+     * appeared in the customer's history as if it had been placed.
+     */
+    const keepLocalCopy = () => {
+      try {
+        const existingUserOrders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
+        const newOrderEntry = {
+          id: orderId,
+          date: new Date().toISOString().slice(0, 10),
+          customer: name,
+          // Orders are matched to accounts by email (lib/order-utils.ts).
+          email,
+          phone: fullPhone,
+          city: destinationCity,
+          address: fullAddress,
+          total,
+          status: "pending",
+          items: lines.map((l) => ({
+            productId: l.product.id,
+            name: l.product.name,
+            price: priceOf(l),
+            qty: l.qty,
+            store: l.product.store,
+            // Captured now so tracking can name the shop properly later,
+            // without depending on the order having reached the server.
+            storeName: stores.find((s) => s.slug === l.product.store)?.name,
+            // A photo or nothing — never the product's background colour, which
+            // went into an <Image> as a URL and broke on the account page.
+            image: l.product.images?.[0],
+            selectedColor: l.color,
+            selectedSize: l.size,
+          })),
+        };
+        localStorage.setItem(ordersKey, JSON.stringify([newOrderEntry, ...existingUserOrders]));
+      } catch {
+        // Ignore storage errors
+      }
+    };
 
     // Parcels as the SERVER resolved them — authoritative, because it looks
     // every product up in the catalogue instead of trusting a cart snapshot
     // that may carry no store at all.
     let serverParcels: PlacedParcel[] | undefined;
-    // What the server actually took off. Assumed to be what was shown if
-    // the call fails — the order then never reached it anyway.
+    // What the server actually took off; the cart's figure until it answers.
     let savedOnServer = discount;
 
     try {
@@ -501,7 +513,7 @@ export default function CheckoutClient({
           );
           if (line) updateQty(cartLineKey(line), short.available);
         }
-        setStockError(
+        setSubmitError(
           t("checkout.err.stock", {
             items: result.shortages
               .map((s) =>
@@ -516,11 +528,28 @@ export default function CheckoutClient({
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
+      if (!result?.ok) {
+        setSubmitError(result?.message || t("checkout.err.notPlaced"));
+        setIsSubmitting(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      orderId = result.orderId || orderId;
       if (result?.parcels?.length) serverParcels = result.parcels;
       if (typeof result?.discount === "number") savedOnServer = result.discount;
     } catch (err) {
-      console.warn("Order submission sync warning:", err);
+      /*
+       * The order did NOT reach the server. This used to log a warning and
+       * carry on to "Order confirmed" — the customer waited for a parcel no
+       * shop knew about. Keep the basket and say so.
+       */
+      console.warn("Order submission failed:", err);
+      setSubmitError(t("checkout.err.notPlaced"));
+      setIsSubmitting(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
+    keepLocalCopy();
 
     // Snapshot the order BEFORE clearing the cart — the confirmation screen
     // builds each vendor's message from it, and `lines` is empty by then.
@@ -852,9 +881,9 @@ export default function CheckoutClient({
               {t("checkout.err.summary")}
             </p>
           )}
-          {stockError && (
+          {submitError && (
             <p className="rounded-2xl border border-coral-100 bg-coral-100/60 px-4 py-3 text-sm font-semibold text-coral-700" role="alert">
-              {stockError}
+              {submitError}
             </p>
           )}
 

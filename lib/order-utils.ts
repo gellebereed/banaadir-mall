@@ -133,6 +133,23 @@ export function baseOrderId(orderId: string): string {
 }
 
 /**
+ * A new customer-facing order number: "BM-" and ten random digits.
+ *
+ * It used to be five (BM-10000…BM-99999). With that few, two customers
+ * were likely to share a number after a few hundred orders, and anyone
+ * could type numbers into /track until one showed somebody's parcel.
+ * Ten digits keeps the "BM-<digits>" shape every parser here expects
+ * (baseOrderId, the tracking box), and submitOrderAction still refuses a
+ * number that is already taken.
+ */
+export function newOrderId(): string {
+  const digits = new Uint32Array(2);
+  globalThis.crypto.getRandomValues(digits);
+  const n = (digits[0] % 100_000) * 100_000 + (digits[1] % 100_000);
+  return `BM-${String(n).padStart(10, "0")}`;
+}
+
+/**
  * Is this order the signed-in shopper's?
  *
  * Matched on the order's email ALONE. An order with no email belongs to no

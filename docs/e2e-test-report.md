@@ -16,8 +16,23 @@ confirmation screen in Somali, with a 3-step "what happens next" (**#26**) ·
 is never offered (confirmation, account, Help page) · **#19** Buy Now goes to
 checkout · **#20** guest orders appear in the account created after them.
 
-Waiting: **#5** mobile money (to be connected later). Everything else below is
-still open.
+Second round, also re-tested: **#27** store applicants — a pending applicant
+sees "awaiting approval" on their account; an approved one is linked as owner
+at sign-in even if approval didn't link them, with an "Open my store
+dashboard" button · checkout no longer says "Order confirmed" when the order
+failed to save · **#30** order numbers are 10 random digits and the server
+refuses a taken one · **#22–24** Somali home hero, top bar (admin can write
+their own Somali; needs `supabase/migration-marketing-translations.sql`),
+status labels, tracking steps, zoom hint, one word for cart · **#12** phone
+from registration pre-filled; checkout pre-fill and "verified buyer" no longer
+match by name · **#8** dashboard says where "awaiting action" orders come from
+· **#11** sold count rises with orders · **#13** a promo no shop accepts no
+longer shows as applied · **#14** suggestions: real same-department add-ons,
+cross-department only on a real shared trait; the cart's wishlist shelf shows
+the saved items themselves · **#18** broken thumbnails.
+
+Waiting: **#5** mobile money (to be connected later). Still open: #9, #10, #15,
+#16, #17, #21, #29, and the rest of the tracking page text in Somali.
 
 ## Who was tested
 

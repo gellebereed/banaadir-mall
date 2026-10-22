@@ -54,6 +54,14 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
               placeholder="e.g. **FREE DELIVERY** in Mogadishu on orders over $25 · Pay with *EVC Plus, Zaad & eDahab*"
               className="input"
             />
+            {/* Shown to shoppers who switch to Somali — lib/marketing-copy.ts. */}
+            <input
+              id="announcementSo"
+              name="announcementSo"
+              defaultValue={marketing.translations?.so?.announcement ?? ""}
+              placeholder="🇸🇴 Same text in Somali (optional)"
+              className="input mt-2"
+            />
             <p className="mt-1 text-xs text-slate-400">
               Tip: Surround words with <code>**bold text**</code> to make them bold, or <code>*italic text*</code> to italicize.
             </p>
@@ -179,20 +187,27 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
           <div className="pt-2">
             <label htmlFor="heroBadge" className="label">Hero badge</label>
             <input id="heroBadge" name="heroBadge" required defaultValue={marketing.heroBadge} className="input" />
+            <input id="heroBadgeSo" name="heroBadgeSo" defaultValue={marketing.translations?.so?.heroBadge ?? ""} placeholder="🇸🇴 In Somali (optional)" className="input mt-2" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="heroTitleTop" className="label">Hero title — first line</label>
               <input id="heroTitleTop" name="heroTitleTop" required defaultValue={marketing.heroTitleTop} className="input" />
+              <input id="heroTitleTopSo" name="heroTitleTopSo" defaultValue={marketing.translations?.so?.heroTitleTop ?? ""} placeholder="🇸🇴 In Somali (optional)" className="input mt-2" />
             </div>
             <div>
               <label htmlFor="heroTitleHighlight" className="label">Hero title — highlighted line</label>
               <input id="heroTitleHighlight" name="heroTitleHighlight" required defaultValue={marketing.heroTitleHighlight} className="input" />
+              <input id="heroTitleHighlightSo" name="heroTitleHighlightSo" defaultValue={marketing.translations?.so?.heroTitleHighlight ?? ""} placeholder="🇸🇴 In Somali (optional)" className="input mt-2" />
             </div>
           </div>
           <div>
             <label htmlFor="heroSubtitle" className="label">Hero subtitle</label>
             <textarea id="heroSubtitle" name="heroSubtitle" required rows={2} defaultValue={marketing.heroSubtitle} className="input resize-none" />
+            <textarea id="heroSubtitleSo" name="heroSubtitleSo" rows={2} defaultValue={marketing.translations?.so?.heroSubtitle ?? ""} placeholder="🇸🇴 In Somali (optional)" className="input mt-2 resize-none" />
+            <p className="mt-1 text-xs text-slate-400">
+              🇸🇴 Somali boxes are shown to shoppers who switch to Somali. Left empty, they see the built-in Somali while your English is unchanged, and your English once you change it.
+            </p>
           </div>
         </div>
       </section>
