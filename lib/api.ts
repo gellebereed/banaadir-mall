@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal } from "./flash";
+import { endedFlashProducts, flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal, type FlashPrice } from "./flash";
 import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
 import { orders as seedOrders } from "./data/orders";
@@ -301,7 +301,7 @@ function discountPctFor(
   product: Product,
   promotions: Promotion[],
   campaign: Campaign,
-  flash: Map<string, number> = new Map(),
+  flash: Map<string, FlashPrice> = new Map(),
 ): number {
   const promo = promotions
     .filter(
@@ -315,11 +315,11 @@ function discountPctFor(
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
   const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
-  return Math.max(promo, campaignPct, flash.get(product.id) ?? 0);
+  return Math.max(promo, campaignPct, flash.get(product.id)?.pct ?? 0);
 }
 
 /** The flash discounts in force right now (lib/flash.ts). */
-async function flashPct(): Promise<Map<string, number>> {
+async function flashPct(): Promise<Map<string, FlashPrice>> {
   const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
   return flashDiscounts(flash, requests);
 }
@@ -391,7 +391,11 @@ export async function getAllProducts(): Promise<Product[]> {
     const onSale = (priced.compareAt ?? 0) > priced.price;
     // Coupon-only offers are private to whoever has the code — no badge.
     const offer = live.find((o) => !o.code && offerCovers(o, p.id, p.store) && !(o.fullPriceOnly && onSale));
-    return offer ? { ...priced, offer } : priced;
+    const flashEndsAt = flash.get(p.id)?.endsAt;
+    // The chip only means something when the flash price is the one shown.
+    const flashWins = flashEndsAt && pct === (flash.get(p.id)?.pct ?? 0);
+    const withFlash = flashWins ? { ...priced, flashEndsAt } : priced;
+    return offer ? { ...withFlash, offer } : withFlash;
   });
 }
 
@@ -816,14 +820,21 @@ export async function getFlashDeal(): Promise<FlashDeal> {
  * best current markdowns stand in.
  */
 export async function getFlashProducts(): Promise<Product[]> {
-  const [flash, products] = await Promise.all([
+  const [flash, products, requests] = await Promise.all([
     getFlashDeal(),
     getMarketplaceProducts(),
+    getFlashRequests(),
   ]);
   if (!isFlashLive(flash)) return [];
   if (flash.productIds.length > 0) {
+    // A shop whose own end has passed is out, even if it has a markdown
+    // of its own — the rail is for flash prices.
+    const ended = endedFlashProducts(requests);
     const byId = new Map(products.map((p) => [p.id, p]));
-    return flash.productIds.map((id) => byId.get(id)).filter((p): p is Product => !!p && isRealDeal(p));
+    return flash.productIds
+      .filter((id) => !ended.has(id))
+      .map((id) => byId.get(id))
+      .filter((p): p is Product => !!p && isRealDeal(p));
   }
   const pct = (p: Product) => 1 - p.price / (p.compareAt ?? p.price);
   return products.filter(isRealDeal).sort((a, b) => pct(b) - pct(a)).slice(0, 8);

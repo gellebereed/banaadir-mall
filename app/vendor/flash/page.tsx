@@ -11,8 +11,8 @@ import {
 } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { shortDate } from "@/lib/format";
-import { flashState } from "@/lib/flash";
-import { formatShopTime } from "@/lib/shop-time";
+import { flashState, requestEnded } from "@/lib/flash";
+import { formatShopTime, toShopInput } from "@/lib/shop-time";
 import type { FlashRequest } from "@/lib/types";
 import { requireVendor } from "@/lib/session";
 
@@ -54,6 +54,7 @@ export default async function VendorFlashPage() {
     if (r.status === "pending") return { key: "pending", label: "Waiting for review" };
     if (r.status === "rejected") return { key: "rejected", label: "Not accepted" };
     if (!inCampaign.has(r.productId)) return { key: "removed", label: "Removed from campaign" };
+    if (requestEnded(r)) return { key: "removed", label: "Your end time passed · full price" };
     if (state === "live") return { key: "live", label: `Live · ${r.pct}% off now` };
     return { key: "waiting", label: state === "ended" ? "Campaign ended · full price" : "Campaign paused · full price" };
   };
@@ -91,7 +92,11 @@ export default async function VendorFlashPage() {
           Pick as many products as you like — bigger discounts are more likely
           to be accepted.
         </p>
-        <FlashRequestForm products={available} categories={categories} />
+        <FlashRequestForm
+          products={available}
+          categories={categories}
+          campaignEndsAt={flash.endsAt ? toShopInput(flash.endsAt) : undefined}
+        />
       </div>
 
       {/* My applications */}
@@ -123,6 +128,7 @@ export default async function VendorFlashPage() {
                 </p>
                 <p className="text-xs text-slate-400">
                   {r.pct}% off · applied {shortDate(r.date)}
+                  {r.endsAt ? ` · until ${formatShopTime(r.endsAt)}` : " · until the campaign ends"}
                 </p>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${STATUS_STYLES[status.key]}`}>

@@ -103,7 +103,7 @@ import {
   toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
-import { formatShopTime, normaliseShopTime } from "@/lib/shop-time";
+import { formatShopTime, normaliseShopTime, parseShopTime } from "@/lib/shop-time";
 import { logActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
 
@@ -3217,6 +3217,21 @@ export async function requestFlashDeal(
 
   const pct = Math.min(90, Math.max(1, Math.round(Number(formData.get("pct")) || 10)));
   const note = String(formData.get("note") ?? "").trim().slice(0, 300) || undefined;
+
+  // The shop's own end time — optional, typed in Mogadishu time, and never
+  // past the campaign's (the campaign ending stops every flash price).
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
+  const flash = await getFlashDeal();
+  if (endsAt && Date.parse(endsAt) <= Date.now()) {
+    return { ok: false, message: "That end time has already passed — pick a later one, or leave it blank." };
+  }
+  if (endsAt && flash.endsAt && Date.parse(endsAt) > parseShopTime(flash.endsAt)) {
+    return {
+      ok: false,
+      message: `The campaign ends ${formatShopTime(flash.endsAt)} — pick a time before then, or leave it blank to run until the end.`,
+    };
+  }
+
   const stamp = Date.now().toString(36);
   const existing = await getFlashRequests(storeSlug);
   // One open application per product, and none for a product already in.
@@ -3229,6 +3244,7 @@ export async function requestFlashDeal(
       productId: product.id,
       pct,
       note,
+      endsAt,
       status: "pending",
       date: new Date().toISOString().slice(0, 10),
     }));

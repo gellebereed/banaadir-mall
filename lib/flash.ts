@@ -28,16 +28,40 @@ export function flashState(flash: FlashDeal, now = Date.now()): FlashState {
 
 export const isFlashLive = (flash: FlashDeal, now = Date.now()) => flashState(flash, now) === "live";
 
-/** Product id → the flash percentage it gets right now (empty when off). */
-export function flashDiscounts(flash: FlashDeal, requests: FlashRequest[], now = Date.now()): Map<string, number> {
-  const out = new Map<string, number>();
+/** Has the shop's own end for this application passed? */
+export const requestEnded = (r: FlashRequest, now = Date.now()) =>
+  Boolean(r.endsAt && parseShopTime(r.endsAt) <= now);
+
+export interface FlashPrice {
+  pct: number;
+  /** The shop's own end, when it comes before the campaign's. */
+  endsAt?: string;
+}
+
+/**
+ * Product id → its flash discount right now (empty when the campaign is
+ * off). A shop's own end time stops just its product, earlier than the rest.
+ */
+export function flashDiscounts(flash: FlashDeal, requests: FlashRequest[], now = Date.now()): Map<string, FlashPrice> {
+  const out = new Map<string, FlashPrice>();
   if (!isFlashLive(flash, now)) return out;
   const inCampaign = new Set(flash.productIds);
+  const campaignEnd = flash.endsAt ? parseShopTime(flash.endsAt) : Infinity;
   for (const r of requests) {
-    if (r.status !== "approved" || !inCampaign.has(r.productId)) continue;
-    out.set(r.productId, Math.max(out.get(r.productId) ?? 0, r.pct));
+    if (r.status !== "approved" || !inCampaign.has(r.productId) || requestEnded(r, now)) continue;
+    if ((out.get(r.productId)?.pct ?? 0) >= r.pct) continue;
+    const ownEnd = r.endsAt && parseShopTime(r.endsAt) < campaignEnd ? r.endsAt : undefined;
+    out.set(r.productId, { pct: r.pct, endsAt: ownEnd });
   }
   return out;
+}
+
+/** Products whose shop-chosen flash end has passed — off the rail. */
+export function endedFlashProducts(requests: FlashRequest[], now = Date.now()): Set<string> {
+  const live = new Set(requests.filter((r) => r.status === "approved" && !requestEnded(r, now)).map((r) => r.productId));
+  return new Set(
+    requests.filter((r) => r.status === "approved" && requestEnded(r, now) && !live.has(r.productId)).map((r) => r.productId),
+  );
 }
 
 /** Old approvals created a promotion with this id; the campaign owns that discount now. */

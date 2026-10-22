@@ -24,6 +24,7 @@ import {
   variantStock,
 } from "@/lib/product-utils";
 import type { MarketingSettings, Product } from "@/lib/types";
+import FlashEndsChip from "@/components/FlashEndsChip";
 
 /**
  * The interactive half of the product page: zoomable photo gallery plus
@@ -346,6 +347,12 @@ export default function ProductView({
             </>
           )}
         </div>
+
+        {product.flashEndsAt && (
+          <div className="mt-2">
+            <FlashEndsChip endsAt={product.flashEndsAt} />
+          </div>
+        )}
 
         {/* The shop's cart offer, with the conditions spelled out. */}
         {product.offer && (

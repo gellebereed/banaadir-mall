@@ -118,6 +118,7 @@ const M = {
   },
   "section.flash": { en: "Flash Deals", so: "Qiimo-dhimis Degdeg ah" },
   "section.ended": { en: "Ended", so: "Wuu dhammaaday" },
+  "flash.endsIn": { en: "Flash price ends in {time}", so: "Qiimaha degdegga ah wuxuu dhammaanayaa {time}" },
   "section.flash.all": { en: "See all deals →", so: "Eeg dhammaan →" },
   "section.endsIn": { en: "Ends in", so: "Wuxuu dhammaanayaa" },
   "section.trending": { en: "Trending Now", so: "Hadda La Jecel Yahay" },

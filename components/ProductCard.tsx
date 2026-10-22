@@ -19,6 +19,7 @@ import {
   variantSizes,
 } from "@/lib/product-utils";
 import type { Product } from "@/lib/types";
+import FlashEndsChip from "./FlashEndsChip";
 import ProductImage from "./ProductImage";
 import Rating from "./Rating";
 
@@ -170,9 +171,15 @@ export default function ProductCard({
 
         {/* The shop's cart offer — "Buy 1, get the next for $1". Over the
             photo so a card with an offer is the same height as one without. */}
-        {product.offer && !(canSlide && hovering) && (
-          <span className="pointer-events-none absolute bottom-2 left-2 right-2 truncate rounded-full bg-emerald-600/95 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm sm:right-auto sm:max-w-[calc(100%-1rem)]">
-            🎁 {offerHeadline(product.offer, t, money)}
+        {(product.offer || product.flashEndsAt) && !(canSlide && hovering) && (
+          <span className="pointer-events-none absolute bottom-2 left-2 right-2 flex flex-col items-start gap-1">
+            {/* This product's flash price ends before the campaign's. */}
+            {product.flashEndsAt && <FlashEndsChip endsAt={product.flashEndsAt} className="max-w-full truncate" />}
+            {product.offer && (
+              <span className="max-w-full truncate rounded-full bg-emerald-600/95 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
+                🎁 {offerHeadline(product.offer, t, money)}
+              </span>
+            )}
           </span>
         )}
       </Link>

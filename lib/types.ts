@@ -212,6 +212,11 @@ compareAt?: number;
    */
   offer?: Offer;
   /**
+   * When this product's flash price stops, if its shop chose an end earlier
+   * than the campaign's own (lib/flash.ts) — for its card's "ends in" chip.
+   */
+  flashEndsAt?: string;
+  /**
    * Odoo `standard_price` — what the goods cost to buy, per unit.
    *
    * NEVER shown to a customer. It exists because the selling price of an
@@ -715,6 +720,11 @@ export interface FlashRequest {
   /** Discount the seller is offering for the campaign. */
   pct: number;
   note?: string;
+  /**
+   * The shop's own end for this discount — optional, and never later than
+   * the campaign's. Lets a shop with limited stock join for a few hours.
+   */
+  endsAt?: string;
   status: "pending" | "approved" | "rejected";
   date: string;
 }

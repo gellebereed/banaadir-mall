@@ -721,6 +721,9 @@ export async function upsertFlashRequestsInSupabase(requests: FlashRequest[]): P
   if (!useSupabaseMutations()) return "error";
   if (requests.length === 0) return "ok";
   try {
+    // ends_at only when one is set, so applications without one still
+    // save on a table from before that column existed.
+    const withEnd = requests.some((r) => r.endsAt);
     const { error } = await getDataClient().from("flash_requests").upsert(
       requests.map((r) => ({
         id: r.id,
@@ -730,6 +733,7 @@ export async function upsertFlashRequestsInSupabase(requests: FlashRequest[]): P
         note: r.note ?? null,
         status: r.status,
         date: r.date,
+        ...(withEnd ? { ends_at: r.endsAt ?? null } : {}),
       })),
       { onConflict: "id" },
     );

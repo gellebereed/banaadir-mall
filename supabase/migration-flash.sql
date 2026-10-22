@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public.flash_requests (
 ALTER TABLE public.flash_requests ADD COLUMN IF NOT EXISTS pct  INT NOT NULL DEFAULT 10;
 ALTER TABLE public.flash_requests ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE public.flash_requests ADD COLUMN IF NOT EXISTS date TEXT NOT NULL DEFAULT to_char(now(), 'YYYY-MM-DD');
+-- A shop's own end for its discount (optional, never after the campaign's).
+ALTER TABLE public.flash_requests ADD COLUMN IF NOT EXISTS ends_at TEXT;
 
 -- The schema.sql version required prices the app never sends.
 DO $$

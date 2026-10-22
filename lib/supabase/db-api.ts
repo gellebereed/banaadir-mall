@@ -472,6 +472,7 @@ async function fetchFlashRequestsFromSupabaseRaw(): Promise<FlashRequest[] | nul
         productId: r.product_id,
         pct: Number(r.pct ?? legacyPct) || 10,
         note: r.note || undefined,
+        endsAt: r.ends_at || undefined,
         status: (["pending", "approved", "rejected"].includes(r.status) ? r.status : "pending") as FlashRequest["status"],
         date: r.date || r.submitted_at || String(r.created_at ?? "").slice(0, 10),
       };

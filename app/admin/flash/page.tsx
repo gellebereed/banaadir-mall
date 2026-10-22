@@ -112,6 +112,8 @@ export default async function AdminFlashPage() {
                       {product && ` · ${money(product.price)} → ${money(product.price * (1 - r.pct / 100))}`}
                       {" · "}
                       {shortDate(r.date)}
+                      {" · "}
+                      {r.endsAt ? `until ${formatShopTime(r.endsAt)}` : "until the campaign ends"}
                     </p>
                     {r.note && (
                       <p className="mt-1 truncate text-xs italic text-slate-400">
