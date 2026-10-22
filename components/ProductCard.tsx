@@ -8,6 +8,7 @@ import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
 import { LITE_CARD_SIZES, LITE_QUALITY } from "@/lib/lite";
 import type { MessageKey } from "@/lib/i18n";
 import { compact, discountPct, money } from "@/lib/format";
+import { offerHeadline } from "@/lib/offers";
 import {
   colorOptions,
   displayPrice,
@@ -137,7 +138,7 @@ export default function ProductCard({
         setSlideIndex(0);
       }}
     >
-      <Link href={`/product/${product.slug}`} className="block">
+      <Link href={`/product/${product.slug}`} className="relative block">
         {mainImage ? (
           <div className="relative aspect-square w-full overflow-hidden bg-sand-100">
             <Image
@@ -165,6 +166,14 @@ export default function ProductCard({
           </div>
         ) : (
           <ProductImage product={product} className="aspect-square w-full" />
+        )}
+
+        {/* The shop's cart offer — "Buy 1, get the next for $1". Over the
+            photo so a card with an offer is the same height as one without. */}
+        {product.offer && !(canSlide && hovering) && (
+          <span className="pointer-events-none absolute bottom-2 left-2 right-2 truncate rounded-full bg-emerald-600/95 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm sm:right-auto sm:max-w-[calc(100%-1rem)]">
+            🎁 {offerHeadline(product.offer, t, money)}
+          </span>
         )}
       </Link>
 

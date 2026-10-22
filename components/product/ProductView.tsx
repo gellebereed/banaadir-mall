@@ -8,6 +8,7 @@ import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
 import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
+import { offerHeadline, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
@@ -345,6 +346,28 @@ export default function ProductView({
             </>
           )}
         </div>
+
+        {/* The shop's cart offer, with the conditions spelled out. */}
+        {product.offer && (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <span className="text-2xl" aria-hidden>🎁</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">{t("offer.shopOffer")}</p>
+              <p className="font-display text-base font-extrabold text-ocean-950">
+                {offerHeadline(product.offer, t, money)}
+              </p>
+              {offerTerms(product.offer, t).length > 0 && (
+                <p className="text-xs text-slate-600">{offerTerms(product.offer, t).join(" · ")}</p>
+              )}
+              <Link
+                href={`/products?store=${product.store}`}
+                className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
+              >
+                {t("offer.shopItems")} →
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* The opening of the description; the whole of it is under
             "Product details" below, where it has room. */}

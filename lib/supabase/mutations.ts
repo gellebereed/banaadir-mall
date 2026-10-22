@@ -30,6 +30,7 @@ import type {
   ProductionRun,
   ProductReview,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -647,6 +648,41 @@ export async function updateOrderDeliveryInSupabase(
     return true;
   } catch (err) {
     console.error("[Supabase Mutations] updateOrderDelivery exception:", err);
+    return false;
+  }
+}
+
+// ── Shop offers ────────────────────────────────────────────────────────
+// Table from supabase/migration-offers.sql: id, store, data (jsonb).
+
+/** "missing-table" tells the caller to point at the migration. */
+export async function upsertOfferInSupabase(offer: Offer): Promise<"ok" | "missing-table" | "error"> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const supabase = getDataClient();
+    const { id, store, ...data } = offer;
+    const { error } = await supabase
+      .from("offers")
+      .upsert({ id, store, data }, { onConflict: "id" });
+    if (!error) return "ok";
+    console.error("[Supabase Mutations] upsertOffer error:", error.message);
+    return error.code === "42P01" || /relation .*offers.* does not exist|Could not find the table/i.test(error.message ?? "")
+      ? "missing-table"
+      : "error";
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertOffer exception:", err);
+    return "error";
+  }
+}
+
+export async function deleteOfferFromSupabase(id: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const { error } = await getDataClient().from("offers").delete().eq("id", id);
+    if (error) console.error("[Supabase Mutations] deleteOffer error:", error.message);
+    return !error;
+  } catch (err) {
+    console.error("[Supabase Mutations] deleteOffer exception:", err);
     return false;
   }
 }

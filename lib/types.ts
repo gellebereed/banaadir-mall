@@ -204,7 +204,13 @@ export interface Product {
   /** Current selling price in USD. */
   price: number;
   /** Original price when the product is on sale. */
-  compareAt?: number;
+compareAt?: number;
+  /**
+   * The live shop offer this product counts towards ("Buy 1, get the next
+   * for $1"). Attached by getAllProducts for the badge; pricing itself is
+   * always done from the basket by lib/offers.ts.
+   */
+  offer?: Offer;
   /**
    * Odoo `standard_price` — what the goods cost to buy, per unit.
    *
@@ -340,7 +346,12 @@ export interface OrderItem {
    */
   storeName?: string;
   name?: string;
+  /** What was charged per unit — after any shop offer or promo code. */
   price?: number;
+  /** The catalogue price per unit, when an offer charged less. */
+  listPrice?: number;
+  /** Name of the offer or promo code behind the lower price. */
+  offer?: string;
   image?: string;
   selectedColor?: string;
   selectedSize?: string;
@@ -489,6 +500,50 @@ export interface Promotion {
    */
   startsAt?: string;
   endsAt?: string;
+}
+
+/**
+ * A shop's cart offer — a discount that depends on what else is in the
+ * basket, unlike a Promotion which changes one product's price on its own.
+ * Priced by lib/offers.ts, the same function in the cart, at checkout, on
+ * the server and at the counter.
+ */
+export type OfferKind =
+  /** Each full-price item unlocks one item of equal or lower price for `price`. */
+  | "next_fixed"
+  /** Each item unlocks `pct`% off one item of equal or lower price. */
+  | "next_pct"
+  /** Buy `buy`, get `get` (the cheapest) at `pct`% off — 100 is free. */
+  | "bxgy"
+  /** Quantity tiers: n+ items, every one `pct`% off. */
+  | "tiers"
+  /** Spend `minSpend`, save `amountOff` (or `pct`%). */
+  | "spend";
+
+export interface Offer {
+  id: string;
+  store: string;
+  name: string;
+  kind: OfferKind;
+  active: boolean;
+  /** Empty or missing: every product in the shop. */
+  productIds?: string[];
+  /** Items already on sale don't count — "buy at full price". */
+  fullPriceOnly?: boolean;
+  /** next_fixed: what the next item costs. */
+  price?: number;
+  /** next_pct / bxgy / tiers / spend (as an alternative to amountOff). */
+  pct?: number;
+  buy?: number;
+  get?: number;
+  tiers?: { minQty: number; pct: number }[];
+  minSpend?: number;
+  amountOff?: number;
+  /** How many times one order may use it (pairs / groups). Empty: no limit. */
+  maxPerOrder?: number;
+  startsAt?: string;
+  endsAt?: string;
+  createdAt?: string;
 }
 
 export type EmployeeRole = "manager" | "products" | "orders" | "marketing" | "viewer";
@@ -647,7 +702,11 @@ export interface MarketingSettings {
   banners: Banner[];
   promoTiles: PromoTile[];
   /** Site-wide sale applied to every product when active. */
-  campaign: { active: boolean; name: string; pct: number };
+  /**
+   * Site-wide sale. `stores` are the shops that accepted it — the discount
+   * is theirs to give, so it applies to their products only.
+   */
+  campaign: { active: boolean; name: string; pct: number; stores?: string[] };
   /**
    * Checkout rules the admin controls, instead of constants buried in the
    * cart page. `freeThreshold` of 0 means delivery is always charged.
@@ -667,7 +726,12 @@ export interface MarketingSettings {
     nationalTime?: string;
   };
   /** Single promo code accepted at checkout. Empty disables the field. */
-  promo: { code: string; pct: number };
+  promo: {
+    code: string;
+    pct: number;
+    /** Shops that accepted the code. It discounts their items only. */
+    stores?: string[];
+  };
   /**
    * What the marketplace keeps from each sale.
    *

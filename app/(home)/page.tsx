@@ -239,7 +239,9 @@ export default async function HomePage() {
         slides={heroSlides}
         brandDecoration={<HeroProductCards products={heroProducts} />}
       />
-      {marketing.campaign.active && <CampaignBanner campaign={marketing.campaign} />}
+      {marketing.campaign.active && (marketing.campaign.stores?.length ?? 0) > 0 && (
+        <CampaignBanner campaign={marketing.campaign} />
+      )}
 
       {/* Why to buy here, in one line, before anything asks for a decision. */}
       {showTrust && <TrustStrip delivery={marketing.delivery} t={t} />}
@@ -288,7 +290,7 @@ export default async function HomePage() {
 function CampaignBanner({ campaign }: { campaign: MarketingSettings["campaign"] }) {
   return (
     <div className="bg-gradient-to-r from-coral-600 via-coral-500 to-mango-500 px-4 py-2.5 text-center text-sm font-bold text-white">
-      🔥 {campaign.name} — {campaign.pct}% off everything, automatically
+      🔥 {campaign.name} — {campaign.pct}% off at participating shops, automatically
       applied at the till!
     </div>
   );

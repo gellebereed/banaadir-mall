@@ -32,6 +32,7 @@ import type {
   ProductionRun,
   ProductReview,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -54,6 +55,8 @@ export interface DB {
   /** Seed products removed from the catalog. */
   deletedProducts: string[];
   promotions: Promotion[];
+  /** Shop cart offers (lib/offers.ts). Optional so an older db.json still loads. */
+  offers?: Offer[];
   /** Status overrides per order id. */
   orderStatus: Record<string, OrderStatus>;
   /**
@@ -140,6 +143,7 @@ const DEFAULT_DB: DB = {
   newProducts: [],
   deletedProducts: [],
   promotions: [],
+  offers: [],
   orderStatus: {},
   storeStatus: {},
   storeOverrides: {},

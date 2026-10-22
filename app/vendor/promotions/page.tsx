@@ -1,19 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { deletePromotion, togglePromotion } from "@/app/actions";
+import { deleteOffer, deletePromotion, toggleOffer, togglePromotion } from "@/app/actions";
+import MarketplaceOptIn from "@/components/dashboard/MarketplaceOptIn";
+import OfferBuilder from "@/components/dashboard/OfferBuilder";
 import PromotionForm from "@/components/dashboard/PromotionForm";
 import {
+  getAllProductsByStore,
   getBaseProductsByStore,
   getCategories,
   getDiscountMap,
+  getMarketingSettings,
+  getOffersByStore,
+  getOrdersByStore,
   getPromotionsByStore,
   isPromotionLive,
 } from "@/lib/api";
+import { isOfferLive, offerHeadline, offerTerms } from "@/lib/offers";
+import { getT } from "@/lib/prefs-server";
 import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
-import type { Promotion } from "@/lib/types";
+import type { Offer, Promotion } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Promotions" };
 
@@ -22,7 +30,7 @@ export const metadata: Metadata = { title: "Promotions" };
 export const dynamic = "force-dynamic";
 
 /** Human status for a promotion, including scheduled and expired states. */
-function promoStatus(promo: Promotion): { label: string; tone: string } {
+function promoStatus(promo: Promotion | Offer): { label: string; tone: string } {
   const now = new Date();
   if (!promo.active) return { label: "Paused", tone: "bg-sand-100 text-slate-500" };
   if (promo.startsAt && new Date(promo.startsAt) > now) {
@@ -38,12 +46,36 @@ export default async function VendorPromotionsPage() {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "promotions.manage")) redirect("/vendor");
 
-  const [promotions, products, categories, discounts] = await Promise.all([
+  const [promotions, products, categories, discounts, offers, pricedProducts, marketing, orders, t] = await Promise.all([
     getPromotionsByStore(storeSlug),
     getBaseProductsByStore(storeSlug),
     getCategories(),
     getDiscountMap(storeSlug),
+    getOffersByStore(storeSlug),
+    getAllProductsByStore(storeSlug),
+    getMarketingSettings(),
+    getOrdersByStore(storeSlug),
+    getT(),
   ]);
+
+  // How each offer has done: orders it appeared in, and what it gave away.
+  const offerResults = new Map<string, { orders: number; saved: number }>();
+  for (const order of orders) {
+    if (order.status === "cancelled") continue;
+    const seen = new Set<string>();
+    for (const item of order.items) {
+      if (!item.offer || item.listPrice === undefined || item.price === undefined) continue;
+      const result = offerResults.get(item.offer) ?? { orders: 0, saved: 0 };
+      if (!seen.has(item.offer)) {
+        result.orders += 1;
+        seen.add(item.offer);
+      }
+      result.saved += (item.listPrice - item.price) * item.qty;
+      offerResults.set(item.offer, result);
+    }
+  }
+  const promoJoined = (marketing.promo.stores ?? []).includes(storeSlug);
+  const campaignJoined = (marketing.campaign.stores ?? []).includes(storeSlug);
 
   const productName = (id: string) => products.find((p) => p.id === id)?.name ?? id;
   const discountedCount = Object.keys(discounts).length;
@@ -51,7 +83,121 @@ export default async function VendorPromotionsPage() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-extrabold text-ocean-950">Promotions</h1>
+      <h1 className="font-display text-2xl font-extrabold text-ocean-950">Promotions &amp; offers</h1>
+      <p className="mt-1 text-sm text-slate-500">
+        Deals your shop runs and pays for: cart offers like &ldquo;buy one, get
+        the next for $1&rdquo;, price discounts, and the marketplace&apos;s own
+        sales — which only touch your items if you join them.
+      </p>
+
+      {/* ── Shop offers ─────────────────────────────────────────────── */}
+      <div className="card mt-5 p-5 sm:p-6">
+        <h2 className="font-display font-bold text-ocean-950">🎁 New shop offer</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Offers work out in the customer&apos;s cart, at checkout and at your counter. One offer
+          per item — when two could apply, the customer automatically gets the better one.
+        </p>
+        <OfferBuilder products={pricedProducts} categories={categories} />
+      </div>
+
+      {offers.length > 0 && (
+        <div className="mt-5 space-y-3">
+          {offers.map((offer) => {
+            const status = promoStatus(offer);
+            const live = isOfferLive(offer);
+            const targeted = offer.productIds?.length ?? 0;
+            const result = offerResults.get(offer.name);
+            return (
+              <div key={offer.id} className="card flex flex-wrap items-center gap-4 p-4">
+                <span
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl ${
+                    live ? "bg-emerald-500 text-white" : "bg-sand-100 text-slate-400"
+                  }`}
+                  aria-hidden
+                >
+                  🎁
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-800">
+                    {offer.name}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${status.tone}`}>
+                      {status.label}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {offerHeadline(offer, t, money)}
+                    {offerTerms(offer, t).map((term) => ` · ${term}`)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {targeted === 0
+                      ? "Entire store"
+                      : targeted <= 3
+                        ? offer.productIds!.map(productName).join(", ")
+                        : `${targeted} selected products`}
+                    {offer.startsAt && ` · from ${shortDate(offer.startsAt.slice(0, 10))}`}
+                    {offer.endsAt && ` · until ${shortDate(offer.endsAt.slice(0, 10))}`}
+                    {result
+                      ? ` · used in ${result.orders} order${result.orders === 1 ? "" : "s"}, customers saved ${money(result.saved)}`
+                      : " · not used yet"}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <form action={toggleOffer.bind(null, offer.id)}>
+                    <button
+                      className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
+                        offer.active
+                          ? "bg-sand-100 text-slate-600 hover:bg-sand-200"
+                          : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                      }`}
+                    >
+                      {offer.active ? "Pause" : "Activate"}
+                    </button>
+                  </form>
+                  <form action={deleteOffer.bind(null, offer.id)}>
+                    <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Marketplace deals: opt in ───────────────────────────────── */}
+      <div className="card mt-5 p-5 sm:p-6">
+        <h2 className="font-display font-bold text-ocean-950">🏬 Marketplace deals</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Run by Banaadir Mall, paid by the shops that join. Leave any time.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <MarketplaceOptIn
+            kind="promo"
+            joined={promoJoined}
+            available={Boolean(marketing.promo.code) && marketing.promo.pct > 0}
+            title={marketing.promo.code ? `Promo code ${marketing.promo.code}` : "Promo code"}
+            detail={
+              marketing.promo.code
+                ? `${marketing.promo.pct}% off your items when a customer enters ${marketing.promo.code} — on items no shop offer already discounts.`
+                : "No promo code is running right now."
+            }
+          />
+          <MarketplaceOptIn
+            kind="campaign"
+            joined={campaignJoined}
+            available={marketing.campaign.active}
+            title={marketing.campaign.name || "Site-wide sale"}
+            detail={
+              marketing.campaign.active
+                ? `${marketing.campaign.pct}% off all your products while it runs, with the sale badge.`
+                : "No site-wide sale is running right now."
+            }
+          />
+        </div>
+      </div>
+
+      <h2 className="mt-10 font-display text-lg font-bold text-ocean-950">🏷️ Price discounts</h2>
       <p className="mt-1 text-sm text-slate-500">
         Discount your whole store or just the products you choose. Customers
         see the sale price and the crossed-out original everywhere, instantly.

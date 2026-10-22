@@ -200,9 +200,15 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
       <section className="card p-5 sm:p-6">
         <h2 className="font-display font-bold text-ocean-950">🔥 Site-wide sale campaign</h2>
         <p className="mt-1 text-xs text-slate-400">
-          Discounts every product on the marketplace and shows a banner under
-          the hero. The biggest discount wins when a store promotion also
-          applies.
+          Discounts the products of every shop that JOINS it (Promotions →
+          Marketplace deals) and shows a banner under the hero. Shops pay for
+          their own discount, so nothing changes for a shop until it joins.
+          The biggest discount wins when a store promotion also applies.
+        </p>
+        <p className="mt-2 text-xs font-semibold text-ocean-800">
+          {(marketing.campaign.stores ?? []).length} shop
+          {(marketing.campaign.stores ?? []).length === 1 ? " has" : "s have"} joined. Changing
+          the % asks every shop again.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-[auto_1fr_140px]">
           <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-sand-200 px-4 text-sm font-semibold text-slate-700">
@@ -268,6 +274,11 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
             <input id="promoPct" name="promoPct" type="number" min="1" max="90"
               defaultValue={marketing.promo.pct} className="input" />
           </div>
+          <p className="self-end text-xs text-slate-500 sm:col-span-3">
+            The promo code discounts only the shops that joined it —{" "}
+            <strong>{(marketing.promo.stores ?? []).length}</strong> so far. A new code or % asks
+            every shop again.
+          </p>
         </div>
       </section>
 

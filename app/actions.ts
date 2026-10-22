@@ -49,6 +49,7 @@ import {
 } from "@/lib/employees";
 import { getSession } from "@/lib/session";
 import type {
+  Offer,
   Banner,
   CommissionRule,
   CommissionSettings,
@@ -81,6 +82,8 @@ import {
   setOrderStatusInSupabase,
   updateOrderDeliveryInSupabase,
   insertPromotion,
+  upsertOfferInSupabase,
+  deleteOfferFromSupabase,
   togglePromotionInSupabase,
   deletePromotionFromSupabase,
   insertEmployee,
@@ -1351,6 +1354,121 @@ export async function updateStoreSettings(
   };
 }
 
+// ── Shop offers (cart deals — lib/offers.ts) ───────────────────────────
+
+/**
+ * Save a shop offer built in components/dashboard/OfferBuilder.
+ *
+ * The builder posts the offer as JSON; every field is re-read here rather
+ * than trusted, and the shop always comes from the session.
+ */
+export async function createOffer(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  const session = await requirePermission("promotions.manage");
+  const store = session.role === "seller" ? session.store : undefined;
+  if (!store) return { ok: false, message: "Open your store's dashboard to create an offer." };
+
+  const raw = parseJsonField<Record<string, unknown>>(formData.get("offerJson"), {});
+  const num = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+  const kinds = ["next_fixed", "next_pct", "bxgy", "tiers", "spend"] as const;
+  const kind = kinds.find((k) => k === raw.kind);
+  if (!kind) return { ok: false, message: "Choose a type of offer." };
+
+  const { getBaseProductsByStore } = await import("@/lib/api");
+  const own = new Set((await getBaseProductsByStore(store)).map((p) => p.id));
+  // Scope and products come from the form's own fields (ProductPicker
+  // submits hidden `productIds`), and only this shop's products count.
+  const scopedToProducts = String(formData.get("scope")) === "products";
+  const productIds = formData.getAll("productIds").map(String).filter((id) => own.has(id));
+  if (scopedToProducts && productIds.length === 0) {
+    return { ok: false, message: "Pick at least one product, or choose the whole store." };
+  }
+
+  const offer: Offer = {
+    id: "offer-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    store,
+    name: String(raw.name ?? "").trim().slice(0, 80) || "Shop offer",
+    kind,
+    active: true,
+    productIds: scopedToProducts ? productIds : [],
+    fullPriceOnly: raw.fullPriceOnly === true,
+    price: kind === "next_fixed" ? num(raw.price) : undefined,
+    pct: kind === "next_pct" || kind === "bxgy" || (kind === "spend" && !num(raw.amountOff)) ? num(raw.pct) : undefined,
+    buy: kind === "bxgy" ? Math.floor(num(raw.buy) ?? 0) : undefined,
+    get: kind === "bxgy" ? Math.floor(num(raw.get) ?? 0) : undefined,
+    tiers:
+      kind === "tiers" && Array.isArray(raw.tiers)
+        ? raw.tiers
+            .map((t) => ({ minQty: Math.floor(Number((t as { minQty?: unknown }).minQty)), pct: Number((t as { pct?: unknown }).pct) }))
+            .filter((t) => t.minQty > 0 && t.pct > 0)
+            .slice(0, 5)
+        : undefined,
+    minSpend: kind === "spend" ? num(raw.minSpend) : undefined,
+    amountOff: kind === "spend" ? num(raw.amountOff) : undefined,
+    maxPerOrder: num(raw.maxPerOrder) ? Math.max(1, Math.floor(num(raw.maxPerOrder)!)) : undefined,
+    startsAt: String(raw.startsAt ?? "").trim() || undefined,
+    endsAt: String(raw.endsAt ?? "").trim() || undefined,
+    createdAt: new Date().toISOString(),
+  };
+
+  const { offerProblem } = await import("@/lib/offers");
+  const problem = offerProblem(offer);
+  if (problem) return { ok: false, message: problem };
+
+  if (useSupabaseMutations()) {
+    const saved = await upsertOfferInSupabase(offer);
+    if (saved === "missing-table") {
+      return { ok: false, message: "Offers need one database update first — run supabase/migration-offers.sql." };
+    }
+    if (saved !== "ok") return { ok: false, message: "Could not save the offer — please try again." };
+  } else {
+    await mutateDB((db) => {
+      db.offers = [...(db.offers ?? []), offer];
+    });
+  }
+  await logActivity(store, "offer.create", `Started offer "${offer.name}"`, offer.id);
+  refresh();
+  return {
+    ok: true,
+    message: offer.startsAt && new Date(offer.startsAt) > new Date()
+      ? `Scheduled — "${offer.name}" starts on its start date.`
+      : `Live now — "${offer.name}". Customers see it on your products and in their cart.`,
+  };
+}
+
+async function findOwnOffer(id: string): Promise<{ session: Session; offer: Offer } | null> {
+  const session = await requirePermission("promotions.manage");
+  const { getOffers } = await import("@/lib/api");
+  const offer = (await getOffers()).find((o) => o.id === id);
+  if (!offer) return null;
+  assertOwnsStore(session, offer.store);
+  return { session, offer };
+}
+
+export async function toggleOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  const next = { ...found.offer, active: !found.offer.active };
+  if (useSupabaseMutations()) await upsertOfferInSupabase(next);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).map((o) => (o.id === id ? next : o));
+    });
+  await logActivity(next.store, "offer.toggle", `${next.active ? "Resumed" : "Paused"} offer "${next.name}"`, id);
+  refresh();
+}
+
+export async function deleteOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  if (useSupabaseMutations()) await deleteOfferFromSupabase(id);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).filter((o) => o.id !== id);
+    });
+  await logActivity(found.offer.store, "offer.delete", `Deleted offer "${found.offer.name}"`, id);
+  refresh();
+}
+
 // ── Promotions (store discounts) ───────────────────────────────────────
 
 export async function createPromotion(
@@ -2005,6 +2123,12 @@ export async function updateMarketing(
   formData: FormData,
 ): Promise<SaveState> {
   await requireMarketing();
+  const { getMarketingSettings } = await import("@/lib/api");
+  const current = await getMarketingSettings();
+
+  const campaignPctValue = Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10));
+  const promoCode = String(formData.get("promoCode") ?? "").trim().toUpperCase();
+  const promoPctValue = Math.min(90, Math.max(1, Number(formData.get("promoPct")) || 10));
 
   const marketing = {
     announcement: String(formData.get("announcement")),
@@ -2019,7 +2143,10 @@ export async function updateMarketing(
     campaign: {
       active: formData.get("campaignActive") === "on",
       name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
-      pct: Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10)),
+      pct: campaignPctValue,
+      // The shops that accepted. They pay for the discount, so a different
+      // percentage is a different deal and has to be accepted afresh.
+      stores: current.campaign.pct === campaignPctValue ? (current.campaign.stores ?? []) : [],
     },
     delivery: {
       fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
@@ -2030,14 +2157,18 @@ export async function updateMarketing(
     },
     promo: {
       // Blank code disables the promo field on the cart entirely.
-      code: String(formData.get("promoCode") ?? "").trim().toUpperCase(),
-      pct: Math.min(90, Math.max(1, Number(formData.get("promoPct")) || 10)),
+      code: promoCode,
+      pct: promoPctValue,
+      // Same rule as the campaign: a new code or percentage needs every
+      // shop to accept it again.
+      stores:
+        current.promo.code === promoCode && current.promo.pct === promoPctValue
+          ? (current.promo.stores ?? [])
+          : [],
     },
   };
 
   if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
     await updateMarketingInSupabase({
       ...current,
       ...marketing,
@@ -2053,6 +2184,44 @@ export async function updateMarketing(
 
   refresh();
   return { ok: true, message: "Storefront updated successfully! 🎉" };
+}
+
+/**
+ * A shop joins or leaves the marketplace promo code or the site-wide
+ * campaign. The discount comes out of the shop's own takings, so it only
+ * ever applies to the shops that said yes here.
+ */
+export async function setMarketplaceOptIn(
+  kind: "promo" | "campaign",
+  join: boolean,
+): Promise<SaveState> {
+  const session = await requirePermission("promotions.manage");
+  const store = session.role === "seller" ? session.store : undefined;
+  if (!store) return { ok: false, message: "Open your store's dashboard to choose this." };
+
+  const { getMarketingSettings } = await import("@/lib/api");
+  const current = await getMarketingSettings();
+  const list = new Set(current[kind].stores ?? []);
+  if (join) list.add(store);
+  else list.delete(store);
+  const next = { ...current[kind], stores: [...list] };
+
+  if (useSupabaseMutations()) {
+    if (!(await updateMarketingInSupabase({ ...current, [kind]: next }))) {
+      return { ok: false, message: "Could not save — please try again." };
+    }
+  }
+  await mutateDB((db) => {
+    db.marketing = { ...db.marketing, [kind]: { ...db.marketing[kind], stores: [...list] } };
+  });
+
+  const label = kind === "promo" ? `promo code ${current.promo.code}` : `"${current.campaign.name}"`;
+  await logActivity(store, `marketplace.${kind}.${join ? "join" : "leave"}`, `${join ? "Joined" : "Left"} the ${label}`, kind);
+  refresh();
+  return {
+    ok: true,
+    message: join ? `You're in — ${current[kind].pct}% off your items through the ${label}.` : `You've left the ${label}.`,
+  };
 }
 
 /** Section order + visibility, submitted by the section arranger. */
@@ -2268,7 +2437,11 @@ export interface ResolvedParcel {
   lines: {
     name: string;
     qty: number;
+    /** Charged per unit. */
     price: number;
+    /** Catalogue price when an offer charged less. */
+    listPrice?: number;
+    offer?: string;
     options?: string;
     reference?: string;
     image?: string;
@@ -2276,25 +2449,23 @@ export interface ResolvedParcel {
 }
 
 /**
- * Today's price for each cart line, keyed by product id.
+ * Price the basket on the server: today's catalogue prices, every live
+ * shop offer, and the promo code for the shops that accepted it.
  *
- * The cart keeps the price from the moment something was added; the order
- * is charged at the catalogue's price (see submitOrderAction). Checkout
- * asks for these so the total it shows is the total that gets recorded.
- * Products no longer in the catalogue are simply left out.
+ * The cart and checkout show exactly this, and submitOrderAction records
+ * exactly this — they all go through lib/cart-pricing.ts. Line keys in the
+ * result are the items' positions in the request.
  */
-export async function quoteCartAction(
-  items: { productId: string; selectedColor?: string; selectedSize?: string }[],
-): Promise<Record<string, number>> {
-  const { getAllProducts } = await import("@/lib/api");
-  const { findVariant, variantPrice } = await import("@/lib/product-utils");
-  const catalog = await getAllProducts();
-  const quote: Record<string, number> = {};
-  for (const item of items.slice(0, 200)) {
-    const product = catalog.find((p) => p.id === item.productId);
-    if (product) quote[item.productId] = variantPrice(product, findVariant(product, item.selectedColor, item.selectedSize));
-  }
-  return quote;
+export async function priceCartAction(
+  items: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+  promoCode?: string,
+): Promise<{
+  pricing: import("@/lib/offers").CartPricing;
+  promo: import("@/lib/cart-pricing").PromoStatus | null;
+}> {
+  const { priceItems } = await import("@/lib/cart-pricing");
+  const { pricing, promo } = await priceItems(items.slice(0, 200), promoCode);
+  return { pricing, promo };
 }
 
 export async function submitOrderAction(payload: {
@@ -2326,8 +2497,8 @@ export async function submitOrderAction(payload: {
   ok: boolean;
   message: string;
   orderId: string;
-  /** Percentage the server actually honoured (0 when the code was not valid). */
-  discountPct: number;
+  /** Everything the customer saved — shop offers and promo code. */
+  discount: number;
   /**
    * The parcels as the SERVER resolved them. The confirmation screen uses
    * these rather than its own copy, because the browser's cart may carry a
@@ -2354,30 +2525,31 @@ export async function submitOrderAction(payload: {
    * carries a store, because a stale cart in someone's browser would still
    * be wrong. The product record is the authority on which shop sells it.
    */
-  const { getAllStores, getAllProducts, getMarketingSettings } = await import("@/lib/api");
-  const { findVariant, variantPrice } = await import("@/lib/product-utils");
-  // getAllProducts, not the base catalogue: it carries today's promotions
-  // and campaign, which are the prices the shopper was actually shown.
-  const [catalog, allStores, marketing] = await Promise.all([
-    getAllProducts(),
+  const { getAllStores } = await import("@/lib/api");
+  const { priceItems } = await import("@/lib/cart-pricing");
+  const { groupUnits } = await import("@/lib/offers");
+  const [allStores, priced] = await Promise.all([
     getAllStores(),
-    getMarketingSettings(),
+    // Prices, shop offers and the promo code are all settled here from the
+    // catalogue. The browser's numbers are never used for money — it used
+    // to be possible to call this action with your own prices.
+    priceItems(
+      payload.items.map((item) => ({
+        productId: item.productId,
+        qty: item.qty,
+        selectedColor: item.selectedColor,
+        selectedSize: item.selectedSize,
+        fallbackPrice: item.price,
+        fallbackStore: item.store,
+      })),
+      payload.promoCode,
+    ),
   ]);
   const storesBySlug = new Map(allStores.map((store) => [store.slug, store]));
 
-  // The promo code is re-checked here rather than trusted from the cart:
-  // the browser only says which code it typed, the settings say what it is
-  // worth.
-  const promo = marketing.promo;
-  const typed = (payload.promoCode ?? "").trim().toUpperCase();
-  const discountPct =
-    typed && promo.code && promo.pct > 0 && typed === promo.code.trim().toUpperCase()
-      ? Math.min(promo.pct, 100)
-      : 0;
-
-  const items = payload.items.map((item) => {
-    const product = catalog.find((p) => p.id === item.productId);
-    const store = product?.store || item.store || "";
+  const items = payload.items.map((item, index) => {
+    const product = priced.products[index];
+    const store = priced.lines[index].store;
     if (!store) {
       console.error(
         `[submitOrder] "${item.name}" (${item.productId}) resolved to no store — ` +
@@ -2390,15 +2562,9 @@ export async function submitOrderAction(payload: {
       // Same reasoning as `store`: the catalogue is the authority, and a
       // stale cart snapshot must not decide what gets recorded.
       name: product?.name || item.name,
-      // The PRICE too. This used to keep whatever number the browser sent,
-      // so anyone calling the action directly could set their own prices.
-      // The client's figure is only a fallback for a product that has
-      // since left the catalogue.
-      price: product
-        ? variantPrice(product, findVariant(product, item.selectedColor, item.selectedSize))
-        : typeof item.price === "number" && item.price >= 0
-          ? item.price
-          : 0,
+      // One entry per price actually charged: "1 × Shirt $75" and
+      // "1 × Trousers $1 · Buy 1, get the next for $1".
+      charged: groupUnits(priced.pricing.lines[String(index)]),
       image: item.image || product?.images?.[0],
       reference: item.reference || product?.internalReference,
       storeName: storesBySlug.get(store)?.name || store.replace(/-/g, " "),
@@ -2417,10 +2583,10 @@ export async function submitOrderAction(payload: {
   const parcels: ResolvedParcel[] = [];
 
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
-    const itemsTotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
-    // A promo code takes the same percentage off every parcel, so each
-    // shop's total is what its courier actually collects.
-    const storeSubtotal = Math.round(itemsTotal * (1 - discountPct / 100) * 100) / 100;
+    // What this shop's courier collects: its items after its own offers
+    // and, if it accepted it, the promo code.
+    const storeSubtotal = priced.pricing.stores[storeSlug]?.total ??
+      storeItems.reduce((acc, i) => acc + i.charged.reduce((t, c) => t + c.price * c.qty, 0), 0);
     const store = storesBySlug.get(storeSlug);
     const parcelId = orderIds.get(storeSlug) ?? id;
 
@@ -2447,17 +2613,20 @@ export async function submitOrderAction(payload: {
        * An order is a record of what was agreed at a moment in time. It has
        * to carry its own prices.
        */
-      items: storeItems.map((i) => ({
-        productId: i.productId,
-        qty: i.qty,
-        name: i.name,
-        price: i.price,
-        image: i.image,
-        store: storeSlug,
-        storeName: i.storeName,
-        selectedColor: i.selectedColor,
-        selectedSize: i.selectedSize,
-      })),
+      items: storeItems.flatMap((i) =>
+        i.charged.map((c) => ({
+          productId: i.productId,
+          qty: c.qty,
+          name: i.name,
+          price: c.price,
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName } : {}),
+          image: i.image,
+          store: storeSlug,
+          storeName: i.storeName,
+          selectedColor: i.selectedColor,
+          selectedSize: i.selectedSize,
+        })),
+      ),
       status: "pending",
     };
 
@@ -2477,19 +2646,23 @@ export async function submitOrderAction(payload: {
       whatsapp: store?.whatsapp,
       orderId: parcelId,
       subtotal: storeSubtotal,
-      lines: storeItems.map((i) => ({
-        name: i.name,
-        qty: i.qty,
-        price: i.price,
-        options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
-        reference: i.reference,
-        image: i.image,
-      })),
+      lines: storeItems.flatMap((i) =>
+        i.charged.map((c) => ({
+          name: i.name,
+          qty: c.qty,
+          price: c.price,
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName } : {}),
+          options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
+          reference: i.reference,
+          image: i.image,
+        })),
+      ),
     });
   }
 
   refresh();
-  return { ok: true, message: "Order placed successfully!", orderId: id, discountPct, parcels };
+  const discount = Math.round((priced.pricing.offerDiscount + priced.pricing.promoDiscount) * 100) / 100;
+  return { ok: true, message: "Order placed successfully!", orderId: id, discount, parcels };
 }
 
 export async function getOrderAction(id: string): Promise<Order | undefined> {

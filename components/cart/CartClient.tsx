@@ -8,6 +8,8 @@ import DeliveryCity from "@/components/layout/DeliveryCity";
 import { useT } from "@/components/prefs/PrefsProvider";
 import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
+import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { useCartPricing } from "@/components/cart/useCartPricing";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import { groupByStore } from "@/lib/order-utils";
@@ -46,10 +48,17 @@ export default function CartClient({
   useEffect(() => setApplied(readAppliedPromo(promo)), [promo]);
 
   const units = lines.reduce((sum, l) => sum + l.qty, 0);
-  const discount = applied ? Math.round(subtotal * promo.pct) / 100 : 0;
-  const qualifiesFree = freeThreshold > 0 && subtotal >= freeThreshold;
+
+  // Priced by the server: today's prices, shop offers, the promo code for
+  // the shops that accepted it. Until it answers, the cart's own prices.
+  const { pricing, promo: promoStatus } = useCartPricing(lines, applied);
+  const positionOf = new Map(lines.map((l, i) => [l.productId, String(i)]));
+  const pricedLine = (productId: string) => pricing?.lines[positionOf.get(productId) ?? ""];
+  const listTotal = pricing?.listTotal ?? subtotal;
+  const itemsTotal = pricing?.total ?? subtotal;
+  const qualifiesFree = freeThreshold > 0 && itemsTotal >= freeThreshold;
   const delivery = qualifiesFree || lines.length === 0 ? 0 : fee;
-  const total = subtotal - discount + delivery;
+  const total = itemsTotal + delivery;
 
   const parcels = useMemo(
     () => [...groupByStore(lines.map((l) => ({ ...l, store: l.product.store }))).entries()],
@@ -156,6 +165,8 @@ export default function CartClient({
                     )}
                   </header>
 
+                  <ParcelOffers store={pricing?.stores[slug]} />
+
                   <ul className="divide-y divide-sand-100">
                     {storeLines.map((line) => (
                       <li key={line.productId} className="flex gap-3 p-4 sm:gap-4">
@@ -186,16 +197,12 @@ export default function CartClient({
                                 </p>
                               )}
                             </div>
-                            <div className="shrink-0 text-right">
-                              <p className="font-display text-base font-bold text-ocean-950 sm:text-lg">
-                                {money(line.product.price * line.qty)}
-                              </p>
-                              {line.qty > 1 && (
-                                <p className="text-[11px] text-slate-400">
-                                  {t("cart.each", { price: money(line.product.price) })}
-                                </p>
-                              )}
-                            </div>
+                            <LinePrice
+                              line={pricedLine(line.productId)}
+                              fallbackTotal={line.product.price * line.qty}
+                              unitPrice={line.product.price}
+                              qty={line.qty}
+                            />
                           </div>
 
                           <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-3">
@@ -281,23 +288,9 @@ export default function CartClient({
                   <dt className="text-slate-500">
                     {t("cart.subtotal")} · {itemCount}
                   </dt>
-                  <dd className="font-semibold tabular-nums">{money(subtotal)}</dd>
+                  <dd className="font-semibold tabular-nums">{money(listTotal)}</dd>
                 </div>
-                {applied && discount > 0 && (
-                  <div className="flex items-center justify-between text-emerald-700">
-                    <dt className="flex items-center gap-2">
-                      {t("cart.discount", { code: applied, pct: promo.pct })}
-                      <button
-                        type="button"
-                        onClick={clearPromo}
-                        className="text-[11px] font-semibold text-slate-400 underline hover:text-coral-600"
-                      >
-                        {t("cart.remove")}
-                      </button>
-                    </dt>
-                    <dd className="font-semibold tabular-nums">−{money(discount)}</dd>
-                  </div>
-                )}
+                <DiscountRows pricing={pricing} promo={promoStatus} code={applied} pct={promo.pct} onRemove={clearPromo} />
                 <div className="flex justify-between">
                   <dt className="text-slate-500">{t("cart.delivery")}</dt>
                   <dd className="font-semibold tabular-nums">
@@ -354,9 +347,9 @@ export default function CartClient({
                   )}
                 </div>
               )}
-              {applied && (
-                <p className="mt-3 text-xs font-semibold text-emerald-700">
-                  ✓ {t("cart.promoApplied", { code: applied, pct: promo.pct })}
+              {pricing && pricing.offerDiscount + pricing.promoDiscount > 0 && (
+                <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-center text-sm font-bold text-emerald-700">
+                  🎉 {t("offer.saved", { amount: money(pricing.offerDiscount + pricing.promoDiscount) })}
                 </p>
               )}
 

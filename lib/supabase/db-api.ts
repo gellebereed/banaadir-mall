@@ -14,6 +14,7 @@ import type {
   ProductReview,
   ProductionRun,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -410,6 +411,25 @@ async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
   }
 }
 
+/**
+ * Shop offers. The whole offer lives in `data` — its shape varies by kind,
+ * and a new kind should not need a migration. Null when the table is
+ * missing (supabase/migration-offers.sql not run yet).
+ */
+async function fetchOffersFromSupabaseRaw(): Promise<Offer[] | null> {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const supabase = getDataClient();
+    const data = await fetchAllRows((from, to) =>
+      supabase.from("offers").select("id, store, data").range(from, to),
+    );
+    if (!data) return null;
+    return data.map((row) => ({ ...(row.data as Offer), id: row.id, store: row.store }));
+  } catch {
+    return null;
+  }
+}
+
 /** One `employees` row as the app's Employee. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEmployee(e: any): Employee {
@@ -580,6 +600,9 @@ export const fetchOrdersFromSupabase = cached(
 
 export const fetchPromotionsFromSupabase = cached(
   fetchPromotionsFromSupabaseRaw, "promotions", CACHE_TAGS.promotions);
+
+export const fetchOffersFromSupabase = cached(
+  fetchOffersFromSupabaseRaw, "offers", CACHE_TAGS.offers);
 
 export const fetchEmployeesFromSupabase = cached(
   fetchEmployeesFromSupabaseRaw, "employees", CACHE_TAGS.employees);

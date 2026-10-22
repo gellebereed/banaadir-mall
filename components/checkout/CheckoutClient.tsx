@@ -19,6 +19,8 @@ import OrderConfirmation, {
 } from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
 import { CartSkeleton } from "@/components/cart/CartClient";
+import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { useCartPricing } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
@@ -67,36 +69,6 @@ export default function CheckoutClient({
   const { t, lang } = usePrefs();
   const { lines, ready, clearCart, scope } = useCart();
 
-  /*
-   * Today's prices. The cart remembers what things cost when they were
-   * added; the server charges the catalogue's current price. Asking for a
-   * quote keeps the total on this page the total that gets recorded, and
-   * lets a changed price be pointed out rather than discovered afterwards.
-   */
-  const [quoted, setQuoted] = useState<Record<string, number> | null>(null);
-  const quoteKey = lines.map((l) => `${l.productId}|${l.color ?? ""}|${l.size ?? ""}`).join(",");
-  useEffect(() => {
-    if (!quoteKey) return;
-    let live = true;
-    import("@/app/actions")
-      .then(({ quoteCartAction }) =>
-        quoteCartAction(lines.map((l) => ({ productId: l.productId, selectedColor: l.color, selectedSize: l.size }))),
-      )
-      .then((quote) => live && setQuoted(quote))
-      .catch(() => {
-        // Offline: the cart's own prices stand; the server still decides.
-      });
-    return () => {
-      live = false;
-    };
-    // `lines` is captured through quoteKey; qty changes don't move prices.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteKey]);
-  const priceOf = (line: (typeof lines)[number]) => quoted?.[line.productId] ?? line.product.price;
-  const subtotal = lines.reduce((sum, l) => sum + priceOf(l) * l.qty, 0);
-  const repriced = lines.filter(
-    (l) => quoted?.[l.productId] !== undefined && Math.abs(quoted[l.productId] - l.product.price) > 0.004,
-  );
   /*
    * Saved delivery details and the browser-side order history, namespaced
    * per account. Unscoped, the next person to sign in on a shared phone
@@ -327,8 +299,6 @@ export default function CheckoutClient({
   const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
   const globalCityOptions = GLOBAL_CITIES[countryCode] || [];
 
-  const delivery = freeThreshold > 0 && subtotal >= freeThreshold ? 0 : fee;
-
   // ── Promo code, carried over from the cart (lib/promo.ts) ───────────
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [promoOpen, setPromoOpen] = useState(false);
@@ -348,8 +318,23 @@ export default function CheckoutClient({
     }
   }
 
-  const discount = appliedPromo ? Math.round(subtotal * promo.pct) / 100 : 0;
-  const total = subtotal - discount + delivery;
+  /*
+   * Priced by the server — today's catalogue prices, the shops' offers and
+   * the promo code for the shops that accepted it — exactly as the order
+   * will be recorded. The cart remembers what things cost when they were
+   * added, so a changed price is pointed out rather than discovered later.
+   */
+  const { pricing, promo: promoStatus } = useCartPricing(lines, appliedPromo);
+  const lineIndex = new Map(lines.map((l, i) => [l.productId, String(i)]));
+  const pricedLine = (productId: string) => pricing?.lines[lineIndex.get(productId) ?? ""];
+  const priceOf = (line: (typeof lines)[number]) =>
+    pricedLine(line.productId)?.units[0]?.listPrice ?? line.product.price;
+  const subtotal = pricing?.listTotal ?? lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
+  const repriced = pricing ? lines.filter((l) => Math.abs(priceOf(l) - l.product.price) > 0.004) : [];
+  const discount = pricing ? pricing.offerDiscount + pricing.promoDiscount : 0;
+  const itemsTotal = subtotal - discount;
+  const delivery = freeThreshold > 0 && itemsTotal >= freeThreshold ? 0 : fee;
+  const total = itemsTotal + delivery;
 
   const destination = city === "Other" ? customCity : city;
   const arrival = localiseTime(deliveryTimeFor(settings.delivery, city, countryCode), lang);
@@ -463,9 +448,9 @@ export default function CheckoutClient({
     // every product up in the catalogue instead of trusting a cart snapshot
     // that may carry no store at all.
     let serverParcels: PlacedParcel[] | undefined;
-    // The discount the server actually honoured. Assumed to be the one
-    // shown if the call fails — the order then never reached it anyway.
-    let honouredPct = appliedPromo ? promo.pct : 0;
+    // What the server actually took off. Assumed to be what was shown if
+    // the call fails — the order then never reached it anyway.
+    let savedOnServer = discount;
 
     try {
       const { submitOrderAction } = await import("@/app/actions");
@@ -500,7 +485,7 @@ export default function CheckoutClient({
         promoCode: appliedPromo ?? undefined,
       });
       if (result?.parcels?.length) serverParcels = result.parcels;
-      if (typeof result?.discountPct === "number") honouredPct = result.discountPct;
+      if (typeof result?.discount === "number") savedOnServer = result.discount;
     } catch (err) {
       console.warn("Order submission sync warning:", err);
     }
@@ -511,8 +496,11 @@ export default function CheckoutClient({
     const parcelIds = vendorOrderIds(orderId, [...grouped.keys()]);
     const paymentLabel =
       PAYMENT_METHODS.find((m) => m.id === payment)?.name ?? payment;
-    const placedDiscount = Math.round(subtotal * honouredPct) / 100;
-    const keep = 1 - honouredPct / 100;
+    // The parcels' own totals are what the couriers collect; the summary
+    // adds up to exactly them.
+    const placedItems = serverParcels
+      ? Math.round(serverParcels.reduce((sum, p) => sum + p.subtotal, 0) * 100) / 100
+      : itemsTotal;
 
     setPlacedOrder({
       baseId: orderId,
@@ -522,11 +510,10 @@ export default function CheckoutClient({
       address: fullAddress,
       city: destinationCity,
       paymentLabel,
-      subtotal,
-      discount: placedDiscount,
-      discountPct: honouredPct,
+      subtotal: Math.round((placedItems + savedOnServer) * 100) / 100,
+      discount: savedOnServer,
       delivery,
-      total: subtotal - placedDiscount + delivery,
+      total: Math.round((placedItems + delivery) * 100) / 100,
       // Fall back to the local split only when the server call failed —
       // offline, or a network blip. It is the same shape, just derived from
       // data the browser already had.
@@ -542,7 +529,8 @@ export default function CheckoutClient({
           whatsapp: store?.whatsapp,
           orderId: parcelIds.get(storeSlug) ?? orderId,
           subtotal:
-            Math.round(storeLines.reduce((sum, l) => sum + priceOf(l) * l.qty, 0) * keep * 100) / 100,
+            pricing?.stores[storeSlug]?.total ??
+            Math.round(storeLines.reduce((sum, l) => sum + priceOf(l) * l.qty, 0) * 100) / 100,
           lines: storeLines.map((l) => {
             // The variant the customer actually chose decides both the
             // options label and which SKU the vendor should pick.
@@ -643,6 +631,7 @@ export default function CheckoutClient({
                 </span>
               )}
             </p>
+            <ParcelOffers store={pricing?.stores[slug]} compact />
             <ul className="space-y-3">
               {storeLines.map((line) => (
                 <li key={line.productId} className="flex items-center gap-3 text-sm">
@@ -665,14 +654,13 @@ export default function CheckoutClient({
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-right font-semibold tabular-nums">
-                    {repriced.some((r) => r.productId === line.productId) && (
-                      <span className="block text-[11px] font-normal text-slate-400 line-through">
-                        {money(line.product.price * line.qty)}
-                      </span>
-                    )}
-                    {money(priceOf(line) * line.qty)}
-                  </span>
+                  <LinePrice
+                    line={pricedLine(line.productId)}
+                    fallbackTotal={priceOf(line) * line.qty}
+                    unitPrice={priceOf(line)}
+                    qty={line.qty}
+                    size="sm"
+                  />
                 </li>
               ))}
             </ul>
@@ -741,24 +729,16 @@ export default function CheckoutClient({
           </dt>
           <dd className="font-semibold tabular-nums">{money(subtotal)}</dd>
         </div>
-        {appliedPromo && discount > 0 && (
-          <div className="flex justify-between text-emerald-700">
-            <dt className="flex items-center gap-2">
-              {t("cart.discount", { code: appliedPromo, pct: promo.pct })}
-              <button
-                type="button"
-                onClick={() => {
-                  setAppliedPromo(null);
-                  writeAppliedPromo(null);
-                }}
-                className="text-[11px] font-semibold text-slate-400 underline hover:text-coral-600"
-              >
-                {t("cart.remove")}
-              </button>
-            </dt>
-            <dd className="font-semibold tabular-nums">−{money(discount)}</dd>
-          </div>
-        )}
+        <DiscountRows
+          pricing={pricing}
+          promo={promoStatus}
+          code={appliedPromo}
+          pct={promo.pct}
+          onRemove={() => {
+            setAppliedPromo(null);
+            writeAppliedPromo(null);
+          }}
+        />
         <div className="flex justify-between gap-3">
           <dt className="text-slate-500">
             {t("cart.delivery")}

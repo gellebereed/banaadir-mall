@@ -3,8 +3,10 @@
 import { useActionState, useMemo, useState } from "react";
 import { ringUpSale, type SaleResult } from "@/app/vendor/pos/actions";
 import { money } from "@/lib/format";
+import { offerHeadline, priceCart } from "@/lib/offers";
 import { PAYMENT_LABELS, changeDue, tillTotals } from "@/lib/pos";
-import type { PaymentMethod, PosSettings, Product } from "@/lib/types";
+import type { Offer, PaymentMethod, PosSettings, Product } from "@/lib/types";
+import { useT } from "@/components/prefs/PrefsProvider";
 
 const EMPTY: SaleResult = { ok: false, message: "" };
 
@@ -28,10 +30,14 @@ const EMPTY: SaleResult = { ok: false, message: "" };
 export default function TillClient({
   products,
   settings,
+  offers = [],
 }: {
   products: Product[];
   settings: PosSettings;
+  /** The shop's own offers — they apply at the counter as online. */
+  offers?: Offer[];
 }) {
+  const t = useT();
   const [state, formAction, pending] = useActionState<SaleResult, FormData>(
     ringUpSale,
     EMPTY,
@@ -54,7 +60,27 @@ export default function TillClient({
     [products, qtyById],
   );
 
-  const totals = tillTotals(lines);
+  // The same engine as the website, so "buy 1, get the next for $1"
+  // works at the counter exactly as it does online (lib/offers.ts).
+  const pricing = useMemo(
+    () =>
+      priceCart(
+        lines.map((line) => {
+          const product = products.find((p) => p.id === line.productId);
+          return {
+            key: line.productId,
+            productId: line.productId,
+            store: product?.store ?? "",
+            price: line.price,
+            qty: line.qty,
+            onSale: (product?.compareAt ?? 0) > line.price,
+          };
+        }),
+        offers,
+      ),
+    [lines, products, offers],
+  );
+  const totals = { ...tillTotals(lines), total: pricing.total };
   const change = changeDue(totals.total, Number(cashGiven) || 0);
 
   function add(product: Product) {
@@ -250,7 +276,12 @@ export default function TillClient({
                   </div>
 
                   <p className="w-16 shrink-0 text-right font-display text-sm font-extrabold text-ocean-950">
-                    {money(line.price * line.qty)}
+                    {(pricing.lines[line.productId]?.discount ?? 0) > 0 && (
+                      <span className="block text-[11px] font-normal text-slate-400 line-through">
+                        {money(line.price * line.qty)}
+                      </span>
+                    )}
+                    {money(pricing.lines[line.productId]?.total ?? line.price * line.qty)}
                   </p>
                 </li>
               ))}
@@ -258,6 +289,12 @@ export default function TillClient({
           )}
 
           <div className="border-t border-sand-200 bg-sand-50 p-4">
+            {Object.values(pricing.stores).flatMap((s) => s.applied).map((a) => (
+              <p key={a.offer.id} className="mb-1 flex justify-between text-sm font-semibold text-emerald-700">
+                <span>🎁 {offerHeadline(a.offer, t, money)}</span>
+                <span>−{money(a.discount)}</span>
+              </p>
+            ))}
             <div className="flex items-baseline justify-between">
               <span className="font-display font-bold text-slate-600">Total</span>
               <span className="font-display text-3xl font-extrabold text-ocean-950">

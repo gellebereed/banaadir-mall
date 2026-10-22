@@ -27,6 +27,7 @@ import {
   fetchOrdersFromSupabase,
   fetchProductsFromSupabase,
   fetchPromotionsFromSupabase,
+  fetchOffersFromSupabase,
   fetchRecoSettingsFromSupabase,
   fetchReviewsFromSupabase,
   fetchStoriesFromSupabase,
@@ -45,6 +46,7 @@ import {
   flattenCategoryTree,
   visibleCategories,
 } from "./category-tree";
+import { isOfferLive, offerCovers } from "./offers";
 import type {
   Category,
   CategoryNode,
@@ -59,6 +61,7 @@ import type {
   ProductionRun,
   ProductReview,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -260,6 +263,20 @@ export async function getPromotions(): Promise<Promotion[]> {
   return (await getDB()).promotions;
 }
 
+/** Every shop's cart offers, live or not (lib/offers.ts prices them). */
+export async function getOffers(): Promise<Offer[]> {
+  const fromSupabase = await fetchOffersFromSupabase();
+  if (fromSupabase) return fromSupabase;
+  return (await getDB()).offers ?? [];
+}
+
+/** One shop's offers, newest first — for its dashboard. */
+export async function getOffersByStore(store: string): Promise<Offer[]> {
+  return (await getOffers())
+    .filter((o) => o.store === store)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
 /**
  * Is this promotion running right now? `active` is the seller's on/off
  * switch; the optional window lets them schedule one in advance or have it
@@ -275,12 +292,13 @@ export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
 /**
  * Highest discount percentage applying to a product right now. A promotion
  * covers the whole store when it has no productIds, or only the listed
- * products when it does. The site-wide campaign always applies.
+ * products when it does. The site-wide campaign applies to the shops that
+ * accepted it — they pay for it.
  */
 function discountPctFor(
   product: Product,
   promotions: Promotion[],
-  campaignPct: number,
+  campaign: Campaign,
 ): number {
   const promo = promotions
     .filter(
@@ -290,13 +308,19 @@ function discountPctFor(
         (!p.productIds?.length || p.productIds.includes(product.id)),
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
+  const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
   return Math.max(promo, campaignPct);
 }
 
-/** The site-wide campaign percentage, or 0 when it isn't running. */
-async function campaignPct(): Promise<number> {
-  const marketing = await getMarketingSettings();
-  return marketing.campaign.active ? marketing.campaign.pct : 0;
+interface Campaign {
+  pct: number;
+  stores: Set<string>;
+}
+
+/** The site-wide campaign: its percentage (0 when off) and the shops in it. */
+async function campaignPct(): Promise<Campaign> {
+  const { campaign } = await getMarketingSettings();
+  return { pct: campaign.active ? campaign.pct : 0, stores: new Set(campaign.stores ?? []) };
 }
 
 /** Discount percentage per product id, for dashboard tables and notices. */
@@ -322,26 +346,37 @@ export async function getDiscountMap(storeSlug?: string): Promise<Record<string,
  * Includes hidden products; use getProducts() for the storefront.
  */
 export async function getAllProducts(): Promise<Product[]> {
-  const [base, promotions, campaign] = await Promise.all([
+  const [base, promotions, campaign, offers] = await Promise.all([
     getBaseProducts(),
     getPromotions(),
     campaignPct(),
+    getOffers(),
   ]);
+  const live = offers.filter((o) => isOfferLive(o));
 
   return base.map((p) => {
     const pct = discountPctFor(p, promotions, campaign);
-    if (pct <= 0) return p;
-    const factor = 1 - pct / 100;
-    const round = (n: number) => Math.round(n * factor * 100) / 100;
-    return {
-      ...p,
-      price: round(p.price),
-      compareAt: p.compareAt ?? p.price,
-      badge: "Sale" as const,
-      variants: p.variants?.map((v) =>
-        v.price === undefined ? v : { ...v, price: round(v.price) },
-      ),
-    };
+    const priced =
+      pct <= 0
+        ? p
+        : (() => {
+            const factor = 1 - pct / 100;
+            const round = (n: number) => Math.round(n * factor * 100) / 100;
+            return {
+              ...p,
+              price: round(p.price),
+              compareAt: p.compareAt ?? p.price,
+              badge: "Sale" as const,
+              variants: p.variants?.map((v) =>
+                v.price === undefined ? v : { ...v, price: round(v.price) },
+              ),
+            };
+          })();
+    // The shop offer this product counts towards, for its badge. A "full
+    // price only" offer skips products already marked down.
+    const onSale = (priced.compareAt ?? 0) > priced.price;
+    const offer = live.find((o) => offerCovers(o, p.id, p.store) && !(o.fullPriceOnly && onSale));
+    return offer ? { ...priced, offer } : priced;
   });
 }
 
