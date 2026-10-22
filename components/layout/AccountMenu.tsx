@@ -14,6 +14,7 @@
  * reachable from every page, which means it belongs in the header.
  */
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -29,6 +30,7 @@ export default function AccountMenu({
   storeName?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   const wrapper = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
@@ -54,9 +56,9 @@ export default function AccountMenu({
       <div className="flex items-center gap-2">
         <Link
           href={here ? loginHref(here) : "/login"}
-          className="rounded-full px-3 py-2 text-sm font-bold text-ocean-800 transition hover:bg-ocean-50"
+          className="whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-bold text-ocean-800 transition hover:bg-ocean-50 sm:px-3"
         >
-          Sign in
+          {t("nav.signIn")}
         </Link>
         {/* Full label on desktop; on a phone the header is already crowded
             and the sign-in page carries a "create an account" link. */}
@@ -64,7 +66,7 @@ export default function AccountMenu({
           href={here ? loginHref(here, "/register") : "/register"}
           className="hidden rounded-full bg-ocean-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-ocean-800 sm:inline-flex"
         >
-          Sign up
+          {t("nav.signUp")}
         </Link>
       </div>
     );

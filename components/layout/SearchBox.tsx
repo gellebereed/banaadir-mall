@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,6 +15,7 @@ import { money } from "@/lib/format";
  */
 export default function SearchBox({ variant, onNavigate }: { variant: "desktop" | "mobile"; onNavigate?: () => void }) {
   const router = useRouter();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<SearchSuggestions | null>(null);
@@ -108,9 +110,9 @@ export default function SearchBox({ variant, onNavigate }: { variant: "desktop" 
             name="q"
             enterKeyHint="search"
             autoComplete="off"
-            aria-label="Search products, brands and stores"
+            aria-label={t("nav.search")}
             aria-expanded={Boolean(showPanel)}
-            placeholder="Search products, brands and stores…"
+            placeholder={t("nav.search")}
             className={
               variant === "desktop"
                 ? "w-full rounded-full border-2 border-ocean-700/20 bg-sand-50 py-2.5 pl-5 pr-28 text-sm outline-none transition focus:border-ocean-600 focus:bg-white"
@@ -122,10 +124,10 @@ export default function SearchBox({ variant, onNavigate }: { variant: "desktop" 
               type="submit"
               className="absolute bottom-1 right-1 top-1 rounded-full bg-ocean-700 px-5 text-sm font-semibold text-white transition hover:bg-mango-500"
             >
-              Search
+              {t("nav.search.button")}
             </button>
           ) : (
-            <button type="submit" aria-label="Search" className="absolute bottom-1 right-1 top-1 px-3 text-slate-500 hover:text-ocean-700">
+            <button type="submit" aria-label={t("nav.search.button")} className="absolute bottom-1 right-1 top-1 px-3 text-slate-500 hover:text-ocean-700">
               🔍
             </button>
           )}

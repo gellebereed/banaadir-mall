@@ -1,11 +1,14 @@
 "use client";
 
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
 import ShareButton from "@/components/ShareButton";
+import DeliveryPromise from "./DeliveryPromise";
+import { offerHeadline, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { compact, discountPct, money } from "@/lib/format";
@@ -20,7 +23,8 @@ import {
   variantPrice,
   variantStock,
 } from "@/lib/product-utils";
-import type { Product } from "@/lib/types";
+import type { MarketingSettings, Product } from "@/lib/types";
+import FlashEndsChip from "@/components/FlashEndsChip";
 
 /**
  * The interactive half of the product page: zoomable photo gallery plus
@@ -32,14 +36,18 @@ import type { Product } from "@/lib/types";
 export default function ProductView({
   product,
   details = [],
+  delivery,
   children,
 }: {
   product: Product;
   /** Standard attributes as rows (lib/taxonomy-attributes#describeAttributes). */
   details?: { name: string; value: string }[];
+  /** Marketing → Delivery, for the promise under the buy buttons. */
+  delivery?: MarketingSettings["delivery"];
   children?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const t = useT();
 
   const withVariants = hasVariants(product);
 
@@ -176,8 +184,30 @@ export default function ProductView({
    * scrolling — every section then rendered about twice the screen width,
    * which is what "stretched" was.
    */
+  const features = [...new Set(product.features)];
+  // The buy box shows the opening paragraph only; the rest is in Product details.
+  const openingParagraph = (product.description ?? "").split(/\n\s*\n/)[0].replace(/^###\s+/, "");
+  const longDescription = openingParagraph.length > 240 || openingParagraph.length < (product.description ?? "").trim().length;
+  const hasDetails = Boolean(product.description) || features.length > 0 || details.length > 0;
+
+  const thumbs = (vertical: boolean) =>
+    images.map((src, i) => (
+      <button
+        key={src}
+        onClick={() => setActiveImage(i)}
+        aria-label={t("product.photo", { n: i + 1 })}
+        aria-current={i === activeImage}
+        className={`relative shrink-0 overflow-hidden rounded-xl border-2 transition ${vertical ? "aspect-square w-full" : "h-20 w-20"} ${
+          i === activeImage ? "border-ocean-700" : "border-transparent hover:border-ocean-300"
+        }`}
+      >
+        <Image src={src} alt="" fill sizes="80px" className="object-cover" />
+      </button>
+    ));
+
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
+    <>
+    <div className="grid gap-5 sm:gap-8 lg:grid-cols-2">
       {/* Sticky buy bar — phones only (the bottom nav is md:hidden too). */}
       <div
         aria-hidden={!showBar}
@@ -197,15 +227,24 @@ export default function ProductView({
             tabIndex={showBar ? 0 : -1}
             onClick={handleAdd}
             disabled={soldOut}
-            className="btn-primary !px-5 !py-2.5 text-sm disabled:opacity-50"
+            className="btn-primary shrink-0 whitespace-nowrap !px-5 !py-2.5 text-sm disabled:opacity-50"
           >
-            {added ? "✓ Added" : soldOut ? "Out of stock" : "Add to Cart"}
+            {added ? "✓" : soldOut ? t("product.outOfStock") : t("product.addToCart")}
           </button>
         </div>
       </div>
 
       {/* ── Photos ─────────────────────────────────────────────────── */}
-      <div className="min-w-0">
+      {/* Gallery. Desktop: thumbnails down the left, so every photo is in
+          the first screen beside the main one; phone: a row underneath. */}
+      {/* Sticky on desktop: the photos stay beside the buy column as it scrolls. */}
+      <div className="min-w-0 lg:sticky lg:top-36 lg:flex lg:items-start lg:gap-3 lg:self-start">
+        {images.length > 1 && (
+          <div className="rail-scroll hidden max-h-[min(36rem,calc(100vh-12rem))] w-20 shrink-0 flex-col gap-2.5 overflow-y-auto lg:flex">
+            {thumbs(true)}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
         {images.length > 0 ? (
           <ZoomableImage
             images={images}
@@ -224,23 +263,9 @@ export default function ProductView({
         )}
 
         {images.length > 1 && (
-          <div className="mt-3 flex gap-3 overflow-x-auto pb-1 rail-scroll">
-            {images.map((src, i) => (
-              <button
-                key={src}
-                onClick={() => setActiveImage(i)}
-                aria-label={`View photo ${i + 1}`}
-                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 transition ${
-                  i === activeImage
-                    ? "border-ocean-700"
-                    : "border-transparent hover:border-ocean-300"
-                }`}
-              >
-                <Image src={src} alt="" fill sizes="80px" className="object-cover" />
-              </button>
-            ))}
-          </div>
+          <div className="rail-scroll mt-3 flex gap-3 overflow-x-auto pb-1 lg:hidden">{thumbs(false)}</div>
         )}
+        </div>
       </div>
 
       {/* ── Details & buy box ──────────────────────────────────────── */}
@@ -254,12 +279,32 @@ export default function ProductView({
           <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
             {product.name}
           </h1>
-          <ShareButton
-            path={`/product/${product.slug}`}
-            title={product.name}
-            text={`${product.name} — ${money(price)} on Banaadir Mall`}
-            label="Share this product"
-          />
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              aria-label={wished ? t("product.wishRemove") : t("product.wishAdd")}
+              aria-pressed={wished}
+              onClick={() =>
+                toggleWishlist(product.id, {
+                  name: product.name,
+                  icon: product.icon,
+                  images: images.length > 0 ? images : product.images,
+                })
+              }
+              className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-lg transition ${
+                wished
+                  ? "border-coral-500 bg-coral-500 text-white"
+                  : "border-sand-200 bg-white text-slate-500 hover:border-coral-500 hover:text-coral-500"
+              }`}
+            >
+              {wished ? "♥" : "♡"}
+            </button>
+            <ShareButton
+              path={`/product/${product.slug}`}
+              title={product.name}
+              text={`${product.name} — ${money(price)} on Banaadir Mall`}
+              label={t("product.share")}
+            />
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
           {product.reviewCount > 0 ? (
@@ -268,10 +313,10 @@ export default function ProductView({
             </a>
           ) : (
             <a href="#reviews" className="text-sm text-slate-400 hover:text-ocean-700 hover:underline">
-              No reviews yet
+              {t("product.noReviews")}
             </a>
           )}
-          <span className="text-sm text-slate-400">{compact(product.sold)} sold</span>
+          <span className="text-sm text-slate-400">{t("product.sold", { n: compact(product.sold) })}</span>
         </div>
 
         {/*
@@ -286,8 +331,9 @@ export default function ProductView({
           </p>
         )}
 
-        {/* Price reflects the selected variant */}
-        <div className="mt-4 flex items-baseline gap-3">
+        {/* Price reflects the selected variant. Wraps on a narrow phone
+            rather than squeezing the "Save" pill against the edge. */}
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-display text-4xl font-extrabold text-ocean-950">
             {money(price)}
           </span>
@@ -297,19 +343,80 @@ export default function ProductView({
                 {money(product.compareAt)}
               </span>
               <span className="rounded-full bg-coral-100 px-2.5 py-1 text-xs font-bold text-coral-600">
-                Save {discountPct(price, product.compareAt)}%
+                {t("product.save", { pct: discountPct(price, product.compareAt) })}
               </span>
             </>
           )}
         </div>
 
-        <FormattedDescription text={product.description} />
+        {product.flashEndsAt && (
+          <div className="mt-2">
+            <FlashEndsChip endsAt={product.flashEndsAt} />
+          </div>
+        )}
+
+        {/* The shop's cart offer, with the conditions spelled out. */}
+        {product.offer && (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <span className="text-2xl" aria-hidden>🎁</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">{t("offer.shopOffer")}</p>
+              <p className="font-display text-base font-extrabold text-ocean-950">
+                {offerHeadline(product.offer, t, money)}
+              </p>
+              {offerTerms(product.offer, t).length > 0 && (
+                <p className="text-xs text-slate-600">{offerTerms(product.offer, t).join(" · ")}</p>
+              )}
+              {product.offer.kind === "bundle" ? (
+                // The rest of the set, one tap each.
+                <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {(product.offer.bundle ?? [])
+                    .filter((b) => b.productId !== product.id)
+                    .map((b) => (
+                      <Link key={b.productId} href={`/product/${b.slug}`} className="text-xs font-bold text-emerald-800 hover:underline">
+                        {b.name} →
+                      </Link>
+                    ))}
+                </span>
+              ) : product.offer.kind === "gift" && product.offer.gift ? (
+                <Link
+                  href={`/product/${product.offer.gift.slug}`}
+                  className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
+                >
+                  {product.offer.gift.name} →
+                </Link>
+              ) : (
+                <Link
+                  href={`/products?store=${product.store}`}
+                  className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
+                >
+                  {t("offer.shopItems")} →
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* The opening of the description; the whole of it is under
+            "Product details" below, where it has room. */}
+        {product.description && (
+          <div className="mt-4">
+            <div className="line-clamp-4 [&>div]:mt-0">
+              <FormattedDescription text={openingParagraph} />
+            </div>
+            {longDescription && (
+              <a href="#details" className="mt-1 inline-block text-sm font-bold text-ocean-700 hover:underline">
+                {t("product.readMore")}
+              </a>
+            )}
+          </div>
+        )}
 
         {/* Variant pickers */}
         <div className="mt-6 space-y-5">
           {colors.length > 0 && (
             <OptionPicker
-              label="Colour"
+              label={t("product.colour")}
               options={colours.map((c) => ({ value: c.color, inStock: c.inStock }))}
               value={color}
               onChange={setColor}
@@ -318,7 +425,7 @@ export default function ProductView({
           )}
           {sizes.length > 0 && (
             <OptionPicker
-              label="Size"
+              label={t("product.size")}
               options={sizeChoices.map((s) => ({ value: s.size, inStock: s.inStock }))}
               value={size}
               onChange={setSize}
@@ -350,78 +457,85 @@ export default function ProductView({
               }`}
             >
               {soldOut
-                ? "Out of stock in this option"
+                ? t("product.soldOutOption")
                 : lowStock
-                  ? `🔥 Only ${stock} left — order soon`
-                  : `✓ In stock (${stock} available)`}
+                  ? t("product.lowStock", { n: stock })
+                  : t("product.inStock", { n: stock })}
             </p>
           </div>
 
           {/* Actions */}
-          <div ref={actionsRef} className="flex flex-wrap gap-3">
+          <div ref={actionsRef} className="grid grid-cols-2 gap-3">
             <button
               onClick={handleAdd}
               disabled={soldOut}
-              className="btn-primary min-w-44 flex-1 disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-primary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {added ? "✓ Added to Cart" : soldOut ? "Out of Stock" : "Add to Cart"}
+              {added ? t("product.added") : soldOut ? t("product.soldOut") : t("product.addToCart")}
             </button>
             <Link
               href="/cart"
               onClick={handleAdd}
-              className={`btn-secondary flex-1 ${soldOut ? "pointer-events-none opacity-50" : ""}`}
+              className={`btn-secondary whitespace-nowrap ${soldOut ? "pointer-events-none opacity-50" : ""}`}
             >
-              Buy Now
+              {t("product.buyNow")}
             </Link>
-            <button
-              aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
-              onClick={() =>
-                toggleWishlist(product.id, {
-                  name: product.name,
-                  icon: product.icon,
-                  images: images.length > 0 ? images : product.images,
-                })
-              }
-              className={`flex h-12 w-12 items-center justify-center rounded-full border-2 text-xl transition ${
-                wished
-                  ? "border-coral-500 bg-coral-500 text-white"
-                  : "border-sand-200 bg-white text-slate-400 hover:border-coral-500 hover:text-coral-500"
-              }`}
-            >
-              {wished ? "♥" : "♡"}
-            </button>
           </div>
         </div>
+
+        {delivery && <DeliveryPromise delivery={delivery} subtotal={price * qty} />}
 
         {/* Store card (server-rendered) */}
         {children}
 
-        {/*
-          Supplier imports quite often repeat a feature line verbatim, and
-          keying on the text made React warn about duplicate keys and drop
-          one of them. De-duplicated instead: a bullet listed twice is not
-          worth rendering twice either.
-        */}
-        <ul className="mt-6 grid gap-2 sm:grid-cols-2">
-          {[...new Set(product.features)].map((f, i) => (
-            <li key={`${f}-${i}`} className="flex items-center gap-2 text-sm text-slate-600">
-              <span className="text-emerald-500">✓</span> {f}
-            </li>
-          ))}
-        </ul>
-
-        {details.length > 0 && (
-          <dl className="mt-6 divide-y divide-sand-100 rounded-2xl border border-sand-200 text-sm">
-            {details.map((d) => (
-              <div key={d.name} className="flex gap-4 px-4 py-2.5">
-                <dt className="w-2/5 shrink-0 text-slate-500">{d.name}</dt>
-                <dd className="font-semibold text-slate-800">{d.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
       </div>
     </div>
+
+    {/* ── Product details: the full description, highlights and specs ──
+        A section of its own, not the bottom of the buy column, so a long
+        supplier description has room and the buy box stays short. */}
+    {hasDetails && (
+      <section id="details" className="mt-12 scroll-mt-40">
+        <h2 className="font-display text-2xl font-bold text-ocean-950">{t("product.details")}</h2>
+        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          {product.description && (
+            <div className="card p-5 sm:p-6">
+              <h3 className="font-display text-base font-bold text-ocean-950">{t("product.description")}</h3>
+              <FormattedDescription text={product.description} />
+            </div>
+          )}
+          <div className="space-y-6">
+            {/* Supplier imports often repeat a feature line verbatim — de-duplicated above. */}
+            {features.length > 0 && (
+              <div className="card p-5 sm:p-6">
+                <h3 className="font-display text-base font-bold text-ocean-950">{t("product.highlights")}</h3>
+                <ul className="mt-3 space-y-2">
+                  {features.map((f, i) => (
+                    <li key={`${f}-${i}`} className="flex items-start gap-2 text-sm text-slate-600">
+                      <span className="text-emerald-500">✓</span> {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {details.length > 0 && (
+              <div className="card overflow-hidden">
+                <h3 className="px-5 pt-5 font-display text-base font-bold text-ocean-950 sm:px-6">{t("product.specs")}</h3>
+                <dl className="mt-3 divide-y divide-sand-100 text-sm">
+                  {details.map((d) => (
+                    <div key={d.name} className="flex gap-4 px-5 py-2.5 sm:px-6">
+                      <dt className="w-2/5 shrink-0 text-slate-500">{d.name}</dt>
+                      <dd className="font-semibold text-slate-800">{d.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    )}
+    </>
   );
 }
 
@@ -464,6 +578,8 @@ function ZoomableImage({
 }) {
   const [origin, setOrigin] = useState("50% 50%");
   const [zooming, setZooming] = useState(false);
+  // Light data mode: screen width at normal quality (the zoom gets softer).
+  const { lite } = usePrefs();
   const [lightbox, setLightbox] = useState(false);
   const touchStartX = useRef<number | null>(null);
 
@@ -538,8 +654,8 @@ function ZoomableImage({
            * control whose entire job is showing fabric detail, was the
            * blurriest thing on the page. The 2 here is the scale(2) below.
            */
-          sizes="(max-width: 1024px) 150vw, 75vw"
-          quality={90}
+          sizes={lite ? "(max-width: 1024px) 100vw, 50vw" : "(max-width: 1024px) 150vw, 75vw"}
+          quality={lite ? 75 : 90}
           priority
           className="object-cover transition-transform duration-200 ease-out"
           style={{
@@ -763,8 +879,17 @@ function OptionPicker({
 function FormattedDescription({ text }: { text: string }) {
   if (!text) return null;
 
-  // Split by double line breaks into paragraphs / sections
-  const blocks = text.split(/\n\s*\n/);
+  // Split by double line breaks into paragraphs / sections. A "### Title"
+  // line is its own block even when the paragraph follows on the next line
+  // — otherwise the heading swallowed the whole paragraph in bold.
+  const blocks = text
+    .split(/\n\s*\n/)
+    .flatMap((block) => {
+      const trimmed = block.trim();
+      if (!trimmed.startsWith("### ")) return [block];
+      const [heading, ...rest] = trimmed.split("\n");
+      return rest.join("\n").trim() ? [heading, rest.join("\n")] : [heading];
+    });
 
   return (
     <div className="mt-4 space-y-3 text-sm text-slate-600 leading-relaxed">

@@ -20,6 +20,8 @@ import type {
   CommissionSettings,
   Employee,
   EmployeeRole,
+  FlashDeal,
+  FlashRequest,
   EmployeeStatus,
   MarketingSettings,
   Permission,
@@ -30,6 +32,7 @@ import type {
   ProductionRun,
   ProductReview,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -648,6 +651,107 @@ export async function updateOrderDeliveryInSupabase(
   } catch (err) {
     console.error("[Supabase Mutations] updateOrderDelivery exception:", err);
     return false;
+  }
+}
+
+// ── Shop offers ────────────────────────────────────────────────────────
+// Table from supabase/migration-offers.sql: id, store, data (jsonb).
+
+/** "missing-table" tells the caller to point at the migration. */
+export async function upsertOfferInSupabase(offer: Offer): Promise<"ok" | "missing-table" | "error"> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const supabase = getDataClient();
+    const { id, store, ...data } = offer;
+    const { error } = await supabase
+      .from("offers")
+      .upsert({ id, store, data }, { onConflict: "id" });
+    if (!error) return "ok";
+    console.error("[Supabase Mutations] upsertOffer error:", error.message);
+    return error.code === "42P01" || /relation .*offers.* does not exist|Could not find the table/i.test(error.message ?? "")
+      ? "missing-table"
+      : "error";
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertOffer exception:", err);
+    return "error";
+  }
+}
+
+export async function deleteOfferFromSupabase(id: string): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const { error } = await getDataClient().from("offers").delete().eq("id", id);
+    if (error) console.error("[Supabase Mutations] deleteOffer error:", error.message);
+    return !error;
+  } catch (err) {
+    console.error("[Supabase Mutations] deleteOffer exception:", err);
+    return false;
+  }
+}
+
+// ── Flash deals ────────────────────────────────────────────────────────
+// Tables from supabase/migration-flash.sql.
+
+type FlashWrite = "ok" | "missing-table" | "error";
+
+function flashWriteResult(error: { code?: string; message?: string } | null, what: string): FlashWrite {
+  if (!error) return "ok";
+  console.error(`[Supabase Mutations] ${what} error:`, error.message);
+  return error.code === "42P01" || error.code === "42703" || error.code === "PGRST204" ||
+    /does not exist|Could not find the/i.test(error.message ?? "")
+    ? "missing-table"
+    : "error";
+}
+
+export async function saveFlashInSupabase(flash: FlashDeal): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { error } = await getDataClient().from("flash_deals").upsert(
+      { id: 1, active: flash.active, name: flash.name, ends_at: flash.endsAt, product_ids: flash.productIds },
+      { onConflict: "id" },
+    );
+    return flashWriteResult(error, "saveFlash");
+  } catch (err) {
+    console.error("[Supabase Mutations] saveFlash exception:", err);
+    return "error";
+  }
+}
+
+export async function upsertFlashRequestsInSupabase(requests: FlashRequest[]): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  if (requests.length === 0) return "ok";
+  try {
+    // ends_at only when one is set, so applications without one still
+    // save on a table from before that column existed.
+    const withEnd = requests.some((r) => r.endsAt);
+    const { error } = await getDataClient().from("flash_requests").upsert(
+      requests.map((r) => ({
+        id: r.id,
+        store: r.store,
+        product_id: r.productId,
+        pct: r.pct,
+        note: r.note ?? null,
+        status: r.status,
+        date: r.date,
+        ...(withEnd ? { ends_at: r.endsAt ?? null } : {}),
+      })),
+      { onConflict: "id" },
+    );
+    return flashWriteResult(error, "upsertFlashRequests");
+  } catch (err) {
+    console.error("[Supabase Mutations] upsertFlashRequests exception:", err);
+    return "error";
+  }
+}
+
+export async function deleteFlashRequestFromSupabase(id: string): Promise<FlashWrite> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { error } = await getDataClient().from("flash_requests").delete().eq("id", id);
+    return flashWriteResult(error, "deleteFlashRequest");
+  } catch (err) {
+    console.error("[Supabase Mutations] deleteFlashRequest exception:", err);
+    return "error";
   }
 }
 

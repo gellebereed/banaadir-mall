@@ -1,5 +1,6 @@
 "use client";
 
+import PendingButton from "@/components/dashboard/PendingButton";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { addRecoPin, blockFromReco, deleteRecoPin, toggleRecoPin, unblockFromReco } from "@/app/actions";
@@ -211,14 +212,14 @@ export default function PinManager({
                       </Link>
                     )}
                     <form action={toggleRecoPin.bind(null, pin.id)}>
-                      <button className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-ocean-400 hover:text-ocean-700">
+                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-ocean-400 hover:text-ocean-700">
                         {pin.active ? "Pause" : "Resume"}
-                      </button>
+                      </PendingButton>
                     </form>
                     <form action={deleteRecoPin.bind(null, pin.id)}>
-                      <button className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
+                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
                         Remove
-                      </button>
+                      </PendingButton>
                     </form>
                   </div>
                 </li>
@@ -256,12 +257,12 @@ export default function PinManager({
                 >
                   {product?.name ?? id}
                   <form action={unblockFromReco.bind(null, id)}>
-                    <button
+                    <PendingButton iconOnly
                       aria-label="Unblock"
                       className="rounded-full px-1.5 text-slate-400 transition hover:bg-white hover:text-coral-600"
                     >
                       ✕
-                    </button>
+                    </PendingButton>
                   </form>
                 </li>
               );

@@ -1,5 +1,6 @@
 "use client";
 
+import PendingButton from "@/components/dashboard/PendingButton";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { deleteStory, saveStory, toggleStoryPublished } from "@/app/actions";
@@ -130,14 +131,14 @@ export default function StoryManager({
                       Edit
                     </button>
                     <form action={toggleStoryPublished.bind(null, story.id)}>
-                      <button className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
+                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
                         {story.published ? "Unpublish" : "Publish"}
-                      </button>
+                      </PendingButton>
                     </form>
                     <form action={deleteStory.bind(null, story.id)}>
-                      <button className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
+                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
                         Delete
-                      </button>
+                      </PendingButton>
                     </form>
                   </div>
                 </div>

@@ -12,13 +12,15 @@
  */
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
+import { ALL_CACHE_TAGS, CACHE_TAGS } from "@/lib/supabase/public-client";
 import { redirect } from "next/navigation";
 import {
   findCodeConflicts,
   getBaseProduct,
   getBaseProducts,
   getCategoryWithDescendants,
+  getFlashDeal,
+  getFlashRequests,
   getStore,
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
@@ -47,8 +49,11 @@ import {
   newInviteToken,
   saveEmployeeChange,
 } from "@/lib/employees";
-import { getSession } from "@/lib/session";
+import { getSession, requireVendor } from "@/lib/session";
 import type {
+  FlashDeal,
+  FlashRequest,
+  Offer,
   Banner,
   CommissionRule,
   CommissionSettings,
@@ -70,6 +75,9 @@ import type {
 import { isUploadPlaceholder } from "@/lib/product-utils";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
+  saveFlashInSupabase,
+  upsertFlashRequestsInSupabase,
+  deleteFlashRequestFromSupabase,
   useSupabaseMutations,
   upsertProduct,
   fetchProductPhotoState,
@@ -81,6 +89,8 @@ import {
   setOrderStatusInSupabase,
   updateOrderDeliveryInSupabase,
   insertPromotion,
+  upsertOfferInSupabase,
+  deleteOfferFromSupabase,
   togglePromotionInSupabase,
   deletePromotionFromSupabase,
   insertEmployee,
@@ -93,6 +103,7 @@ import {
   toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
+import { formatShopTime, normaliseShopTime, parseShopTime } from "@/lib/shop-time";
 import { logActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
 
@@ -1351,6 +1362,173 @@ export async function updateStoreSettings(
   };
 }
 
+// ── Shop offers (cart deals — lib/offers.ts) ───────────────────────────
+
+/**
+ * Save a shop offer built in components/dashboard/OfferBuilder.
+ *
+ * The builder posts the offer as JSON; every field is re-read here rather
+ * than trusted, and the shop always comes from the session.
+ */
+export async function createOffer(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  const session = await requirePermission("promotions.manage");
+  const store = session.role === "seller" ? session.store : undefined;
+  if (!store) return { ok: false, message: "Open your store's dashboard to create an offer." };
+
+  const raw = parseJsonField<Record<string, unknown>>(formData.get("offerJson"), {});
+  const num = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+  const kinds = ["next_fixed", "next_pct", "bxgy", "tiers", "spend", "bundle", "mix", "gift"] as const;
+  const kind = kinds.find((k) => k === raw.kind);
+  if (!kind) return { ok: false, message: "Choose a type of offer." };
+
+  const { getBaseProductsByStore, getOffers, getMarketingSettings } = await import("@/lib/api");
+  const ownProducts = await getBaseProductsByStore(store);
+  const own = new Set(ownProducts.map((p) => p.id));
+  // Products the offer names, captured with their names so the cart can
+  // say "add the Oxford Shirt" for something not in the basket yet.
+  const ref = (id: string) => {
+    const p = ownProducts.find((x) => x.id === id);
+    return p
+      ? { productId: p.id, name: p.name, slug: p.slug, price: p.price, image: p.images?.[0], icon: p.icon }
+      : undefined;
+  };
+  const bundle =
+    kind === "bundle" && Array.isArray(raw.bundleIds)
+      ? [...new Set(raw.bundleIds.map(String))].map(ref).filter((r) => r !== undefined).slice(0, 6)
+      : undefined;
+  const gift = kind === "gift" && raw.giftId ? ref(String(raw.giftId)) : undefined;
+
+  // A shop coupon code must not clash with the marketplace code or with
+  // another live offer's code — one code, one meaning.
+  const code = String(raw.code ?? "").trim().toUpperCase() || undefined;
+  if (code) {
+    const [offers, marketing] = await Promise.all([getOffers(), getMarketingSettings()]);
+    if (code === marketing.promo.code.trim().toUpperCase())
+      return { ok: false, message: "That code is the marketplace's own promo code — choose another." };
+    if (offers.some((o) => o.code === code && o.active))
+      return { ok: false, message: "Another offer already uses that code — choose another." };
+  }
+  // Scope and products come from the form's own fields (ProductPicker
+  // submits hidden `productIds`), and only this shop's products count.
+  const scopedToProducts = String(formData.get("scope")) === "products";
+  const productIds = formData.getAll("productIds").map(String).filter((id) => own.has(id));
+  if (scopedToProducts && productIds.length === 0) {
+    return { ok: false, message: "Pick at least one product, or choose the whole store." };
+  }
+
+  const offer: Offer = {
+    id: "offer-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    store,
+    name: String(raw.name ?? "").trim().slice(0, 80) || "Shop offer",
+    kind,
+    active: true,
+    // A bundle covers exactly its own products.
+    productIds: kind === "bundle" ? (bundle ?? []).map((b) => b.productId) : scopedToProducts ? productIds : [],
+    fullPriceOnly: raw.fullPriceOnly === true,
+    price: kind === "next_fixed" || kind === "bundle" || kind === "mix" ? num(raw.price) : undefined,
+    pct: kind === "next_pct" || kind === "bxgy" || (kind === "spend" && !num(raw.amountOff)) ? num(raw.pct) : undefined,
+    buy: kind === "bxgy" ? Math.floor(num(raw.buy) ?? 0) : undefined,
+    get: kind === "bxgy" ? Math.floor(num(raw.get) ?? 0) : undefined,
+    tiers:
+      kind === "tiers" && Array.isArray(raw.tiers)
+        ? raw.tiers
+            .map((t) => ({ minQty: Math.floor(Number((t as { minQty?: unknown }).minQty)), pct: Number((t as { pct?: unknown }).pct) }))
+            .filter((t) => t.minQty > 0 && t.pct > 0)
+            .slice(0, 5)
+        : undefined,
+    minSpend: kind === "spend" || kind === "gift" ? num(raw.minSpend) : undefined,
+    amountOff: kind === "spend" ? num(raw.amountOff) : undefined,
+    maxPerOrder: num(raw.maxPerOrder) ? Math.max(1, Math.floor(num(raw.maxPerOrder)!)) : undefined,
+    qty: kind === "mix" ? Math.floor(num(raw.qty) ?? 0) : undefined,
+    bundle,
+    gift,
+    code,
+    maxUses: num(raw.maxUses) ? Math.floor(num(raw.maxUses)!) : undefined,
+    budget: num(raw.budget) || undefined,
+    // Exact moments; a value with no zone is the seller's Mogadishu time.
+    startsAt: normaliseShopTime(raw.startsAt),
+    endsAt: normaliseShopTime(raw.endsAt),
+    createdAt: new Date().toISOString(),
+  };
+
+  const { offerProblem } = await import("@/lib/offers");
+  const problem = offerProblem(offer);
+  if (problem) return { ok: false, message: problem };
+
+  if (useSupabaseMutations()) {
+    const saved = await upsertOfferInSupabase(offer);
+    if (saved === "missing-table") {
+      return { ok: false, message: "Offers need one database update first — run supabase/migration-offers.sql." };
+    }
+    if (saved !== "ok") return { ok: false, message: "Could not save the offer — please try again." };
+  } else {
+    await mutateDB((db) => {
+      db.offers = [...(db.offers ?? []), offer];
+    });
+  }
+  await logActivity(store, "offer.create", `Started offer "${offer.name}"`, offer.id);
+  refresh();
+  return {
+    ok: true,
+    message: offer.startsAt && new Date(offer.startsAt) > new Date()
+      ? `Scheduled — "${offer.name}" starts ${formatShopTime(offer.startsAt)} (Mogadishu time).`
+      : `Live now — "${offer.name}". Customers see it on your products and in their cart.`,
+  };
+}
+
+async function findOwnOffer(id: string): Promise<{ session: Session; offer: Offer } | null> {
+  const session = await requirePermission("promotions.manage");
+  const { getOffers } = await import("@/lib/api");
+  const offer = (await getOffers()).find((o) => o.id === id);
+  if (!offer) return null;
+  assertOwnsStore(session, offer.store);
+  return { session, offer };
+}
+
+export async function toggleOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  // Switching a used-up offer back on starts it afresh.
+  const next = { ...found.offer, active: !found.offer.active, usedUpAt: undefined };
+  if (useSupabaseMutations()) await upsertOfferInSupabase(next);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).map((o) => (o.id === id ? next : o));
+    });
+  await logActivity(next.store, "offer.toggle", `${next.active ? "Resumed" : "Paused"} offer "${next.name}"`, id);
+  refresh();
+}
+
+/**
+ * Let a "full price only" offer count marked-down items too — the one-tap
+ * fix when every product already carries a "was" price and the offer
+ * reaches nothing.
+ */
+export async function includeSaleItemsInOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  const next = { ...found.offer, fullPriceOnly: false };
+  if (useSupabaseMutations()) await upsertOfferInSupabase(next);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).map((o) => (o.id === id ? next : o));
+    });
+  await logActivity(next.store, "offer.update", `Offer "${next.name}" now counts sale items too`, id);
+  refresh();
+}
+
+export async function deleteOffer(id: string): Promise<void> {
+  const found = await findOwnOffer(id);
+  if (!found) return;
+  if (useSupabaseMutations()) await deleteOfferFromSupabase(id);
+  else
+    await mutateDB((db) => {
+      db.offers = (db.offers ?? []).filter((o) => o.id !== id);
+    });
+  await logActivity(found.offer.store, "offer.delete", `Deleted offer "${found.offer.name}"`, id);
+  refresh();
+}
+
 // ── Promotions (store discounts) ───────────────────────────────────────
 
 export async function createPromotion(
@@ -1371,8 +1549,10 @@ export async function createPromotion(
     return { ok: false, message: "Pick at least one product, or choose the whole store." };
   }
 
-  const startsAt = String(formData.get("startsAt") ?? "").trim() || undefined;
-  const endsAt = String(formData.get("endsAt") ?? "").trim() || undefined;
+  // The form's datetime-local has no time zone: it is the seller's
+  // Mogadishu time, saved as an exact moment (lib/shop-time.ts).
+  const startsAt = normaliseShopTime(formData.get("startsAt"));
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
   if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
     return { ok: false, message: "The end date must come after the start date." };
   }
@@ -2005,6 +2185,12 @@ export async function updateMarketing(
   formData: FormData,
 ): Promise<SaveState> {
   await requireMarketing();
+  const { getMarketingSettings } = await import("@/lib/api");
+  const current = await getMarketingSettings();
+
+  const campaignPctValue = Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10));
+  const promoCode = String(formData.get("promoCode") ?? "").trim().toUpperCase();
+  const promoPctValue = Math.min(90, Math.max(1, Number(formData.get("promoPct")) || 10));
 
   const marketing = {
     announcement: String(formData.get("announcement")),
@@ -2019,23 +2205,37 @@ export async function updateMarketing(
     campaign: {
       active: formData.get("campaignActive") === "on",
       name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
-      pct: Math.min(90, Math.max(1, Number(formData.get("campaignPct")) || 10)),
+      pct: campaignPctValue,
+      // The shops that accepted. They pay for the discount, so a different
+      // percentage is a different deal and has to be accepted afresh.
+      stores: current.campaign.pct === campaignPctValue ? (current.campaign.stores ?? []) : [],
+      declined: current.campaign.pct === campaignPctValue ? (current.campaign.declined ?? []) : [],
     },
     delivery: {
       fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
       freeThreshold: Math.max(0, Number(formData.get("freeThreshold")) || 0),
       estimate: String(formData.get("deliveryEstimate") ?? "").trim(),
+      localTime: String(formData.get("deliveryLocalTime") ?? "").trim().slice(0, 40),
+      nationalTime: String(formData.get("deliveryNationalTime") ?? "").trim().slice(0, 40),
     },
     promo: {
       // Blank code disables the promo field on the cart entirely.
-      code: String(formData.get("promoCode") ?? "").trim().toUpperCase(),
-      pct: Math.min(90, Math.max(1, Number(formData.get("promoPct")) || 10)),
+      code: promoCode,
+      pct: promoPctValue,
+      // Same rule as the campaign: a new code or percentage needs every
+      // shop to accept it again.
+      stores:
+        current.promo.code === promoCode && current.promo.pct === promoPctValue
+          ? (current.promo.stores ?? [])
+          : [],
+      declined:
+        current.promo.code === promoCode && current.promo.pct === promoPctValue
+          ? (current.promo.declined ?? [])
+          : [],
     },
   };
 
   if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
     await updateMarketingInSupabase({
       ...current,
       ...marketing,
@@ -2051,6 +2251,54 @@ export async function updateMarketing(
 
   refresh();
   return { ok: true, message: "Storefront updated successfully! 🎉" };
+}
+
+/**
+ * A shop joins or leaves the marketplace promo code or the site-wide
+ * campaign. The discount comes out of the shop's own takings, so it only
+ * ever applies to the shops that said yes here.
+ */
+export async function setMarketplaceOptIn(
+  kind: "promo" | "campaign",
+  join: boolean,
+): Promise<SaveState> {
+  const session = await requirePermission("promotions.manage");
+  const store = session.role === "seller" ? session.store : undefined;
+  if (!store) return { ok: false, message: "Open your store's dashboard to choose this." };
+
+  const { getMarketingSettings } = await import("@/lib/api");
+  const current = await getMarketingSettings();
+  // Leaving or saying "no thanks" both record a decline, so the shop's
+  // dashboard stops inviting it — until the deal itself changes.
+  const list = new Set(current[kind].stores ?? []);
+  const declined = new Set(current[kind].declined ?? []);
+  if (join) {
+    list.add(store);
+    declined.delete(store);
+  } else {
+    list.delete(store);
+    declined.add(store);
+  }
+  const next = { ...current[kind], stores: [...list], declined: [...declined] };
+
+  if (useSupabaseMutations()) {
+    if (!(await updateMarketingInSupabase({ ...current, [kind]: next }))) {
+      return { ok: false, message: "Could not save — please try again." };
+    }
+  }
+  await mutateDB((db) => {
+    db.marketing = { ...db.marketing, [kind]: { ...db.marketing[kind], stores: [...list], declined: [...declined] } };
+  });
+
+  const label = kind === "promo" ? `promo code ${current.promo.code}` : `"${current.campaign.name}"`;
+  await logActivity(store, `marketplace.${kind}.${join ? "join" : "leave"}`, `${join ? "Joined" : "Left"} the ${label}`, kind);
+  refresh();
+  return {
+    ok: true,
+    message: join
+      ? `You're in — ${current[kind].pct}% off your items through the ${label}.`
+      : `No problem — you're not in the ${label}. You can join any time from Promotions.`,
+  };
 }
 
 /** Section order + visibility, submitted by the section arranger. */
@@ -2266,11 +2514,44 @@ export interface ResolvedParcel {
   lines: {
     name: string;
     qty: number;
+    /** Charged per unit. */
     price: number;
+    /** Catalogue price when an offer charged less. */
+    listPrice?: number;
+    offer?: string;
     options?: string;
     reference?: string;
     image?: string;
   }[];
+}
+
+/**
+ * Price the basket on the server: today's catalogue prices, every live
+ * shop offer, and the promo code for the shops that accepted it.
+ *
+ * The cart and checkout show exactly this, and submitOrderAction records
+ * exactly this — they all go through lib/cart-pricing.ts. Line keys in the
+ * result are the items' positions in the request.
+ */
+/** Check a code typed in the cart: the marketplace promo or a shop coupon. */
+export async function checkCodeAction(
+  code: string,
+): Promise<{ ok: boolean; status: import("@/lib/cart-pricing").PromoStatus | null }> {
+  const { checkCode } = await import("@/lib/cart-pricing");
+  const status = await checkCode(String(code ?? "").slice(0, 30));
+  return { ok: Boolean(status && (status.valid || status.shopOffers.length > 0)), status };
+}
+
+export async function priceCartAction(
+  items: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+  promoCode?: string,
+): Promise<{
+  pricing: import("@/lib/offers").CartPricing;
+  promo: import("@/lib/cart-pricing").PromoStatus | null;
+}> {
+  const { priceItems } = await import("@/lib/cart-pricing");
+  const { pricing, promo } = await priceItems(items.slice(0, 200), promoCode);
+  return { pricing, promo };
 }
 
 export async function submitOrderAction(payload: {
@@ -2296,10 +2577,14 @@ export async function submitOrderAction(payload: {
   deliveryFee: number;
   total: number;
   paymentMethod: string;
+  /** The code the customer applied in the cart, if any. Checked here. */
+  promoCode?: string;
 }): Promise<{
   ok: boolean;
   message: string;
   orderId: string;
+  /** Everything the customer saved — shop offers and promo code. */
+  discount: number;
   /**
    * The parcels as the SERVER resolved them. The confirmation screen uses
    * these rather than its own copy, because the browser's cart may carry a
@@ -2326,13 +2611,31 @@ export async function submitOrderAction(payload: {
    * carries a store, because a stale cart in someone's browser would still
    * be wrong. The product record is the authority on which shop sells it.
    */
-  const { getAllStores, getBaseProducts } = await import("@/lib/api");
-  const [catalog, allStores] = await Promise.all([getBaseProducts(), getAllStores()]);
+  const { getAllStores } = await import("@/lib/api");
+  const { priceItems } = await import("@/lib/cart-pricing");
+  const { groupUnits } = await import("@/lib/offers");
+  const [allStores, priced] = await Promise.all([
+    getAllStores(),
+    // Prices, shop offers and the promo code are all settled here from the
+    // catalogue. The browser's numbers are never used for money — it used
+    // to be possible to call this action with your own prices.
+    priceItems(
+      payload.items.map((item) => ({
+        productId: item.productId,
+        qty: item.qty,
+        selectedColor: item.selectedColor,
+        selectedSize: item.selectedSize,
+        fallbackPrice: item.price,
+        fallbackStore: item.store,
+      })),
+      payload.promoCode,
+    ),
+  ]);
   const storesBySlug = new Map(allStores.map((store) => [store.slug, store]));
 
-  const items = payload.items.map((item) => {
-    const product = catalog.find((p) => p.id === item.productId);
-    const store = product?.store || item.store || "";
+  const items = payload.items.map((item, index) => {
+    const product = priced.products[index];
+    const store = priced.lines[index].store;
     if (!store) {
       console.error(
         `[submitOrder] "${item.name}" (${item.productId}) resolved to no store — ` +
@@ -2345,7 +2648,9 @@ export async function submitOrderAction(payload: {
       // Same reasoning as `store`: the catalogue is the authority, and a
       // stale cart snapshot must not decide what gets recorded.
       name: product?.name || item.name,
-      price: typeof item.price === "number" ? item.price : (product?.price ?? 0),
+      // One entry per price actually charged: "1 × Shirt $75" and
+      // "1 × Trousers $1 · Buy 1, get the next for $1".
+      charged: groupUnits(priced.pricing.lines[String(index)]),
       image: item.image || product?.images?.[0],
       reference: item.reference || product?.internalReference,
       storeName: storesBySlug.get(store)?.name || store.replace(/-/g, " "),
@@ -2364,7 +2669,10 @@ export async function submitOrderAction(payload: {
   const parcels: ResolvedParcel[] = [];
 
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
-    const storeSubtotal = storeItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+    // What this shop's courier collects: its items after its own offers
+    // and, if it accepted it, the promo code.
+    const storeSubtotal = priced.pricing.stores[storeSlug]?.total ??
+      storeItems.reduce((acc, i) => acc + i.charged.reduce((t, c) => t + c.price * c.qty, 0), 0);
     const store = storesBySlug.get(storeSlug);
     const parcelId = orderIds.get(storeSlug) ?? id;
 
@@ -2391,17 +2699,20 @@ export async function submitOrderAction(payload: {
        * An order is a record of what was agreed at a moment in time. It has
        * to carry its own prices.
        */
-      items: storeItems.map((i) => ({
-        productId: i.productId,
-        qty: i.qty,
-        name: i.name,
-        price: i.price,
-        image: i.image,
-        store: storeSlug,
-        storeName: i.storeName,
-        selectedColor: i.selectedColor,
-        selectedSize: i.selectedSize,
-      })),
+      items: storeItems.flatMap((i) =>
+        i.charged.map((c) => ({
+          productId: i.productId,
+          qty: c.qty,
+          name: i.name,
+          price: c.price,
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
+          image: i.image,
+          store: storeSlug,
+          storeName: i.storeName,
+          selectedColor: i.selectedColor,
+          selectedSize: i.selectedSize,
+        })),
+      ),
       status: "pending",
     };
 
@@ -2421,22 +2732,105 @@ export async function submitOrderAction(payload: {
       whatsapp: store?.whatsapp,
       orderId: parcelId,
       subtotal: storeSubtotal,
-      lines: storeItems.map((i) => ({
-        name: i.name,
-        qty: i.qty,
-        price: i.price,
-        options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
-        reference: i.reference,
-        image: i.image,
-      })),
+      lines: storeItems.flatMap((i) =>
+        i.charged.map((c) => ({
+          name: i.name,
+          qty: c.qty,
+          price: c.price,
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
+          options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
+          reference: i.reference,
+          image: i.image,
+        })),
+      ),
     });
   }
 
   refresh();
-  return { ok: true, message: "Order placed successfully!", orderId: id, parcels };
+  // Take what was sold off the website's stock, so the next shopper can't
+  // buy the same last item. A failure here must never undo an order that
+  // is already placed — it is logged and the shop's next stock upload
+  // corrects the count.
+  try {
+    const { deductStock } = await import("@/lib/stock-write");
+    await deductStock(
+      payload.items.map((i) => ({
+        productId: i.productId,
+        qty: i.qty,
+        selectedColor: i.selectedColor,
+        selectedSize: i.selectedSize,
+      })),
+    );
+  } catch (err) {
+    console.error("[submitOrder] stock deduction failed:", err);
+  }
+
+  // An offer with an order limit or a budget switches itself off once it
+  // is used up, so its badge stops promising a deal that has run out.
+  const limited = Object.values(priced.pricing.stores)
+    .flatMap((st) => st.applied.map((a) => a.offer))
+    .filter((o) => o.maxUses || o.budget);
+  if (limited.length > 0) {
+    const { getOrders } = await import("@/lib/api");
+    const { isExhausted, offerUsageFrom } = await import("@/lib/offers");
+    const usage = offerUsageFrom(await getOrders());
+    for (const offer of limited) {
+      if (!isExhausted(offer, usage[offer.id])) continue;
+      const ended = { ...offer, active: false, usedUpAt: new Date().toISOString() };
+      if (useSupabaseMutations()) await upsertOfferInSupabase(ended);
+      else
+        await mutateDB((db) => {
+          db.offers = (db.offers ?? []).map((o) => (o.id === offer.id ? ended : o));
+        });
+    }
+  }
+
+  const discount = Math.round((priced.pricing.offerDiscount + priced.pricing.promoDiscount) * 100) / 100;
+  return { ok: true, message: "Order placed successfully!", orderId: id, discount, parcels };
+}
+
+/**
+ * ── Who may see an order's personal details ──────────────────────────────
+ * Tracking is open to anyone with an order number — that is the point of
+ * it: the person the parcel is for may not be the one who ordered it. But
+ * order numbers are short ("BM-10240"), so anyone could step through them,
+ * and these actions used to hand back the customer's full name, phone,
+ * email and street address with every one.
+ *
+ * Now the full record goes only to the customer it belongs to (signed in,
+ * same email), the admin, and the shop that is packing it. Everyone else
+ * gets what tracking actually needs: status, items, courier, and the city —
+ * with the customer named as "Ayaan W.".
+ */
+async function viewerSeesDetails(order: Order): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  if (session.role === "admin") return true;
+  if (session.role === "seller" && session.store === order.store) return true;
+  return Boolean(order.email && order.email.trim().toLowerCase() === session.email.trim().toLowerCase());
+}
+
+function redactOrder(order: Order): Order {
+  const [first = "", last = ""] = (order.customer ?? "").trim().split(/\s+/);
+  return {
+    ...order,
+    customer: last ? `${first} ${last.charAt(0)}.` : first,
+    email: "",
+    phone: "",
+    address: "",
+  };
+}
+
+async function forViewer(order: Order): Promise<Order> {
+  return (await viewerSeesDetails(order)) ? order : redactOrder(order);
 }
 
 export async function getOrderAction(id: string): Promise<Order | undefined> {
+  const order = await findOrderForTracking(id);
+  return order ? forViewer(order) : undefined;
+}
+
+async function findOrderForTracking(id: string): Promise<Order | undefined> {
   const { getOrder, getOrders } = await import("@/lib/api");
 
   const exact = await getOrder(id);
@@ -2497,18 +2891,48 @@ export async function getUserOrdersAction(): Promise<Order[]> {
   const { getOrders } = await import("@/lib/api");
   const allOrders = await getOrders();
 
-  const email = session.email.trim().toLowerCase();
-  const name = session.name.trim().toLowerCase();
+  const { orderBelongsTo } = await import("@/lib/order-utils");
+  return allOrders.filter((order) => orderBelongsTo(order, session));
+}
 
-  return allOrders.filter((order) => {
-    if (order.email) {
-      // An order that carries an email is matched on it ALONE. Falling back
-      // to the name here is what let two customers called "Ahmed" see each
-      // other's orders.
-      return order.email.trim().toLowerCase() === email;
+/**
+ * "Buy again": the items of a past order as cart lines, at TODAY's price
+ * and only if they can still be bought. Takes the lines rather than an
+ * order id — an order kept only on this device has no server record, and
+ * a product id reveals nothing about anyone.
+ */
+export async function reorderItemsAction(
+  items: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+): Promise<{ lines: import("@/lib/types").CartItem[]; unavailable: string[] }> {
+  const { getProducts } = await import("@/lib/api");
+  const { findVariant, primaryImage, variantPrice } = await import("@/lib/product-utils");
+  const catalog = await getProducts();
+  const lines: import("@/lib/types").CartItem[] = [];
+  const unavailable: string[] = [];
+  for (const item of items.slice(0, 50)) {
+    const product = catalog.find((p) => p.id === item.productId);
+    const variant = product ? findVariant(product, item.selectedColor, item.selectedSize) : undefined;
+    const stock = variant?.stock ?? product?.stock ?? 0;
+    if (!product || stock <= 0) {
+      unavailable.push(product?.name ?? item.productId);
+      continue;
     }
-    return Boolean(name) && order.customer?.trim().toLowerCase() === name;
-  });
+    lines.push({
+      productId: product.id,
+      qty: Math.max(1, Math.min(Math.floor(item.qty) || 1, stock)),
+      color: item.selectedColor,
+      size: item.selectedSize,
+      snapshot: {
+        name: product.name,
+        price: variantPrice(product, variant),
+        icon: product.icon,
+        slug: product.slug,
+        store: product.store,
+        image: primaryImage(product),
+      },
+    });
+  }
+  return { lines, unavailable };
 }
 
 /**
@@ -2588,8 +3012,10 @@ export async function getOrderParcelsAction(orderId: string): Promise<OrderParce
   const [allOrders, stores] = await Promise.all([getOrders(), getAllStores()]);
 
   const base = baseOrderId(orderId);
-  return allOrders
-    .filter((o) => belongsToOrder(o.id, base))
+  const parcels = allOrders.filter((o) => belongsToOrder(o.id, base));
+  // Personal details only for the customer, the admin, or that parcel's shop.
+  const visible = await Promise.all(parcels.map(forViewer));
+  return visible
     .map((order) => {
       const store = stores.find((s) => s.slug === order.store);
       return {
@@ -2701,35 +3127,85 @@ export async function togglePromoTile(id: string): Promise<void> {
 
 // ── Flash deals ────────────────────────────────────────────────────────
 
+/**
+ * Saves flash-deal changes where they survive: Supabase (the tables from
+ * supabase/migration-flash.sql) and the local file. The local file alone is
+ * per-server memory on Netlify — which is how a campaign used to report
+ * "saved" and then disappear. Returns a message when the save failed.
+ */
+async function persistFlash(change: {
+  flash?: FlashDeal;
+  upsert?: FlashRequest[];
+  remove?: string[];
+}): Promise<string | null> {
+  if (useSupabaseMutations()) {
+    const results = await Promise.all([
+      change.flash ? saveFlashInSupabase(change.flash) : "ok",
+      change.upsert?.length ? upsertFlashRequestsInSupabase(change.upsert) : "ok",
+      ...(change.remove ?? []).map((id) => deleteFlashRequestFromSupabase(id)),
+    ]);
+    if (results.includes("missing-table")) {
+      return "Flash deals can't be saved yet — run supabase/migration-flash.sql in the Supabase SQL editor once.";
+    }
+    if (results.includes("error")) return "Couldn't save — please try again.";
+  }
+  await mutateDB((db) => {
+    if (change.flash) db.flash = change.flash;
+    for (const r of change.upsert ?? []) {
+      const i = db.flashRequests.findIndex((x) => x.id === r.id);
+      if (i >= 0) db.flashRequests[i] = r;
+      else db.flashRequests.push(r);
+    }
+    if (change.remove?.length) db.flashRequests = db.flashRequests.filter((r) => !change.remove!.includes(r.id));
+  });
+  // Only what flash touches. refresh() drops EVERY cached table — orders,
+  // stores, categories… — so the page drawn after an Approve had to fetch
+  // all of them from Supabase again, for nothing that changed.
+  revalidateTag(CACHE_TAGS.flash);
+  revalidatePath("/", "page");
+  return null;
+}
+
 /** Admin: campaign name, countdown target and which products take part. */
 export async function updateFlashDeal(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
   await requireMarketing();
-  await mutateDB((db) => {
-    db.flash = {
-      active: formData.get("active") === "on",
-      name: String(formData.get("name")).trim() || "Flash Deals",
-      endsAt: String(formData.get("endsAt") ?? "").trim(),
-      productIds: formData.getAll("productIds").map(String),
-    };
-  });
-  refresh();
-  return { ok: true, message: "Flash deal campaign saved." };
+  const flash: FlashDeal = {
+    active: formData.get("active") === "on",
+    name: String(formData.get("name") ?? "").trim() || "Flash Deals",
+    endsAt: normaliseShopTime(formData.get("endsAt")) ?? "",
+    productIds: [...new Set(formData.getAll("productIds").map(String).filter(Boolean))],
+  };
+  if (flash.active && flash.endsAt && Date.parse(flash.endsAt) <= Date.now()) {
+    return { ok: false, message: "That end time has already passed — pick a later one, or clear it." };
+  }
+  const failed = await persistFlash({ flash });
+  if (failed) return { ok: false, message: failed };
+  return {
+    ok: true,
+    message: !flash.active
+      ? "Saved. The campaign is paused — flash prices are off."
+      : flash.endsAt
+        ? `Saved. Live until ${formatShopTime(flash.endsAt)} (Mogadishu time).`
+        : "Saved. Live with no end time.",
+  };
 }
 
 /**
  * Seller: apply for one or more products to join the flash-deal campaign.
- * Products already having an open application are skipped.
+ * Products already waiting or already in the campaign are skipped.
  */
 export async function requestFlashDeal(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
   const session = await requirePermission("promotions.manage");
-  const storeSlug =
-    session.role === "seller" && session.store ? session.store : "sahra-fashion";
+  // The store whose dashboard this is — an admin previewing a shop applies
+  // for THAT shop, not for whichever store used to be hard-coded here.
+  const { storeSlug } = await requireVendor();
+  if (session.role !== "admin") assertOwnsStore(session, storeSlug);
 
   const productIds = formData.getAll("productIds").map(String).filter(Boolean);
   if (productIds.length === 0) {
@@ -2743,78 +3219,96 @@ export async function requestFlashDeal(
     return { ok: false, message: "You can only submit your own products." };
   }
 
-  const pct = Math.min(90, Math.max(1, Number(formData.get("pct")) || 10));
-  const note = String(formData.get("note") ?? "").trim() || undefined;
+  const pct = Math.min(90, Math.max(1, Math.round(Number(formData.get("pct")) || 10)));
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300) || undefined;
+
+  // The shop's own end time — optional, typed in Mogadishu time, and never
+  // past the campaign's (the campaign ending stops every flash price).
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
+  const flash = await getFlashDeal();
+  if (endsAt && Date.parse(endsAt) <= Date.now()) {
+    return { ok: false, message: "That end time has already passed — pick a later one, or leave it blank." };
+  }
+  if (endsAt && flash.endsAt && Date.parse(endsAt) > parseShopTime(flash.endsAt)) {
+    return {
+      ok: false,
+      message: `The campaign ends ${formatShopTime(flash.endsAt)} — pick a time before then, or leave it blank to run until the end.`,
+    };
+  }
+
   const stamp = Date.now().toString(36);
-  let added = 0;
+  const existing = await getFlashRequests(storeSlug);
+  // One open application per product, and none for a product already in.
+  const taken = new Set(existing.filter((r) => r.status !== "rejected").map((r) => r.productId));
+  const fresh: FlashRequest[] = owned
+    .filter((product) => !taken.has(product.id))
+    .map((product, i) => ({
+      id: `fr-${stamp}-${i}`,
+      store: storeSlug,
+      productId: product.id,
+      pct,
+      note,
+      endsAt,
+      status: "pending",
+      date: new Date().toISOString().slice(0, 10),
+    }));
 
-  await mutateDB((db) => {
-    owned.forEach((product, i) => {
-      // One open application per product.
-      if (db.flashRequests.some((r) => r.productId === product.id && r.status === "pending")) {
-        return;
-      }
-      db.flashRequests.push({
-        id: `fr-${stamp}-${i}`,
-        store: storeSlug,
-        productId: product.id,
-        pct,
-        note,
-        status: "pending",
-        date: new Date().toISOString().slice(0, 10),
-      });
-      added += 1;
-    });
-  });
-  refresh();
-
-  return added === 0
-    ? { ok: false, message: "Those products already have open applications." }
-    : {
-        ok: true,
-        message: `${added} application${added === 1 ? "" : "s"} submitted — our team will review them.`,
-      };
+  if (fresh.length === 0) {
+    return { ok: false, message: "Those products are already waiting or already in the campaign." };
+  }
+  const failed = await persistFlash({ upsert: fresh });
+  if (failed) return { ok: false, message: failed };
+  const skipped = owned.length - fresh.length;
+  return {
+    ok: true,
+    message:
+      `${fresh.length} application${fresh.length === 1 ? "" : "s"} submitted — our team will review them.` +
+      (skipped ? ` ${skipped} skipped (already applied).` : ""),
+  };
 }
 
 /**
- * Admin decision on a seller's flash-deal application. Approving adds the
- * product to the campaign and creates the discount the seller offered.
+ * Admin decision on a seller's flash-deal application. Approving puts the
+ * product in the campaign; its discount then runs exactly as long as the
+ * campaign does (lib/flash.ts) — no separate promotion to forget about.
  */
 export async function decideFlashRequest(
   id: string,
   decision: "approved" | "rejected",
 ): Promise<void> {
   await requireMarketing();
-  await mutateDB((db) => {
-    const request = db.flashRequests.find((r) => r.id === id);
-    if (!request) return;
-    request.status = decision;
-    if (decision !== "approved") return;
-
-    if (!db.flash.productIds.includes(request.productId)) {
-      db.flash.productIds.push(request.productId);
-    }
-    db.promotions.push({
-      id: "promo-flash-" + request.id,
-      store: request.store,
-      name: `${db.flash.name} — approved`,
-      pct: request.pct,
-      active: true,
-      productIds: [request.productId],
-    });
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  const request = requests.find((r) => r.id === id);
+  if (!request) return;
+  const productIds =
+    decision === "approved"
+      ? [...new Set([...flash.productIds, request.productId])]
+      : flash.productIds.filter((p) => p !== request.productId);
+  const failed = await persistFlash({
+    upsert: [{ ...request, status: decision }],
+    flash: { ...flash, productIds },
   });
-  refresh();
+  if (failed) throw new Error(failed);
 }
 
+/**
+ * Seller: withdraw an application — or, once approved, leave the campaign.
+ * Leaving takes the product out, so its flash price ends with it.
+ */
 export async function withdrawFlashRequest(id: string): Promise<void> {
   const session = await requirePermission("promotions.manage");
-  await mutateDB((db) => {
-    const request = db.flashRequests.find((r) => r.id === id);
-    if (!request) return;
-    if (session.role !== "admin") assertOwnsStore(session, request.store);
-    db.flashRequests = db.flashRequests.filter((r) => r.id !== id);
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  const request = requests.find((r) => r.id === id);
+  if (!request) return;
+  if (session.role !== "admin") assertOwnsStore(session, request.store);
+  const failed = await persistFlash({
+    remove: [id],
+    flash:
+      request.status === "approved"
+        ? { ...flash, productIds: flash.productIds.filter((p) => p !== request.productId) }
+        : undefined,
   });
-  refresh();
+  if (failed) throw new Error(failed);
 }
 
 // ── Admin Category Actions ─────────────────────────────────────────────
@@ -3130,8 +3624,8 @@ export async function addRecoPin(formData: FormData): Promise<void> {
 
   const shelf = String(formData.get("shelf") ?? "auto").trim() || "auto";
   const note = String(formData.get("note") ?? "").trim().slice(0, 90);
-  const startsAt = String(formData.get("startsAt") ?? "").trim();
-  const endsAt = String(formData.get("endsAt") ?? "").trim();
+  const startsAt = normaliseShopTime(formData.get("startsAt"));
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
 
   await mutateReco((settings) => {
     // Re-pinning a product replaces the old push rather than stacking a

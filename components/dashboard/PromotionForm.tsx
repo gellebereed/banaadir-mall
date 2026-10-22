@@ -120,11 +120,11 @@ export default function PromotionForm({
         </p>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="promo-start" className="label">Starts</label>
+            <label htmlFor="promo-start" className="label">Starts (Mogadishu time)</label>
             <input id="promo-start" name="startsAt" type="datetime-local" className="input" />
           </div>
           <div>
-            <label htmlFor="promo-end" className="label">Ends</label>
+            <label htmlFor="promo-end" className="label">Ends (Mogadishu time)</label>
             <input id="promo-end" name="endsAt" type="datetime-local" className="input" />
           </div>
         </div>

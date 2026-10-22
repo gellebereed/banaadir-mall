@@ -3,24 +3,37 @@
 import { useState } from "react";
 import ParcelDispatch from "@/components/dashboard/ParcelDispatch";
 import StatusBadge from "@/components/dashboard/StatusBadge";
+import { telLink } from "@/lib/delivery";
 import { money, shortDate } from "@/lib/format";
-import { formatWhatsAppNumber } from "@/lib/whatsapp";
-import type { Courier, Order, OrderStatus } from "@/lib/types";
+import { formatWhatsAppNumber, whatsappLink } from "@/lib/whatsapp";
+import type { Courier, Order } from "@/lib/types";
 
 interface ExtendedOrderRow extends Order {
   productName: string;
   qty: number;
 }
 
+/** "To do" first: what a seller opens this page to act on. */
 const TABS: { id: string; label: string; icon: string }[] = [
-  { id: "all", label: "All Orders", icon: "📋" },
-  { id: "pending", label: "Order Placed", icon: "🧾" },
-  { id: "processing", label: "Being Packed", icon: "📦" },
-  { id: "shipped", label: "On the Way", icon: "🚚" },
+  { id: "todo", label: "To do", icon: "⏳" },
+  { id: "all", label: "All", icon: "📋" },
+  { id: "pending", label: "Order placed", icon: "🧾" },
+  { id: "processing", label: "Being packed", icon: "📦" },
+  { id: "shipped", label: "On the way", icon: "🚚" },
   { id: "delivered", label: "Delivered", icon: "✓" },
   { id: "cancelled", label: "Cancelled", icon: "✕" },
 ];
 
+const isTodo = (o: Order) => o.status === "pending" || o.status === "processing";
+
+/**
+ * The seller's parcels: a table on a computer, cards on a phone — where a
+ * table with seven columns meant scrolling sideways to find out who the
+ * customer was and what to do next.
+ *
+ * Every parcel shows ALL its items (with options and any offer), how to
+ * reach the customer, the picking slip, and the status/driver control.
+ */
 export default function VendorOrdersTable({
   rows,
   newIds,
@@ -32,164 +45,203 @@ export default function VendorOrdersTable({
   mayManage: boolean;
   savedCouriers: Courier[];
 }) {
-  const [activeTab, setActiveTab] = useState<string>("all");
+  const todoCount = rows.filter(isTodo).length;
+  const [activeTab, setActiveTab] = useState<string>(todoCount > 0 ? "todo" : "all");
   const [searchQuery, setSearchQuery] = useState("");
-
   const newIdSet = new Set(newIds);
 
-  const countByStatus = (statusId: string) => {
-    if (statusId === "all") return rows.length;
-    return rows.filter((r) => r.status === statusId).length;
-  };
+  const countFor = (id: string) =>
+    id === "all" ? rows.length : id === "todo" ? todoCount : rows.filter((r) => r.status === id).length;
 
   const filteredRows = rows.filter((r) => {
-    // 1. Tab filter
-    if (activeTab !== "all" && r.status !== activeTab) {
-      return false;
-    }
-    // 2. Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        r.id.toLowerCase().includes(q) ||
-        r.customer.toLowerCase().includes(q) ||
-        r.productName.toLowerCase().includes(q) ||
-        (r.city && r.city.toLowerCase().includes(q))
-      );
-    }
-    return true;
+    if (activeTab === "todo" && !isTodo(r)) return false;
+    if (activeTab !== "all" && activeTab !== "todo" && r.status !== activeTab) return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    const digits = q.replace(/\D/g, "");
+    return (
+      r.id.toLowerCase().includes(q) ||
+      r.customer.toLowerCase().includes(q) ||
+      (digits.length >= 3 && (r.phone ?? "").replace(/\D/g, "").includes(digits)) ||
+      r.items.some((i) => (i.name ?? "").toLowerCase().includes(q)) ||
+      (r.city ?? "").toLowerCase().includes(q)
+    );
   });
 
+  const contact = (o: Order) =>
+    o.phone ? (
+      <span className="flex flex-wrap gap-1.5">
+        <a href={telLink(o.phone)} className="rounded-full bg-sand-100 px-2.5 py-1 text-[11px] font-bold text-ocean-800 hover:bg-sand-200">
+          📞 {formatWhatsAppNumber(o.phone)}
+        </a>
+        <a
+          href={whatsappLink(o.phone, `Hello ${o.customer.split(" ")[0]}, this is about your Banaadir Mall order ${o.id}.`)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+        >
+          💬 WhatsApp
+        </a>
+      </span>
+    ) : null;
+
+  const itemList = (o: ExtendedOrderRow, compact = false) => (
+    <ul className={compact ? "space-y-0.5" : "space-y-1"}>
+      {o.items.map((i, n) => (
+        <li key={n} className="text-xs text-slate-700">
+          <strong className="text-ocean-950">{i.qty} ×</strong> {i.name}
+          {(i.selectedColor || i.selectedSize) && (
+            <span className="text-slate-400"> · {[i.selectedColor, i.selectedSize].filter(Boolean).join(" · ")}</span>
+          )}
+          {i.offer && <span className="font-semibold text-emerald-700"> · 🎁 {i.offer}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+
+  const control = (o: ExtendedOrderRow) =>
+    mayManage ? (
+      <ParcelDispatch order={o} savedCouriers={savedCouriers} />
+    ) : (
+      <div className="space-y-1">
+        <StatusBadge status={o.status} />
+        {o.delivery?.courier && (
+          <p className="text-[11px] text-slate-500">
+            🚚 {o.delivery.courier.name} · {formatWhatsAppNumber(o.delivery.courier.phone)}
+          </p>
+        )}
+      </div>
+    );
+
   return (
-    <div className="space-y-4 mt-5">
-      {/* Search and Status Filter Bar */}
+    <div className="mt-5 space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        {/* Status Tabs */}
-        <div className="flex flex-wrap gap-1.5 rounded-2xl bg-sand-100/70 p-1.5 border border-sand-200">
+        <div role="tablist" className="rail-scroll -mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:px-0">
           {TABS.map((tab) => {
-            const count = countByStatus(tab.id);
-            const isActive = activeTab === tab.id;
+            const active = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition-all ${
-                  isActive
-                    ? "bg-white text-ocean-950 shadow-sm ring-1 ring-black/5"
-                    : "text-slate-600 hover:bg-white/60 hover:text-ocean-900"
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-extrabold transition ${
+                  active ? "bg-ocean-800 text-white shadow-sm" : "bg-white text-slate-600 ring-1 ring-sand-200 hover:ring-ocean-300"
                 }`}
               >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-                <span
-                  className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] ${
-                    isActive ? "bg-ocean-100 text-ocean-800" : "bg-sand-200 text-slate-600"
-                  }`}
-                >
-                  {count}
+                <span aria-hidden>{tab.icon}</span>
+                {tab.label}
+                <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-white/20" : "bg-sand-100 text-slate-500"}`}>
+                  {countFor(tab.id)}
                 </span>
               </button>
             );
           })}
         </div>
 
-        {/* Search input */}
-        <div className="relative shrink-0 sm:w-64">
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search order #, customer, city..."
-            className="input !py-1.5 text-xs pl-8"
-          />
-          <span className="absolute left-2.5 top-2 text-xs text-slate-400">🔍</span>
-        </div>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 Order #, customer, phone, item, city…"
+          aria-label="Search orders"
+          className="input !py-2 text-sm lg:w-72"
+        />
       </div>
 
-      {/* Orders Table */}
-      <div className="card overflow-hidden border border-sand-200 shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b border-sand-200 bg-sand-50/80 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                <th className="px-4 py-3">Order</th>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">City</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Total</th>
-                <th className="px-4 py-3 min-w-[280px]">Status &amp; Delivery</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-sand-100">
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                    <span className="text-2xl block mb-1">🔍</span>
-                    No orders found matching your filter.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((o) => {
-                  const isDelivered = o.status === "delivered";
-                  return (
-                    <tr
-                      key={o.id}
-                      className={`transition-colors align-middle ${
-                        isDelivered
-                          ? "bg-emerald-50/20 hover:bg-emerald-50/40"
-                          : "hover:bg-sand-50/60"
-                      }`}
-                    >
-                      <td className="px-4 py-3 font-mono font-bold text-ocean-900 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span>{o.id}</span>
-                          {newIdSet.has(o.id) && (
-                            <span className="rounded-full bg-coral-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white shadow-2xs">
-                              New
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="max-w-[200px] truncate px-4 py-3 text-xs font-semibold text-slate-700">
-                        {o.productName} <span className="text-slate-400">×{o.qty}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-medium text-slate-700 whitespace-nowrap">
-                        {o.customer}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                        {o.city}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                        {shortDate(o.date)}
-                      </td>
-                      <td className="px-4 py-3 text-xs font-bold text-ocean-950 whitespace-nowrap">
-                        {money(o.total)}
-                      </td>
-                      <td className="px-4 py-3">
-                        {mayManage ? (
-                          <ParcelDispatch order={o} savedCouriers={savedCouriers} />
-                        ) : (
-                          <div className="space-y-1">
-                            <StatusBadge status={o.status} />
-                            {o.delivery?.courier && (
-                              <p className="text-[11px] text-slate-500">
-                                🚚 {o.delivery.courier.name} ·{" "}
-                                {formatWhatsAppNumber(o.delivery.courier.phone)}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {filteredRows.length === 0 ? (
+        <div className="card p-10 text-center text-sm text-slate-500">
+          {activeTab === "todo" ? "🎉 Nothing waiting — every parcel is on its way or delivered." : "No orders match."}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* ── Phone: one card per parcel ─────────────────────────── */}
+          <div className="space-y-3 md:hidden">
+            {filteredRows.map((o) => (
+              <article key={o.id} className={`card p-4 ${newIdSet.has(o.id) ? "ring-2 ring-coral-300" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 font-mono text-sm font-bold text-ocean-950">
+                      {o.id}
+                      {newIdSet.has(o.id) && (
+                        <span className="rounded-full bg-coral-500 px-1.5 py-0.5 font-sans text-[9px] font-extrabold uppercase text-white">New</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {shortDate(o.date)} · {o.city}
+                    </p>
+                  </div>
+                  <p className="shrink-0 font-display text-lg font-extrabold text-ocean-950">{money(o.total)}</p>
+                </div>
+
+                <div className="mt-3 rounded-xl bg-sand-50 p-3">{itemList(o)}</div>
+
+                <div className="mt-3">
+                  <p className="text-sm font-semibold text-slate-800">{o.customer}</p>
+                  {o.address && <p className="text-xs text-slate-500">{o.address}</p>}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {contact(o)}
+                    <a
+                      href={`/api/order-slip/${o.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full bg-sand-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-sand-200"
+                    >
+                      🧾 Slip
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t border-sand-100 pt-3">{control(o)}</div>
+              </article>
+            ))}
+          </div>
+
+          {/* ── Computer: the table ────────────────────────────────── */}
+          <div className="card hidden overflow-hidden md:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead>
+                  <tr className="border-b border-sand-200 bg-sand-50/80 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3">Order</th>
+                    <th className="px-4 py-3">Items</th>
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Total</th>
+                    <th className="min-w-[280px] px-4 py-3">Status &amp; delivery</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-sand-100">
+                  {filteredRows.map((o) => (
+                    <tr key={o.id} className={`align-top transition-colors ${o.status === "delivered" ? "bg-emerald-50/20" : "hover:bg-sand-50/60"}`}>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <p className="flex items-center gap-1.5 font-mono font-bold text-ocean-900">
+                          {o.id}
+                          {newIdSet.has(o.id) && (
+                            <span className="rounded-full bg-coral-500 px-1.5 py-0.5 font-sans text-[9px] font-extrabold uppercase text-white">New</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500">{shortDate(o.date)}</p>
+                        <a href={`/api/order-slip/${o.id}`} target="_blank" rel="noopener noreferrer" className="text-[11px] font-semibold text-ocean-700 hover:underline">
+                          🧾 Picking slip
+                        </a>
+                      </td>
+                      <td className="max-w-[280px] px-4 py-3">{itemList(o, true)}</td>
+                      <td className="px-4 py-3">
+                        <p className="text-xs font-semibold text-slate-800">{o.customer}</p>
+                        <p className="text-[11px] text-slate-500">{o.address || o.city}</p>
+                        <div className="mt-1">{contact(o)}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-bold text-ocean-950">{money(o.total)}</td>
+                      <td className="px-4 py-3">{control(o)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

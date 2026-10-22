@@ -21,6 +21,9 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
+import { RAIL_CARD } from "@/lib/card-sizes";
+import { REASON_LABELS_SO, shelfTextSo } from "@/lib/reco/i18n-so";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
@@ -158,6 +161,8 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
   const { mute } = useReco();
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [showWhy, setShowWhy] = useState(false);
+  const t = useT();
+  const so = usePrefs().lang === "so";
 
   /*
    * Measurement (lib/reco/metrics-client.ts): one impression when at least
@@ -239,7 +244,7 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.14em] ring-1 ring-inset ${tone.label} ${tone.labelText}`}
             >
-              {shelf.eyebrow}
+              {so ? shelfTextSo(shelf.eyebrow) : shelf.eyebrow}
             </span>
 
             <div className="mt-2 flex items-center gap-3">
@@ -254,13 +259,13 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
                   shelf.feature ? "text-2xl sm:text-3xl" : "text-lg sm:text-xl"
                 }`}
               >
-                {shelf.title}
+                {so ? shelfTextSo(shelf.title) : shelf.title}
               </h2>
             </div>
 
             {shelf.subtitle && (
               <p className="mt-1.5 max-w-xl text-sm text-slate-500 sm:ml-[3.25rem]">
-                {shelf.subtitle}
+                {so ? shelfTextSo(shelf.subtitle) : shelf.subtitle}
               </p>
             )}
           </div>
@@ -271,7 +276,7 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
               aria-expanded={showWhy}
               className={`rounded-full border bg-white/60 px-3 py-1.5 text-xs font-bold backdrop-blur transition ${tone.control}`}
             >
-              {showWhy ? "Hide" : "Why these?"}
+              {showWhy ? t("reco.hideWhy") : t("reco.why")}
             </button>
             {shelf.href && (
               <Link
@@ -300,15 +305,27 @@ export default function RecoShelf({ shelf, surface }: { shelf: Shelf; surface: s
         {/* ── Items ──────────────────────────────────────────────── */}
         <div className="mt-5">
           {shelf.layout === "grid" ? (
-            <div className="grid grid-cols-2 items-stretch gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {items.map((item) => (
-                <RecoCard key={item.product.id} item={item} onDismiss={dismiss} onOpen={onCardClick} />
+            // A grid from tablet up; on a phone, one swipeable row — eight
+            // cards as a 2-column grid cost four screen-heights each.
+            <div className="rail-scroll -mx-4 flex snap-x items-stretch gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4">
+              {/* Complete rows only on tablet (3 across) and desktop (4): a
+                  lone card on a second row reads as a mistake. The phone
+                  row swipes, so it keeps every card. */}
+              {items.map((item, i) => (
+                <div
+                  key={item.product.id}
+                  className={`flex w-[44%] shrink-0 snap-start md:w-auto ${
+                    Math.floor(items.length / 3) > 0 && i >= Math.floor(items.length / 3) * 3 ? "md:max-lg:hidden" : ""
+                  } ${Math.floor(items.length / 4) > 0 && i >= Math.floor(items.length / 4) * 4 ? "lg:hidden" : ""}`}
+                >
+                  <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
+                </div>
               ))}
             </div>
           ) : (
-            <div className="flex snap-x items-stretch gap-4 overflow-x-auto pb-2 rail-scroll">
+            <div className="rail-scroll -mx-4 flex snap-x items-stretch gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:gap-4 md:px-0">
               {items.map((item) => (
-                <div key={item.product.id} className="flex w-44 shrink-0 snap-start sm:w-52">
+                <div key={item.product.id} className={RAIL_CARD}>
                   <RecoCard item={item} onDismiss={dismiss} onOpen={onCardClick} />
                 </div>
               ))}
@@ -366,11 +383,14 @@ function RecoCard({
   onOpen: (productId: string) => void;
 }) {
   const proof = item.proof;
+  const so = usePrefs().lang === "so";
   const icon = REASON_ICONS[item.reason.kind] ?? "✦";
   const badgeStyle = REASON_BADGE_STYLES[item.reason.kind] ?? "bg-slate-700/95 text-white";
   const label = item.exploratory
-    ? "New to you"
-    : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
+    ? so ? "Cusub adiga" : "New to you"
+    : so
+      ? (REASON_LABELS_SO[item.reason.kind] ?? "Laguu doortay")
+      : (REASON_LABELS[item.reason.kind] ?? "Picked for you");
 
   return (
     <div

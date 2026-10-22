@@ -48,6 +48,8 @@ export interface PlacedOrder {
   city: string;
   paymentLabel: string;
   subtotal: number;
+  /** Saved through shop offers and the promo code, as the server priced it. */
+  discount?: number;
   delivery: number;
   total: number;
   parcels: PlacedParcel[];
@@ -93,6 +95,7 @@ export default function OrderConfirmation({
     city: order.city,
     paymentMethod: order.paymentLabel,
     subtotal: order.subtotal,
+    discount: order.discount,
     deliveryFee: order.delivery,
     total: order.total,
     placedAt,
@@ -146,6 +149,12 @@ export default function OrderConfirmation({
             <dt className="text-slate-500">Items</dt>
             <dd className="font-semibold text-slate-800">{money(order.subtotal)}</dd>
           </div>
+          {(order.discount ?? 0) > 0 && (
+            <div className="flex justify-between text-emerald-600">
+              <dt>🎁 You saved</dt>
+              <dd className="font-semibold">−{money(order.discount ?? 0)}</dd>
+            </div>
+          )}
           <div className="flex justify-between">
             <dt className="text-slate-500">Delivery</dt>
             <dd className="font-semibold text-slate-800">

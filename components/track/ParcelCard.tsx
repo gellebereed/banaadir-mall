@@ -77,6 +77,7 @@ export default function ParcelCard({
                     {[item.selectedColor, item.selectedSize].filter(Boolean).join(" · ")}
                   </span>
                 )}
+                {item.offer && <span className="font-semibold text-emerald-700"> · 🎁 {item.offer}</span>}
               </span>
               {typeof item.price === "number" && (
                 <span className="shrink-0 font-semibold text-slate-700">

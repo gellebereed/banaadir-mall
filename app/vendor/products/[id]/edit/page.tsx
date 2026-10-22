@@ -1,3 +1,4 @@
+import PendingButton from "@/components/dashboard/PendingButton";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
@@ -65,9 +66,9 @@ export default async function EditProductPage({
             </p>
           </div>
           <form action={deleteProduct.bind(null, product.id)}>
-            <button className="rounded-full border border-coral-500 px-4 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+            <PendingButton className="rounded-full border border-coral-500 px-4 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Delete product
-            </button>
+            </PendingButton>
           </form>
         </div>
       }

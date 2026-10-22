@@ -10,6 +10,7 @@ import StoreAvatar from "@/components/StoreAvatar";
 import StorySection from "@/components/story/StorySection";
 import {
   getCategory,
+  getMarketingSettings,
   getProduct,
   getReviews,
   getStore,
@@ -21,6 +22,8 @@ import { requestOrigin } from "@/lib/request-origin";
 import { jsonLd, metaDescription, openGraph } from "@/lib/seo";
 import { getSession } from "@/lib/session";
 import { describeAttributes } from "@/lib/taxonomy-attributes";
+import { getT } from "@/lib/prefs-server";
+import { normalizeWhatsAppNumber, whatsappLink } from "@/lib/whatsapp";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -62,12 +65,14 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProduct(slug);
   if (!product) notFound();
 
-  const [store, category, reviews, stories, session] = await Promise.all([
+  const [store, category, reviews, stories, session, marketing, t] = await Promise.all([
     getStore(product.store),
     getCategory(product.category),
     getReviews(product),
     getStoriesForProduct(product),
     getSession(),
+    getMarketingSettings(),
+    getT(),
   ]);
 
   /*
@@ -75,6 +80,7 @@ export default async function ProductPage({ params }: Props) {
    * stars under the result instead of a bare link.
    */
   const origin = await requestOrigin();
+  const sellerNumber = normalizeWhatsAppNumber(store?.whatsapp);
   const photo = primaryImage(product);
   const productLd = {
     "@context": "https://schema.org",
@@ -120,38 +126,64 @@ export default async function ProductPage({ params }: Props) {
         Nesting them inside a max-width container turns each one into a
         coloured rectangle floating in the middle of the page.
       */}
-      <div className="mx-auto max-w-7xl px-4 pt-8">
+      <div className="mx-auto max-w-7xl px-4 pt-4 sm:pt-8">
       {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="mb-5 text-sm text-slate-400">
-        <Link href="/" className="hover:text-ocean-700">Home</Link>
-        <span className="mx-2">/</span>
-        <Link href={`/category/${product.category}`} className="hover:text-ocean-700">
+      {/* One line that never runs past the screen: the product name takes
+          whatever is left and truncates. (A fixed 50vw for it pushed a 320px
+          phone's page sideways — sticky buy bar included.) On a phone the
+          "Home" step goes; the header logo already does that job. */}
+      <nav aria-label="Breadcrumb" className="mb-4 flex min-w-0 items-center whitespace-nowrap text-sm text-slate-400 sm:mb-5">
+        <Link href="/" className="hidden hover:text-ocean-700 sm:inline">Home</Link>
+        <span className="mx-2 hidden sm:inline">/</span>
+        <Link href={`/category/${product.category}`} className="shrink-0 hover:text-ocean-700">
           {category?.name}
         </Link>
-        <span className="mx-2">/</span>
-        <span className="text-slate-600">{product.name}</span>
+        <span className="mx-2 shrink-0">/</span>
+        <span className="min-w-0 truncate text-slate-600 sm:max-w-md">{product.name}</span>
       </nav>
 
       {/* Gallery + buy box (client) with the store card passed through */}
-      <ProductView product={product} details={describeAttributes(product.attributes)}>
+      <ProductView product={product} details={describeAttributes(product.attributes)} delivery={marketing.delivery}>
         {store && (
-          <Link
-            href={`/store/${store.slug}`}
-            className="card mt-6 flex items-center gap-4 p-4 transition hover:shadow-md"
-          >
-            <StoreAvatar store={store} size={48} className="h-12 w-12 shrink-0 rounded-xl text-2xl" />
-            <div className="min-w-0 flex-1">
-              <p className="font-display font-bold text-ocean-950">
-                {store.name} {store.verified && <span className="text-ocean-500">✔</span>}
-              </p>
-              <p className="text-xs text-slate-500">
-                ★ {store.rating} · {compact(store.followers)} followers · {store.city}
-              </p>
+          <div className="card mt-5 p-4">
+            <Link href={`/store/${store.slug}`} className="group flex items-center gap-4">
+              <StoreAvatar store={store} size={48} className="h-12 w-12 shrink-0 rounded-xl text-2xl" />
+              <div className="min-w-0 flex-1">
+                <p className="font-display font-bold text-ocean-950 group-hover:text-ocean-700">
+                  {store.name} {store.verified && <span className="text-ocean-500">✔</span>}
+                </p>
+                <p className="text-xs text-slate-500">
+                  ★ {store.rating} · {t("store.followers", { n: compact(store.followers) })} · {store.city}
+                </p>
+              </div>
+            </Link>
+            {/*
+              Ask before buying — the way people here do. The shop's own
+              WhatsApp when it has one, else the marketplace's support line
+              (only when that is configured — the fallback is a placeholder).
+            */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Link
+                href={`/store/${store.slug}`}
+                className="flex items-center justify-center rounded-full border border-ocean-700 px-3 py-2 text-xs font-bold text-ocean-700 hover:bg-ocean-50"
+              >
+                {t("store.visit")}
+              </Link>
+              {(sellerNumber || process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP) && (
+                <a
+                  href={whatsappLink(
+                    sellerNumber || process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP!,
+                    `${t("store.chatMessage", { store: store.name, product: product.name })}\n${origin}/product/${product.slug}`,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 rounded-full bg-[#25D366] px-3 py-2 text-xs font-bold text-white hover:brightness-95"
+                >
+                  💬 {t("store.chat")}
+                </a>
+              )}
             </div>
-            <span className="shrink-0 rounded-full border border-ocean-700 px-4 py-1.5 text-xs font-bold text-ocean-700">
-              Visit Store
-            </span>
-          </Link>
+          </div>
         )}
       </ProductView>
 

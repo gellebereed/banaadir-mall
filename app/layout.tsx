@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { CartProvider } from "@/lib/cart-context";
+import { PrefsProvider } from "@/components/prefs/PrefsProvider";
+import WhatsAppHelp from "@/components/layout/WhatsAppHelp";
+import InstallPrompt from "@/components/layout/InstallPrompt";
+import { getLang, getLite } from "@/lib/prefs-server";
 import { RecoProvider } from "@/components/reco/RecoProvider";
 import PromptHost from "@/components/reco/PromptHost";
 import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
@@ -74,10 +78,12 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   // The announcement bar text is controlled from /admin/marketing.
   // The session drives which dashboard links the header and footer show.
-  const [marketing, session, categories] = await Promise.all([
+  const [marketing, session, categories, lang, lite] = await Promise.all([
     getMarketingSettings(),
     getSession(),
     getCategories(),
+    getLang(),
+    getLite(),
   ]);
   const store = session?.store ? await getStore(session.store) : undefined;
 
@@ -98,8 +104,9 @@ export default async function RootLayout({
   );
 
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
+    <html lang={lang} data-lite={lite ? "" : undefined} className={`${inter.variable} ${outfit.variable}`}>
       <body className="flex min-h-screen flex-col">
+        <PrefsProvider lang={lang} lite={lite}>
         {/*
           The basket, wishlist and taste profile are all stored per ACCOUNT
           on this device. On a shared phone — which is how a great many
@@ -129,6 +136,7 @@ export default async function RootLayout({
               session={session}
               storeName={store?.name}
               categories={categories}
+              delivery={marketing.delivery}
             />
             </ShopChrome>
           )}
@@ -152,10 +160,17 @@ export default async function RootLayout({
             <StoreSiteFooter store={siteStore!} />
           ) : (
             // Dashboards draw their own frame — see ShopChrome.
-            <ShopChrome>
-              <Footer session={session} />
-              <BottomNav />
-            </ShopChrome>
+            <>
+              <ShopChrome hideOnCheckout>
+                <Footer session={session} />
+                <BottomNav />
+                <InstallPrompt />
+              </ShopChrome>
+              {/* Help stays on checkout — it is where questions come up. */}
+              <ShopChrome>
+                <WhatsAppHelp />
+              </ShopChrome>
+            </>
           )}
           {/* Cart / wishlist confirmations */}
           <Toaster />
@@ -169,6 +184,7 @@ export default async function RootLayout({
           </ShopChrome>
           </RecoProvider>
         </CartProvider>
+        </PrefsProvider>
       </body>
     </html>
   );

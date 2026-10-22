@@ -120,6 +120,10 @@ export interface VendorOrderLine {
   options?: string;
   /** Internal reference / SKU — what the picker looks for on the shelf. */
   reference?: string;
+  /** Catalogue price, when a shop offer or promo code charged less. */
+  listPrice?: number;
+  /** Which offer — "Buy 1, get the next for $1". */
+  offer?: string;
 }
 
 export interface VendorOrderMessage {
@@ -219,6 +223,11 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
     if (detail) parts.push(`    ${detail}`);
 
     parts.push(`    ${money(line.price)} each → ${b(money(line.price * line.qty))}`);
+    // Lines are recorded at what was charged; say why one is cheaper, so
+    // the shop isn't left wondering about a $1 shirt.
+    if (line.offer && line.listPrice !== undefined && line.listPrice !== line.price) {
+      parts.push(`    🎁 ${line.offer} (was ${money(line.listPrice)})`);
+    }
     return parts.join("\n");
   });
 
@@ -249,6 +258,9 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
     // Spelled out because it is the single most likely thing to be
     // misread, and misreading it means a vendor invoices for the wrong sum.
     `_Your items only. Delivery is charged once on the full order and settled by Banaadir Mall._`,
+    // The website already took these off its stock; the shop's own till
+    // didn't — and the next stock upload from it would put them back.
+    `_📦 Banaadir Mall stock is already reduced — take these items off your shop's till too._`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━`,
     b("DELIVER TO"),
@@ -276,6 +288,8 @@ export interface CustomerReceipt {
   city: string;
   paymentMethod: string;
   subtotal: number;
+  /** Promo-code saving, in money. */
+  discount?: number;
   deliveryFee: number;
   total: number;
   /** One entry per store in the order. */
@@ -287,7 +301,7 @@ export interface CustomerReceipt {
 export function buildCustomerReceipt(input: CustomerReceipt): string {
   const {
     orderId, customerName, address, city, paymentMethod,
-    subtotal, deliveryFee, total, parcels, placedAt = new Date(), trackUrl,
+    subtotal, discount = 0, deliveryFee, total, parcels, placedAt = new Date(), trackUrl,
   } = input;
 
   const parcelLines = parcels.map(
@@ -314,6 +328,7 @@ export function buildCustomerReceipt(input: CustomerReceipt): string {
       : []),
     ``,
     `Items: ${money(subtotal)}`,
+    ...(discount > 0 ? [`You saved: −${money(discount)}`] : []),
     `Delivery: ${deliveryFee === 0 ? "Free" : money(deliveryFee)}`,
     b(`Total: ${money(total)}`),
     `${b("Payment:")} ${paymentMethod}`,

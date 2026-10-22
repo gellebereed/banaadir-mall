@@ -46,6 +46,7 @@ export const CACHE_TAGS = {
   categories: "bm:categories",
   orders: "bm:orders",
   promotions: "bm:promotions",
+  offers: "bm:offers",
   employees: "bm:employees",
   marketing: "bm:marketing",
   flash: "bm:flash",

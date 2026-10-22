@@ -3,6 +3,8 @@
 import { useRef } from "react";
 import Link from "next/link";
 import CountdownTimer from "@/components/CountdownTimer";
+import { PANEL_RAIL_CARD } from "@/lib/card-sizes";
+import { useT } from "@/components/prefs/PrefsProvider";
 import ProductCard from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
 
@@ -16,6 +18,7 @@ export default function FlashDealsRail({
   endsAt: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   function scroll(direction: "left" | "right") {
     if (!scrollRef.current) return;
@@ -29,20 +32,24 @@ export default function FlashDealsRail({
   return (
     <section className="mx-auto max-w-7xl px-4 pt-14">
       <div className="rounded-3xl bg-gradient-to-r from-coral-500/15 via-mango-100 to-sand-100 p-4 sm:p-6 shadow-sm">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+        {/* Title and "See all" share the first line on a phone, with the
+            countdown under them — three stacked lines read as a muddle. */}
+        <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h2 className="font-display text-2xl font-bold text-ocean-950 sm:text-3xl">
               ⚡ {name}
             </h2>
-            <CountdownTimer endsAt={endsAt || undefined} />
+            <span className="hidden sm:block">
+              <CountdownTimer endsAt={endsAt || undefined} />
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
             <Link
               href="/flash"
-              className="text-sm font-semibold text-coral-600 hover:text-coral-700 transition mr-2"
+              className="mr-0 whitespace-nowrap text-sm font-semibold text-coral-600 transition hover:text-coral-700 sm:mr-2"
             >
-              See all deals →
+              {t("section.flash.all")}
             </Link>
 
             {/* Desktop Navigation Scroll Buttons */}
@@ -66,14 +73,19 @@ export default function FlashDealsRail({
             </div>
           </div>
         </div>
+        {endsAt && (
+          <div className="-mt-1 mb-4 sm:hidden">
+            <CountdownTimer endsAt={endsAt} />
+          </div>
+        )}
 
         {/* Scrollable Container with Custom Styled Scrollbar */}
         <div
           ref={scrollRef}
-          className="flex snap-x items-stretch gap-4 overflow-x-auto pb-4 pt-1 scroll-smooth scrollbar-thin scrollbar-thumb-ocean-300 scrollbar-track-transparent"
+          className="flex snap-x items-stretch gap-3 overflow-x-auto pb-4 pt-1 scroll-smooth scrollbar-thin scrollbar-thumb-ocean-300 scrollbar-track-transparent md:gap-4"
         >
           {deals.map((p) => (
-            <div key={p.id} className="flex h-full w-44 shrink-0 flex-col snap-start sm:w-56">
+            <div key={p.id} className={`${PANEL_RAIL_CARD} h-full flex-col`}>
               <ProductCard product={p} />
             </div>
           ))}

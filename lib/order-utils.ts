@@ -131,3 +131,21 @@ export function baseOrderId(orderId: string): string {
   const match = orderId.trim().match(/^(.*?)-([A-Za-z][A-Za-z0-9]*)$/);
   return match ? match[1] : orderId.trim();
 }
+
+/**
+ * Is this order the signed-in shopper's?
+ *
+ * An order that carries an email is matched on it ALONE — falling back to
+ * the name let two customers called "Ahmed" see each other's orders.
+ * Only an order with no email at all (old records, the demo data) is
+ * matched by name.
+ */
+export function orderBelongsTo(
+  order: { email?: string; customer?: string },
+  user: { email: string; name: string },
+): boolean {
+  const email = user.email.trim().toLowerCase();
+  if (order.email?.trim()) return order.email.trim().toLowerCase() === email;
+  const name = user.name.trim().toLowerCase();
+  return Boolean(name) && order.customer?.trim().toLowerCase() === name;
+}

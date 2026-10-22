@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import TillClient from "@/components/pos/TillClient";
-import { getOrdersByStore, getPosSettings, getProductsByStore } from "@/lib/api";
+import { getAllProductsByStore, getOffersByStore, getOrdersByStore, getPosSettings } from "@/lib/api";
 import { money } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 
@@ -17,10 +17,13 @@ export const metadata: Metadata = { title: "Sell" };
 export default async function TillPage() {
   const { storeSlug } = await requireVendor();
 
-  const [products, settings, orders] = await Promise.all([
-    getProductsByStore(storeSlug),
+  const [products, settings, orders, offers] = await Promise.all([
+    // The true count — a shop's online safety buffer is for the website,
+    // not for its own counter.
+    getAllProductsByStore(storeSlug).then((list) => list.filter((p) => !p.hidden)),
     getPosSettings(storeSlug),
     getOrdersByStore(storeSlug),
+    getOffersByStore(storeSlug),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -67,7 +70,7 @@ export default async function TillPage() {
         </div>
       </div>
 
-      <TillClient products={ordered} settings={settings} />
+      <TillClient products={ordered} settings={settings} offers={offers} />
 
       <p className="mt-6 text-center text-xs text-slate-400">
         Every sale here is a real order — it shows up in your{" "}

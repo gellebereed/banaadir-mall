@@ -10,8 +10,21 @@ import type { OrderParcel } from "@/app/actions";
 import { LiveIndicator } from "@/components/track/OrderProgress";
 import { sharedCourierGroups } from "@/lib/delivery";
 import { useLiveOrder } from "@/lib/use-live-order";
-import { orders as demoOrders } from "@/lib/data/orders";
 import { money, shortDate } from "@/lib/format";
+import { useT } from "@/components/prefs/PrefsProvider";
+import { getUserOrdersAction } from "@/app/actions";
+import { whatsappLink } from "@/lib/whatsapp";
+import Link from "next/link";
+
+/** Only a real, configured number — never the code's placeholder. */
+const SUPPORT = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP;
+
+/** "10240", "bm 10240", "BM-10240" → "BM-10240". */
+function normaliseOrderId(raw: string): string {
+  const v = raw.trim().toUpperCase().replace(/\s+/g, "");
+  if (/^\d{4,}$/.test(v)) return `BM-${v}`;
+  return v.replace(/^BM(?=\d)/, "BM-");
+}
 import type { Order, OrderStatus } from "@/lib/types";
 
 // The journey steps live in lib/delivery.ts (JOURNEY_STEPS) and are rendered
@@ -21,7 +34,16 @@ function TrackContent() {
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id") || "";
 
+  const t = useT();
   const { scope } = useCart();
+  const [copied, setCopied] = useState(false);
+  /** Signed in: the account's own orders, newest first (server). */
+  const [mine, setMine] = useState<Order[]>([]);
+  useEffect(() => {
+    getUserOrdersAction()
+      .then((list) => setMine([...list].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6)))
+      .catch(() => setMine([]));
+  }, [scope]);
   // The browser-side order copy is per account — see lib/storage-scope.ts.
   const ordersKey = scopedKey("banaadir_user_orders", scope);
   const [input, setInput] = useState(queryId);
@@ -73,8 +95,10 @@ function TrackContent() {
     };
   }, [ordersKey]);
 
-  async function performLookup(searchId: string) {
-    if (!searchId.trim()) return;
+  async function performLookup(rawId: string) {
+    const searchId = normaliseOrderId(rawId);
+    if (!searchId) return;
+    setInput(searchId);
     setIsSearching(true);
     setNotFound(false);
 
@@ -90,14 +114,6 @@ function TrackContent() {
       }
     } catch {
       // Ignore
-    }
-
-    // 2. Check demo/static orders
-    if (!foundOrder) {
-      const demoFound = demoOrders.find((o) => o.id.toLowerCase() === cleanId);
-      if (demoFound) {
-        foundOrder = demoFound;
-      }
     }
 
     // 3. Fallback to Server Action lookup
@@ -206,52 +222,51 @@ function TrackContent() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       <div className="text-center">
-        <span className="text-5xl">📦</span>
-        <h1 className="mt-4 font-display text-3xl font-extrabold text-ocean-950">
-          Track your order
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Enter your order number (e.g.{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setInput("BM-10240");
-              void performLookup("BM-10240");
-            }}
-            className="font-bold text-ocean-700 hover:underline"
-          >
-            BM-10240
-          </button>
-          ) to see where it is.
-        </p>
+        <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-ocean-50 text-3xl" aria-hidden>
+          📦
+        </span>
+        <h1 className="mt-4 font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">{t("track.title")}</h1>
+        <p className="mt-2 text-sm text-slate-500">{t("track.sub")}</p>
       </div>
 
       <form onSubmit={handleFormSubmit} className="mt-6 flex gap-2">
         <input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="BM-10287"
-          className="input font-mono text-base font-semibold"
+          onChange={(e) => setInput(e.target.value.toUpperCase())}
+          placeholder="BM-12345"
+          aria-label={t("track.title")}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+          className="input font-mono text-base font-semibold tracking-wide"
         />
-        <button type="submit" disabled={isSearching} className="btn-primary shrink-0 !py-2.5 disabled:opacity-50">
-          {isSearching ? "Searching…" : "Track Order"}
+        <button type="submit" disabled={isSearching} className="btn-primary shrink-0 !px-6 !py-2.5 disabled:opacity-50">
+          {isSearching ? t("track.searching") : t("track.button")}
         </button>
       </form>
 
+      <details className="mt-3 text-center text-xs text-slate-500">
+        <summary className="cursor-pointer font-semibold text-ocean-700">{t("track.where")}</summary>
+        <p className="mx-auto mt-1.5 max-w-md">{t("track.whereAns")}</p>
+      </details>
+
       {notFound && (
         <div className="mt-4 rounded-2xl border border-coral-200 bg-coral-50 p-4 text-sm font-semibold text-coral-800 animate-fade-up">
-          ⚠️ We couldn&apos;t find order &ldquo;{input}&rdquo;. Order numbers look like BM-12345 — it&apos;s on
-          your confirmation screen and in the WhatsApp message to the store.
+          ⚠️ {t("track.notFound", { id: input })}
         </div>
       )}
 
-      {!order && recent.length > 0 && (
+      {!order && (mine.length > 0 || recent.length > 0) && (
         <section className="mt-8">
           <h2 className="font-display text-sm font-bold uppercase tracking-wide text-slate-500">
-            Your recent orders
+            {mine.length > 0 ? t("track.yours") : t("track.recent")}
           </h2>
           <ul className="mt-3 space-y-2">
-            {recent.map((o) => (
+            {(mine.length > 0
+              ? // Still on the way first — that's what someone opening a tracker wants.
+                [...mine].sort((a, b) => Number(a.status === "delivered" || a.status === "cancelled") - Number(b.status === "delivered" || b.status === "cancelled"))
+              : recent
+            ).map((o) => (
               <li key={o.id}>
                 <button
                   type="button"
@@ -275,7 +290,13 @@ function TrackContent() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-slate-400">Orders placed on this device. Signed in? All your orders are under My account.</p>
+          {mine.length === 0 && (
+            <p className="mt-2 text-xs text-slate-400">
+              <Link href="/login?next=/track" className="font-semibold text-ocean-700 hover:underline">
+                {t("track.signIn")}
+              </Link>
+            </p>
+          )}
         </section>
       )}
 
@@ -293,6 +314,51 @@ function TrackContent() {
               </p>
             </div>
             <StatusBadge status={order.status} />
+          </div>
+
+          {/* The whole order in one line, then help and sharing. */}
+          {parcels.length > 1 && (
+            <p className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${
+              parcels.every((p) => p.order.status === "delivered") ? "bg-emerald-50 text-emerald-800" : "bg-ocean-50 text-ocean-900"
+            }`}>
+              {parcels.every((p) => p.order.status === "delivered")
+                ? t("track.allDelivered")
+                : `📦 ${t("track.summary", {
+                    done: parcels.filter((p) => p.order.status === "delivered").length,
+                    total: parcels.length,
+                  })}`}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(`${window.location.origin}/track?id=${order.id}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } catch {
+                  // No clipboard (old browser / http): nothing to do.
+                }
+              }}
+              className="rounded-full bg-white px-4 py-2 text-xs font-bold text-ocean-800 ring-1 ring-sand-200 hover:ring-ocean-300"
+            >
+              🔗 {copied ? t("track.copied") : t("track.copy")}
+            </button>
+            {SUPPORT ? (
+              <a
+                href={whatsappLink(SUPPORT, `Hello Banaadir Mall, I have a question about my order ${order.id}.`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full bg-[#25D366] px-4 py-2 text-xs font-bold text-white hover:brightness-95"
+              >
+                💬 {t("track.whatsapp")}
+              </a>
+            ) : (
+              <Link href="/help" className="rounded-full bg-white px-4 py-2 text-xs font-bold text-ocean-800 ring-1 ring-sand-200">
+                💬 {t("track.help")}
+              </Link>
+            )}
           </div>
 
           {/*

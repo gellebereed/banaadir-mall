@@ -223,6 +223,30 @@ Run **`supabase/migration-reco-learning.sql`** after the metrics migration.
   authenticated, so a determined person can inflate them. Pairs need 2+
   visits and tuning is clamped, which limits the damage.
 
+## Language, delivery city, WhatsApp help, app install, light data
+
+- **Somali (af-Soomaali)**: EN | SO switch in the header (desktop), the
+  phone menu and the footer. Translates the shop's own words — navigation,
+  buttons, home sections, product cards and page, recommendation rows,
+  footer. Product names/descriptions, store names and your own marketing
+  text stay as written. All strings are in `lib/i18n.ts` (plus
+  `lib/reco/i18n-so.ts` for recommendation rows) — **have a native speaker
+  read them once**. Checkout, account and dashboards are still English.
+- **Deliver to**: shoppers pick their city (header on desktop, a line under
+  search on phones); the delivery time shown comes from Marketing → Delivery
+  ("Delivery time · Mogadishu" / "· rest of Somalia"). Checkout starts from
+  the chosen city when there's no saved address.
+- **WhatsApp help button**: set **`NEXT_PUBLIC_SUPPORT_WHATSAPP`** in Netlify
+  (international digits, e.g. 2526xxxxxxx) and redeploy. Without it the
+  button is hidden (the code's fallback number is a placeholder).
+- **Install the app**: a small card from the second page view (never on
+  product/cart/checkout, never inside the installed app, quiet for 14 days
+  after "Not now"). Android/desktop Chrome get an Install button; iPhones get
+  the "Share → Add to Home Screen" steps.
+- **Light data mode**: footer / phone menu switch, and automatic when the
+  phone's data saver is on. Lower-quality photos, banner photos only when
+  shown, no banner autoplay — measured 33–45% less image data.
+
 ## Link previews & search engines
 
 - **WhatsApp / Facebook previews**: every product link shows a generated

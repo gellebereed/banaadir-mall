@@ -119,6 +119,29 @@ export function defaultVariant(product: Product): Variant | undefined {
  * photos — "I uploaded them and they don't show". Any variant's photo is a
  * better answer than none.
  */
+/** What a product picker row needs — and nothing else. */
+export type PickerProduct = Pick<Product, "id" | "name" | "store" | "category" | "price" | "art" | "icon" | "images">;
+
+/**
+ * A product trimmed for a picker. The admin flash page hands the whole
+ * catalogue (1,700+ products) to the browser; with descriptions, variants
+ * and every photo that payload was re-sent after each Approve or Withdraw
+ * and was most of why those buttons felt stuck. One thumbnail is enough.
+ */
+export function pickerProduct(p: Product): PickerProduct {
+  const image = primaryImage(p);
+  return {
+    id: p.id,
+    name: p.name,
+    store: p.store,
+    category: p.category,
+    price: p.price,
+    art: p.art,
+    icon: p.icon,
+    images: image ? [image] : [],
+  };
+}
+
 export function primaryImage(product: Product): string | undefined {
   return (
     defaultVariant(product)?.images?.[0] ??

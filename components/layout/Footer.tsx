@@ -2,12 +2,16 @@ import Image from "next/image";
 import Link from "next/link";
 
 import type { Session } from "@/lib/auth";
+import type { T } from "@/lib/i18n";
+import { getT } from "@/lib/prefs-server";
+import { LanguageToggle } from "@/components/prefs/PrefsProvider";
+import LiteToggle from "@/components/prefs/LiteToggle";
 
 /**
  * Footer link columns. The "Sell" column only offers links the visitor can
  * actually open — no dead ends into guarded dashboards.
  */
-function columns(session: Session | null) {
+function columns(session: Session | null, t: T) {
   const sellLinks =
     session?.role === "admin"
       ? [
@@ -22,34 +26,35 @@ function columns(session: Session | null) {
             { label: "Store Settings", href: "/vendor/settings" },
           ]
         : [
-            { label: "Open a Store", href: "/sell" },
-            { label: "Seller Sign In", href: "/login" },
+            { label: t("footer.openStore"), href: "/sell" },
+            { label: t("footer.sellerSignIn"), href: "/login" },
           ];
 
   return [
     {
-      title: "Shop",
+      title: t("footer.shop"),
       links: [
-        { label: "All Products", href: "/products" },
-        { label: "Flash Deals", href: "/flash" },
-        { label: "Bestsellers", href: "/products?sort=sold" },
-        { label: "All Stores", href: "/stores" },
+        { label: t("nav.allProducts"), href: "/products" },
+        { label: t("footer.flash"), href: "/flash" },
+        { label: t("footer.bestsellers"), href: "/products?sort=sold" },
+        { label: t("nav.allStores"), href: "/stores" },
       ],
     },
-    { title: "Sell", links: sellLinks },
+    { title: t("footer.sell"), links: sellLinks },
     {
-      title: "Help",
+      title: t("footer.help"),
       links: [
-        { label: "Track My Order", href: "/track" },
-        { label: "FAQ & Contact", href: "/help" },
-        { label: session ? "My Account" : "Sign In", href: session ? "/account" : "/login" },
+        { label: t("footer.track"), href: "/track" },
+        { label: t("footer.faq"), href: "/help" },
+        { label: session ? t("footer.myAccount") : t("nav.signIn"), href: session ? "/account" : "/login" },
       ],
     },
   ];
 }
 
-export default function Footer({ session }: { session: Session | null }) {
-  const COLUMNS = columns(session);
+export default async function Footer({ session }: { session: Session | null }) {
+  const t = await getT();
+  const COLUMNS = columns(session, t);
 
   return (
     <footer className="mt-16 bg-ocean-950 text-ocean-100">
@@ -69,10 +74,10 @@ export default function Footer({ session }: { session: Session | null }) {
               </span>
               <div>
                 <p className="font-display text-sm font-extrabold text-white">
-                  Have products to sell?
+                  {t("footer.sellBand.title")}
                 </p>
                 <p className="text-xs text-ocean-200">
-                  Free to start · your own dashboard · paid to your mobile money
+                  {t("footer.sellBand.text")}
                 </p>
               </div>
             </div>
@@ -80,14 +85,16 @@ export default function Footer({ session }: { session: Session | null }) {
               href="/sell"
               className="shrink-0 rounded-full border border-white/25 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-white hover:text-ocean-950"
             >
-              Open your store
+              {t("footer.sellBand.cta")}
             </Link>
           </div>
         </div>
       )}
 
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        {/* grid-cols-1, not the implicit column: that one sizes to its widest
+            unbreakable line, which pushed 320px phones sideways on every page. */}
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           {/* Brand + newsletter */}
           <div>
             <div className="flex items-center gap-2.5">
@@ -105,19 +112,25 @@ export default function Footer({ session }: { session: Session | null }) {
               </span>
             </div>
             <p className="mt-3 max-w-xs text-sm text-ocean-200">
-              Somalia&apos;s online marketplace. Trusted local stores, honest
-              prices, delivered to your door.
+              {t("footer.tagline")}
             </p>
             <form className="mt-5 flex max-w-sm gap-2" action="/help">
               <input
                 type="email"
-                placeholder="Email for deals & updates"
+                placeholder={t("footer.newsletter")}
                 className="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2.5 text-sm text-white placeholder-ocean-300 outline-none focus:bg-white/20"
               />
               <button className="rounded-full bg-mango-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-mango-600">
-                Join
+                {t("footer.join")}
               </button>
             </form>
+            {/* Display preferences, where people look for site settings. */}
+            <div className="mt-5 flex flex-wrap items-center gap-3 text-xs text-ocean-200">
+              <span className="inline-flex items-center gap-2">
+                🌐 <LanguageToggle className="!bg-white/10 [&_button[aria-pressed=false]]:text-ocean-200" />
+              </span>
+              <LiteToggle variant="dark" />
+            </div>
           </div>
 
           {COLUMNS.map((col) => (
@@ -144,7 +157,7 @@ export default function Footer({ session }: { session: Session | null }) {
         {/* Payment methods + copyright */}
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-xs text-ocean-300">
-            © 2026 Banaadir Mall. All rights reserved.
+            © 2026 Banaadir Mall. {t("footer.rights")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {["EVC Plus", "Zaad", "eDahab", "Visa", "Mastercard", "Cash on Delivery"].map(

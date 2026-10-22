@@ -14,6 +14,7 @@
  * one would have been.
  */
 
+import { RAIL_CARD } from "@/lib/card-sizes";
 import type { ShelfSlot } from "@/lib/types";
 import { useRecommendations } from "./RecoProvider";
 import RecoShelf from "./RecoShelf";
@@ -99,7 +100,7 @@ function ShelfSkeleton() {
       <div className="mb-5 h-7 w-56 animate-pulse rounded-lg bg-sand-100" />
       <div className="flex gap-4 overflow-hidden">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="w-44 shrink-0 sm:w-52">
+          <div key={i} className={RAIL_CARD}>
             <div className="aspect-square w-full animate-pulse rounded-2xl bg-sand-100" />
             <div className="mt-3 h-3 w-3/4 animate-pulse rounded bg-sand-100" />
             <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-sand-100" />

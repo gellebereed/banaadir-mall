@@ -25,13 +25,16 @@ export default async function FlashPage() {
               ⚡ {flash.name}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              {products.length} limited-time offer{products.length === 1 ? "" : "s"} —
-              when they&apos;re gone, they&apos;re gone.
+              {products.length > 0
+                ? `${products.length} limited-time offer${products.length === 1 ? "" : "s"} — when they're gone, they're gone.`
+                : "Limited-time offers from our shops."}
             </p>
           </div>
-          <div className="rounded-2xl bg-white/70 px-5 py-3">
-            <CountdownTimer endsAt={flash.endsAt || undefined} />
-          </div>
+          {products.length > 0 && flash.endsAt && (
+            <div className="rounded-2xl bg-white/70 px-5 py-3">
+              <CountdownTimer endsAt={flash.endsAt} />
+            </div>
+          )}
         </div>
       </div>
 

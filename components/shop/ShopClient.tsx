@@ -1,44 +1,157 @@
 "use client";
 
 /**
- * The shared catalog browser: filter sidebar + sort bar + product grid.
- * Used by /products, /category/[slug] and /search — the server page fetches
- * the base product list and this component handles all client-side
- * filtering and sorting.
+ * ─────────────────────────────────────────────────────────────────────────
+ *  THE PRODUCT LIST — filters, sort and grid for /products, /category and
+ *  /search. The server page passes the products; everything here runs in
+ *  the browser.
+ * ─────────────────────────────────────────────────────────────────────────
+ * What makes it work like a big shop's list rather than a form:
  *
- * With a real backend, move the filtering into lib/api.ts (server-side
- * query params) and keep this component as pure UI.
+ *  · Live counts. Every option shows how many products you would get
+ *    GIVEN YOUR OTHER CHOICES (each group is counted with every other
+ *    group applied, not itself), and options that would return nothing are
+ *    greyed out. "Electronics 5" means five, not "five before you picked a
+ *    brand".
+ *
+ *  · One scroll. The old sidebar put the category and brand lists in their
+ *    own small scroll boxes inside a scrolling panel, so most rows — and
+ *    their counts — were hidden until you found the inner scrollbar. Lists
+ *    now show their top rows and expand in place, with a search box once
+ *    they are long.
+ *
+ *  · On a phone, filters and sort open as full panels with a "Show 22
+ *    products" button, and a floating Filter · Sort pill follows you down
+ *    the page.
+ *
+ *  · The address bar is the state. Filters and sort are written to the
+ *    URL, so the back button, a refresh and a shared link all land on the
+ *    same list.
+ * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductCard from "@/components/ProductCard";
+import { money } from "@/lib/format";
 import { categories as seedCategories } from "@/lib/data/categories";
 import CategoryChips from "./CategoryChips";
+import Sheet from "./Sheet";
 import { useReco } from "@/components/reco/RecoProvider";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
 import { colorSwatch } from "@/lib/product-utils";
 import { hasHistory } from "@/lib/reco/profile";
 import { deriveTaste, tasteScore } from "@/lib/reco/taste";
+import type { MessageKey, T } from "@/lib/i18n";
 import type { FacetData } from "@/lib/taxonomy-attributes";
 import type { Category, Product, Store } from "@/lib/types";
 
 type SortKey = "featured" | "sold" | "price-asc" | "price-desc" | "rating" | "discount" | "new";
+const SORTS: SortKey[] = ["featured", "sold", "price-asc", "price-desc", "rating", "discount", "new"];
+const isSort = (v: unknown): v is SortKey => SORTS.includes(v as SortKey);
 
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: "featured", label: "Featured" },
-  { key: "sold", label: "Best Selling" },
-  { key: "price-asc", label: "Price: Low to High" },
-  { key: "price-desc", label: "Price: High to Low" },
-  { key: "rating", label: "Top Rated" },
-  { key: "discount", label: "Biggest Discount" },
-  { key: "new", label: "Newest" },
-];
+/** Quick price buttons — "under X", exclusive. */
+const UNDER = [10, 25, 50, 100];
+const RATINGS = [4, 3];
+const BATCH = 16;
 
-const PRICE_BANDS: { label: string; min: number; max: number }[] = [
-  { label: "Under $20", min: 0, max: 20 },
-  { label: "$20 – $50", min: 20, max: 50 },
-  { label: "$50 – $100", min: 50, max: 100 },
-  { label: "Over $100", min: 100, max: Infinity },
-];
+interface Filters {
+  cats: string[];
+  stores: string[];
+  sub: string | null;
+  /** Quick "under $X" (exclusive). */
+  under: number | null;
+  /** Typed range (inclusive). */
+  min: number | null;
+  max: number | null;
+  rating: number | null;
+  sale: boolean;
+  /** attribute handle → ticked value keys. OR within one, AND across them. */
+  attrs: Record<string, string[]>;
+}
+
+const EMPTY: Filters = { cats: [], stores: [], sub: null, under: null, min: null, max: null, rating: null, sale: false, attrs: {} };
+
+/** Filter groups, for "count everything except this group". */
+type Group = "cat" | "store" | "sub" | "price" | "rating" | "sale" | `attr:${string}`;
+
+function matches(p: Product, f: Filters, index: FacetData["index"], skip?: Group): boolean {
+  if (skip !== "cat" && f.cats.length && !f.cats.includes(p.category)) return false;
+  if (skip !== "store" && f.stores.length && !f.stores.includes(p.store)) return false;
+  if (skip !== "sub" && f.sub && p.subcategory !== f.sub) return false;
+  if (skip !== "price") {
+    if (f.under !== null && !(p.price < f.under)) return false;
+    if (f.min !== null && p.price < f.min) return false;
+    if (f.max !== null && p.price > f.max) return false;
+  }
+  if (skip !== "rating" && f.rating !== null && !(p.reviewCount > 0 && p.rating >= f.rating)) return false;
+  if (skip !== "sale" && f.sale && !(p.compareAt && p.compareAt > p.price)) return false;
+  for (const [handle, keys] of Object.entries(f.attrs)) {
+    if (!keys.length || skip === `attr:${handle}`) continue;
+    const tokens = index[p.id];
+    if (!tokens || !keys.some((k) => tokens.includes(`${handle}:${k}`))) return false;
+  }
+  return true;
+}
+
+// ── URL <-> filters ─────────────────────────────────────────────────────
+
+const num = (v: string | null) => {
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+const list = (v: string | null) => (v ? v.split(",").filter(Boolean).slice(0, 50) : []);
+
+const FILTER_PARAMS = ["cat", "store", "sub", "under", "max", "pmin", "pmax", "rating", "sale", "sort"];
+
+function readUrl(params: URLSearchParams): { filters: Filters; sort: SortKey | null } {
+  const attrs: Record<string, string[]> = {};
+  params.forEach((value, key) => {
+    if (key.startsWith("a.")) attrs[key.slice(2)] = list(value);
+  });
+  const sort = params.get("sort");
+  return {
+    filters: {
+      cats: list(params.get("cat")),
+      stores: list(params.get("store")),
+      sub: params.get("sub"),
+      // `max` is the home page's older "under $X" link (BudgetPicks).
+      under: num(params.get("under")) ?? num(params.get("max")),
+      min: num(params.get("pmin")),
+      max: num(params.get("pmax")),
+      rating: num(params.get("rating")),
+      sale: params.get("sale") === "1",
+      attrs,
+    },
+    sort: isSort(sort) ? sort : null,
+  };
+}
+
+/** Writes filters and sort into the address bar, keeping other params (search `q`). */
+function writeUrl(f: Filters, sort: SortKey, defaultSort: SortKey) {
+  const params = new URLSearchParams(window.location.search);
+  for (const key of [...params.keys()]) {
+    if (FILTER_PARAMS.includes(key) || key.startsWith("a.")) {
+      params.delete(key);
+    }
+  }
+  if (f.cats.length) params.set("cat", f.cats.join(","));
+  if (f.stores.length) params.set("store", f.stores.join(","));
+  if (f.sub) params.set("sub", f.sub);
+  if (f.under !== null) params.set("under", String(f.under));
+  if (f.min !== null) params.set("pmin", String(f.min));
+  if (f.max !== null) params.set("pmax", String(f.max));
+  if (f.rating !== null) params.set("rating", String(f.rating));
+  if (f.sale) params.set("sale", "1");
+  for (const [handle, keys] of Object.entries(f.attrs)) if (keys.length) params.set(`a.${handle}`, keys.join(","));
+  if (sort !== defaultSort) params.set("sort", sort);
+  const qs = params.toString();
+  const next = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+  if (next !== `${window.location.pathname}${window.location.search}`) {
+    window.history.replaceState(window.history.state, "", next);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 
 export default function ShopClient({
   products,
@@ -47,56 +160,59 @@ export default function ShopClient({
   title,
   subtitle,
   initialSort = "featured",
+  initialMaxPrice,
   showCategoryFilter = true,
   facets = { facets: [], index: {} },
   personalize = false,
 }: {
   products: Product[];
-  /**
-   * Standard-attribute filters (Colour, Size, Fabric…) for these products,
-   * built on the server by lib/taxonomy-attributes.ts#buildFacets.
-   */
-  facets?: FacetData;
-  /**
-   * Nudge the "Featured" order toward the shopper's own taste — for search
-   * results, which arrive ranked by relevance alone. Computed here, in the
-   * browser, from the profile that never leaves it (lib/reco).
-   */
+  /** Search results come ranked by relevance; nudge them toward the shopper's taste. */
   personalize?: boolean;
   /** Stores present in this result set, for the brand filter. */
   stores?: Store[];
-  /**
-   * The real category list. Falls back to the bundled seed only when a
-   * caller hasn't passed one — filtering against the seed meant every
-   * category created since launch was missing from the sidebar, so
-   * products filed under one could not be filtered to at all.
-   */
+  /** The real category list (falls back to the bundled seed). */
   categories?: Category[];
   title: string;
   subtitle?: string;
   initialSort?: string;
+  /** From a link like /products?max=10 (the home page's budget rows). */
+  initialMaxPrice?: number;
   showCategoryFilter?: boolean;
+  facets?: FacetData;
 }) {
-  const [sort, setSort] = useState<SortKey>(
-    SORTS.some((s) => s.key === initialSort) ? (initialSort as SortKey) : "featured",
-  );
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
-  const [activeStores, setActiveStores] = useState<string[]>([]);
-  const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
-  const [priceBand, setPriceBand] = useState<number | null>(null);
-  const [minRating, setMinRating] = useState<number | null>(null);
-  const [onSaleOnly, setOnSaleOnly] = useState(false);
-  /** attribute handle → ticked value keys. OR within one, AND across them. */
-  const [activeAttrs, setActiveAttrs] = useState<Record<string, string[]>>({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const { t } = usePrefs();
+  const defaultSort: SortKey = isSort(initialSort) ? initialSort : "featured";
+  const [sort, setSort] = useState<SortKey>(defaultSort);
+  const [f, setF] = useState<Filters>(() => ({ ...EMPTY, under: initialMaxPrice ?? null }));
+  const [sheet, setSheet] = useState<"filters" | "sort" | null>(null);
+  const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
+  const [visible, setVisible] = useState(BATCH);
 
-  /*
-   * Personal order for search results. Relevance stays the main thing — the
-   * server's rank becomes a score from 1 down to 0 — and taste can move a
-   * result only a few places (TASTE_WEIGHT): enough that a shopper who buys
-   * from one store or in one price range sees those first among equally
-   * good matches, never enough to bury the best match. Muted products sink.
-   */
+  // The URL wins on load (a shared link, the back button).
+  const loaded = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = readUrl(params);
+    const hasAny = [...params.keys()].some((k) => FILTER_PARAMS.includes(k) || k.startsWith("a."));
+    if (hasAny) setF(fromUrl.filters);
+    if (fromUrl.sort) setSort(fromUrl.sort);
+    loaded.current = true;
+  }, []);
+  useEffect(() => {
+    if (loaded.current) writeUrl(f, sort, defaultSort);
+  }, [f, sort, defaultSort]);
+
+  const update = useCallback((patch: Partial<Filters>) => setF((prev) => ({ ...prev, ...patch })), []);
+  const toggleIn = (key: "cats" | "stores", value: string) =>
+    setF((prev) => ({ ...prev, [key]: prev[key].includes(value) ? prev[key].filter((v) => v !== value) : [...prev[key], value] }));
+  const toggleAttr = (handle: string, key: string) =>
+    setF((prev) => {
+      const current = prev.attrs[handle] ?? [];
+      return { ...prev, attrs: { ...prev.attrs, [handle]: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] } };
+    });
+  const clearAll = () => setF(EMPTY);
+
+  // ── Personal order for search results (relevance still leads) ─────────
   const { profile, ready } = useReco();
   const personalOrder = useMemo(() => {
     if (!personalize || !ready || !hasHistory(profile) || products.length < 3) return null;
@@ -111,607 +227,825 @@ export default function ShopClient({
     scored.sort((a, b) => b.score - a.score);
     return new Map(scored.map((s, i) => [s.id, i]));
   }, [personalize, ready, profile, products]);
-  const attrSelections = Object.entries(activeAttrs).filter(([, keys]) => keys.length > 0);
-  const attrFilterCount = attrSelections.reduce((n, [, keys]) => n + keys.length, 0);
 
-  const toggleAttr = (handle: string, key: string) =>
-    setActiveAttrs((prev) => {
-      const current = prev[handle] ?? [];
-      return { ...prev, [handle]: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] };
-    });
-
-  // Only offer brands that actually appear in these results.
-  const availableStores = useMemo(() => {
-    const present = new Set(products.map((p) => p.store));
-    return stores
-      .filter((s) => present.has(s.slug))
-      .sort((a, b) => Number(b.official ?? false) - Number(a.official ?? false));
-  }, [products, stores]);
-
+  // ── Results ───────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let list = [...products];
-
-    if (activeCategories.length > 0) {
-      list = list.filter((p) => activeCategories.includes(p.category));
-    }
-    if (activeStores.length > 0) {
-      list = list.filter((p) => activeStores.includes(p.store));
-    }
-    if (activeSubcategory) {
-      list = list.filter((p) => p.subcategory === activeSubcategory);
-    }
-    if (priceBand !== null) {
-      const band = PRICE_BANDS[priceBand];
-      list = list.filter((p) => p.price >= band.min && p.price < band.max);
-    }
-    if (minRating !== null) {
-      list = list.filter((p) => p.rating >= minRating);
-    }
-    if (onSaleOnly) {
-      list = list.filter((p) => p.compareAt);
-    }
-    for (const [handle, keys] of attrSelections) {
-      list = list.filter((p) => {
-        const tokens = facets.index[p.id];
-        return tokens ? keys.some((key) => tokens.includes(`${handle}:${key}`)) : false;
-      });
-    }
-
+    const out = products.filter((p) => matches(p, f, facets.index));
     switch (sort) {
       case "featured":
-        if (personalOrder) list.sort((a, b) => (personalOrder.get(a.id) ?? 0) - (personalOrder.get(b.id) ?? 0));
+        if (personalOrder) out.sort((a, b) => (personalOrder.get(a.id) ?? 0) - (personalOrder.get(b.id) ?? 0));
         break;
       case "sold":
-        list.sort((a, b) => b.sold - a.sold);
+        out.sort((a, b) => b.sold - a.sold);
         break;
       case "price-asc":
-        list.sort((a, b) => a.price - b.price);
+        out.sort((a, b) => a.price - b.price);
         break;
       case "price-desc":
-        list.sort((a, b) => b.price - a.price);
+        out.sort((a, b) => b.price - a.price);
         break;
       case "rating":
-        list.sort((a, b) => b.rating - a.rating);
+        out.sort((a, b) => (b.reviewCount > 0 ? b.rating : 0) - (a.reviewCount > 0 ? a.rating : 0) || b.reviewCount - a.reviewCount);
         break;
-      case "discount":
-        list.sort(
-          (a, b) =>
-            (b.compareAt ? 1 - b.price / b.compareAt : 0) -
-            (a.compareAt ? 1 - a.price / a.compareAt : 0),
-        );
+      case "discount": {
+        const off = (p: Product) => (p.compareAt && p.compareAt > p.price ? 1 - p.price / p.compareAt : 0);
+        out.sort((a, b) => off(b) - off(a));
         break;
+      }
       case "new":
-        list.sort((a, b) => (b.badge === "New" ? 1 : 0) - (a.badge === "New" ? 1 : 0));
+        out.sort((a, b) => (b.badge === "New" ? 1 : 0) - (a.badge === "New" ? 1 : 0));
         break;
     }
-    return list;
-  }, [products, sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs, facets, personalOrder]);
+    return out;
+  }, [products, f, facets.index, sort, personalOrder]);
 
-  const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
-  const BATCH_SIZE = 16;
-  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
-
-  // Reset visible count whenever filters or sort change
-  useEffect(() => {
-    setVisibleCount(BATCH_SIZE);
-  }, [sort, activeCategories, activeStores, activeSubcategory, priceBand, minRating, onSaleOnly, activeAttrs]);
-
-  const displayedProducts = useMemo(() => {
-    return filtered.slice(0, visibleCount);
-  }, [filtered, visibleCount]);
-
-  const hasMore = visibleCount < filtered.length;
+  useEffect(() => setVisible(BATCH), [f, sort]);
+  const shown = filtered.slice(0, visible);
+  const hasMore = visible < filtered.length;
   const loadMoreRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!hasMore) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 12, filtered.length));
-        }
-      },
-      { rootMargin: "300px" }
-    );
-
     const node = loadMoreRef.current;
-    if (node) observer.observe(node);
-
-    return () => {
-      if (node) observer.unobserve(node);
-    };
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => entries[0].isIntersecting && setVisible((v) => Math.min(v + 12, filtered.length)),
+      { rootMargin: "400px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
   }, [hasMore, filtered.length]);
 
-  const categories = liveCategories?.length ? liveCategories : seedCategories;
-
-  /**
-   * What the chip row above the grid offers.
-   *
-   * Two different questions, depending on where you are:
-   *
-   *   · On a mixed list ("All Products", a search), the useful cut is by
-   *     CATEGORY — a curated, consistently-named set.
-   *   · Inside one category, every product shares it, so the useful cut is
-   *     the finer sub-grouping.
-   *
-   * The old row always used sub-categories, which on All Products produced
-   * "Accessories · Jacket · Polo Shirt · Shoes · Suits" — free text typed
-   * by different sellers, mixing singular and plural, and covering only the
-   * handful of products that happened to have one filled in.
-   */
-  const categoriesPresent = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const product of products) {
-      counts.set(product.category, (counts.get(product.category) ?? 0) + 1);
+  // ── Live counts: each group counted with every OTHER group applied ────
+  const counted = useMemo(() => {
+    const pool = (skip: Group) => products.filter((p) => matches(p, f, facets.index, skip));
+    const tally = (items: Product[], key: (p: Product) => string | undefined) => {
+      const m = new Map<string, number>();
+      for (const p of items) {
+        const k = key(p);
+        if (k) m.set(k, (m.get(k) ?? 0) + 1);
+      }
+      return m;
+    };
+    const pricePool = pool("price");
+    const ratingPool = pool("rating");
+    const attrs: Record<string, Map<string, number>> = {};
+    for (const facet of facets.facets) {
+      const m = new Map<string, number>();
+      for (const p of pool(`attr:${facet.handle}`)) {
+        for (const token of facets.index[p.id] ?? []) {
+          if (token.startsWith(`${facet.handle}:`)) {
+            const k = token.slice(facet.handle.length + 1);
+            m.set(k, (m.get(k) ?? 0) + 1);
+          }
+        }
+      }
+      attrs[facet.handle] = m;
     }
-    return [...counts.entries()]
-      .map(([slug, count]) => {
+    return {
+      cats: tally(pool("cat"), (p) => p.category),
+      stores: tally(pool("store"), (p) => p.store),
+      subs: tally(pool("sub"), (p) => p.subcategory),
+      under: new Map(UNDER.map((u) => [u, pricePool.filter((p) => p.price < u).length])),
+      rating: new Map(RATINGS.map((r) => [r, ratingPool.filter((p) => p.reviewCount > 0 && p.rating >= r).length])),
+      sale: pool("sale").filter((p) => p.compareAt && p.compareAt > p.price).length,
+      attrs,
+    };
+  }, [products, f, facets]);
+
+  // ── Option lists ──────────────────────────────────────────────────────
+  const categories = liveCategories?.length ? liveCategories : seedCategories;
+  const categoriesPresent = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const p of products) totals.set(p.category, (totals.get(p.category) ?? 0) + 1);
+    return [...totals.entries()]
+      .map(([slug, total]) => {
         const category = categories.find((c) => c.slug === slug);
-        const parent = category?.parentSlug
-          ? categories.find((c) => c.slug === category.parentSlug)
-          : undefined;
-        return {
-          slug,
-          count,
-          name: category?.name ?? slug.replace(/-/g, " "),
-          icon: category?.icon,
-          // Which department it sits under, so a sidebar listing both
-          // "Men's Fashion" and "Jackets" doesn't read as two unrelated
-          // things at the same level.
-          parentName: parent?.name,
-        };
+        const parent = category?.parentSlug ? categories.find((c) => c.slug === category.parentSlug) : undefined;
+        return { slug, total, name: category?.name ?? slug.replace(/-/g, " "), icon: category?.icon, parentName: parent?.name };
       })
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   }, [products, categories]);
 
   const subcategories = useMemo(
-    () =>
-      [...new Set(products.map((p) => p.subcategory).filter((s): s is string => Boolean(s)))].sort(
-        (a, b) => a.localeCompare(b),
-      ),
+    () => [...new Set(products.map((p) => p.subcategory).filter((s): s is string => Boolean(s)))].sort((a, b) => a.localeCompare(b)),
     [products],
   );
 
-  // More than one category in the results means the list is mixed.
-  const chipMode: "category" | "subcategory" =
-    categoriesPresent.length > 1 ? "category" : "subcategory";
+  const storesPresent = useMemo(() => {
+    const present = new Set(products.map((p) => p.store));
+    return stores
+      .filter((s) => present.has(s.slug))
+      .sort((a, b) => Number(b.official ?? false) - Number(a.official ?? false) || a.name.localeCompare(b.name));
+  }, [products, stores]);
 
-  const activeFilterCount =
-    activeCategories.length +
-    activeStores.length +
-    (activeSubcategory ? 1 : 0) +
-    (priceBand !== null ? 1 : 0) +
-    (minRating !== null ? 1 : 0) +
-    (onSaleOnly ? 1 : 0) +
-    attrFilterCount;
+  const chipMode: "category" | "subcategory" = categoriesPresent.length > 1 ? "category" : "subcategory";
 
-  function clearFilters() {
-    setActiveCategories([]);
-    setActiveStores([]);
-    setActiveSubcategory(null);
-    setPriceBand(null);
-    setMinRating(null);
-    setOnSaleOnly(false);
-    setActiveAttrs({});
+  // ── Active filters, as removable chips ────────────────────────────────
+  const active: { key: string; label: string; remove: () => void }[] = [];
+  for (const slug of f.cats) {
+    active.push({ key: `c:${slug}`, label: categoriesPresent.find((c) => c.slug === slug)?.name ?? slug, remove: () => toggleIn("cats", slug) });
   }
+  if (f.sub) active.push({ key: "sub", label: f.sub, remove: () => update({ sub: null }) });
+  for (const slug of f.stores) {
+    active.push({ key: `s:${slug}`, label: stores.find((s) => s.slug === slug)?.name ?? slug, remove: () => toggleIn("stores", slug) });
+  }
+  if (f.under !== null) active.push({ key: "under", label: t("shop.f.under", { amount: money(f.under) }), remove: () => update({ under: null }) });
+  if (f.min !== null || f.max !== null) {
+    const label =
+      f.min !== null && f.max !== null
+        ? t("shop.f.range", { min: money(f.min), max: money(f.max) })
+        : f.min !== null
+          ? t("shop.f.from", { min: money(f.min) })
+          : t("shop.f.upTo", { max: money(f.max!) });
+    active.push({ key: "range", label, remove: () => update({ min: null, max: null }) });
+  }
+  if (f.rating !== null) active.push({ key: "rating", label: t("shop.f.stars", { n: f.rating }), remove: () => update({ rating: null }) });
+  if (f.sale) active.push({ key: "sale", label: t("shop.f.sale"), remove: () => update({ sale: false }) });
+  for (const facet of facets.facets) {
+    for (const key of f.attrs[facet.handle] ?? []) {
+      const name = facet.values.find((v) => v.key === key)?.name ?? key;
+      active.push({ key: `a:${facet.handle}:${key}`, label: `${facet.name}: ${name}`, remove: () => toggleAttr(facet.handle, key) });
+    }
+  }
+
+  const countLabel = (n: number) => (n === 1 ? t("shop.count.one") : t("shop.count", { n }));
+  const showLabel = (n: number) => (n === 1 ? t("shop.showResults.one") : t("shop.showResults", { n }));
+
+  // ── The floating Filter · Sort pill appears once the toolbar scrolls away
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState(false);
+  useEffect(() => {
+    const node = toolbarRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => setPill(!entry.isIntersecting && entry.boundingClientRect.top < 0));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  // ...and steps aside at the footer, where it would cover the links.
+  const [atFooter, setAtFooter] = useState(false);
+  useEffect(() => {
+    const footer = document.querySelector("footer");
+    if (!footer) return;
+    const observer = new IntersectionObserver(([entry]) => setAtFooter(entry.isIntersecting));
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, []);
+
+  const panel = (
+    <FilterPanel
+      t={t}
+      f={f}
+      counted={counted}
+      update={update}
+      toggleIn={toggleIn}
+      toggleAttr={toggleAttr}
+      categories={showCategoryFilter && categoriesPresent.length > 1 ? categoriesPresent : []}
+      stores={storesPresent}
+      facets={facets}
+    />
+  );
 
   const gridClass =
     gridCols === 3
-      ? "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-3"
+      ? "grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3"
       : gridCols === 5
-      ? "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-      : "grid grid-cols-2 gap-3 self-start sm:gap-4 md:grid-cols-3 lg:grid-cols-4";
+        ? "grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        : "grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Page heading */}
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-extrabold text-ocean-950">{title}</h1>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
+      {/* Heading — compact on a phone, so products reach the first screen */}
+      <div className="mb-4 sm:mb-6">
+        <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
 
-      {/* Quick cut across the results — by category on a mixed list, by
-          sub-grouping once everything shares one category. */}
       {chipMode === "category" && categoriesPresent.length > 1 && (
         <CategoryChips
-          options={categoriesPresent}
-          // Chips are a quick single cut; the sidebar is where several
-          // categories get combined. Selecting one here replaces rather
-          // than adds, which is what a row of pills reads as — so the row
-          // only ever reflects a single-category selection.
-          activeSlug={activeCategories.length === 1 ? activeCategories[0] : null}
-          onSelect={(slug) => setActiveCategories(slug ? [slug] : [])}
+          options={categoriesPresent.map((c) => ({ ...c, count: c.total }))}
+          activeSlug={f.cats.length === 1 ? f.cats[0] : null}
+          onSelect={(slug) => update({ cats: slug ? [slug] : [] })}
+          allLabel={t("shop.chips.all")}
           allCount={products.length}
         />
       )}
-
-      {/* Same treatment: a big store's sub-groupings run to dozens too. */}
       {chipMode === "subcategory" && subcategories.length > 1 && (
         <CategoryChips
-          options={subcategories.map((sub) => ({
-            slug: sub,
-            name: sub,
-            count: products.filter((p) => p.subcategory === sub).length,
-          }))}
-          activeSlug={activeSubcategory}
-          onSelect={setActiveSubcategory}
+          options={subcategories.map((sub) => ({ slug: sub, name: sub, count: products.filter((p) => p.subcategory === sub).length }))}
+          activeSlug={f.sub}
+          onSelect={(sub) => update({ sub })}
+          allLabel={t("shop.chips.all")}
           allCount={products.length}
         />
       )}
 
-      {/* Toolbar: result count, mobile filter toggle, grid view switcher, sort */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
-          Showing <strong className="text-slate-800">{displayedProducts.length}</strong> of{" "}
-          <strong className="text-slate-800">{filtered.length}</strong> products
-          {personalOrder && sort === "featured" && (
-            <span className="ml-2 text-xs text-ocean-700" title="Best matches first, nudged toward what you usually browse and buy">
-              · ✨ tuned to you
-            </span>
-          )}
-        </p>
-
-        <div className="flex items-center gap-2.5">
-          {/* Grid View Columns Switcher */}
-          <div className="hidden items-center gap-1 rounded-full border border-sand-200 bg-white p-1 sm:flex shadow-2xs">
-            <span className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-              View
-            </span>
-            {[
-              { cols: 3, label: "3 Grid", icon: "⊞" },
-              { cols: 4, label: "4 Grid", icon: "▦" },
-              { cols: 5, label: "5 Grid", icon: "▧" },
-            ].map((item) => (
-              <button
-                key={item.cols}
-                type="button"
-                onClick={() => setGridCols(item.cols as 3 | 4 | 5)}
-                className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
-                  gridCols === item.cols
-                    ? "bg-ocean-800 text-white shadow-xs"
-                    : "text-slate-500 hover:bg-sand-100 hover:text-slate-800"
-                }`}
-                title={`${item.label} per row`}
-              >
-                {item.icon} <span className="hidden md:inline">{item.cols}</span>
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => setFiltersOpen((o) => !o)}
-            className="rounded-full border border-sand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 lg:hidden"
-          >
-            Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
-          </button>
-
-          <select
-            aria-label="Sort products"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-full border border-sand-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-ocean-500 shadow-2xs"
-          >
-            {SORTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        {/* Filter sidebar (always visible on desktop with independent scrolling) */}
-        <aside className={`${filtersOpen ? "block" : "hidden"} lg:block`}>
-          <div className="card space-y-6 p-5 lg:sticky lg:top-28 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:overscroll-contain rail-scroll">
-            {activeFilterCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-xs font-bold text-coral-600 hover:underline"
-              >
-                ✕ Clear all filters
-              </button>
-            )}
-
-            {/* Only categories that actually have products here. Listing
-                every category in the marketplace fills the sidebar with
-                rows that return nothing when ticked. */}
-            {showCategoryFilter && categoriesPresent.length > 1 && (
-              <FilterGroup label="Category">
-                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                  {categoriesPresent.map((c) => (
-                    <label
-                      key={c.slug}
-                      className="flex cursor-pointer items-center gap-2 text-sm text-slate-600"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={activeCategories.includes(c.slug)}
-                        onChange={(e) =>
-                          setActiveCategories((prev) =>
-                            e.target.checked
-                              ? [...prev, c.slug]
-                              : prev.filter((s) => s !== c.slug),
-                          )
-                        }
-                        className="h-4 w-4 accent-ocean-700"
-                      />
-                      <span className="min-w-0 flex-1 truncate">
-                        {c.icon} {c.name}
-                        {c.parentName && (
-                          <span className="block text-[11px] text-slate-400">
-                            in {c.parentName}
-                          </span>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-xs text-slate-400">{c.count}</span>
-                    </label>
-                  ))}
-                </div>
-              </FilterGroup>
-            )}
-
-            {facets.facets.map((facet) =>
-              facet.handle === "color" ? (
-                <FilterGroup key={facet.handle} label={facet.name}>
-                  <div className="flex flex-wrap gap-2">
-                    {facet.values.map((v) => {
-                      const active = activeAttrs.color?.includes(v.key) ?? false;
-                      return (
-                        <button
-                          key={v.key}
-                          type="button"
-                          aria-pressed={active}
-                          title={`${v.name} (${v.count})`}
-                          onClick={() => toggleAttr("color", v.key)}
-                          className={`flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs font-semibold transition ${
-                            active ? "border-ocean-700 bg-ocean-50 text-ocean-900" : "border-sand-200 text-slate-600 hover:border-ocean-400"
-                          }`}
-                        >
-                          <span
-                            className="h-4 w-4 rounded-full ring-1 ring-black/10"
-                            style={{ background: colorSwatch(v.name) }}
-                          />
-                          {v.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </FilterGroup>
-              ) : (
-                <AttributeFilter
-                  key={facet.handle}
-                  facet={facet}
-                  selected={activeAttrs[facet.handle] ?? []}
-                  onToggle={(key) => toggleAttr(facet.handle, key)}
-                  chips={facet.handle === "size" || facet.handle === "shoe-size"}
-                />
-              ),
-            )}
-
-            {availableStores.length > 1 && (
-              <FilterGroup label="Brand / Store">
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {availableStores.map((s) => (
-                    <label key={s.slug} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={activeStores.includes(s.slug)}
-                        onChange={(e) =>
-                          setActiveStores((prev) =>
-                            e.target.checked
-                              ? [...prev, s.slug]
-                              : prev.filter((slug) => slug !== s.slug),
-                          )
-                        }
-                        className="h-4 w-4 accent-ocean-700"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                      {s.official && (
-                        <span className="shrink-0 rounded bg-mango-100 px-1.5 text-[9px] font-bold text-mango-800">
-                          BRAND
-                        </span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-              </FilterGroup>
-            )}
-
-            <FilterGroup label="Price">
-              {PRICE_BANDS.map((band, i) => (
-                <label key={band.label} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                  <input
-                    type="radio"
-                    name="price"
-                    checked={priceBand === i}
-                    onChange={() => setPriceBand(i)}
-                    className="h-4 w-4 accent-ocean-700"
-                  />
-                  {band.label}
-                </label>
-              ))}
-            </FilterGroup>
-
-            <FilterGroup label="Rating">
-              {[4.5, 4.0].map((r) => (
-                <label key={r} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                  <input
-                    type="radio"
-                    name="rating"
-                    checked={minRating === r}
-                    onChange={() => setMinRating(r)}
-                    className="h-4 w-4 accent-ocean-700"
-                  />
-                  <span className="text-mango-400">★</span> {r}+ stars
-                </label>
-              ))}
-            </FilterGroup>
-
-            <FilterGroup label="Deals">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={onSaleOnly}
-                  onChange={(e) => setOnSaleOnly(e.target.checked)}
-                  className="h-4 w-4 accent-ocean-700"
-                />
-                On sale only
-              </label>
-            </FilterGroup>
+      <div className="lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:gap-8">
+        {/* ── Desktop filters: sticky, one scroll area ─────────────────── */}
+        <aside className="hidden lg:block" aria-label={t("shop.filters")}>
+          <div className="rail-scroll sticky top-36 max-h-[calc(100vh-10rem)] overflow-y-auto overscroll-contain pb-6 pr-2">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-display text-base font-extrabold text-ocean-950">{t("shop.filters")}</h2>
+              {active.length > 0 && (
+                <button type="button" onClick={clearAll} className="text-xs font-bold text-coral-600 hover:underline">
+                  {t("shop.clearAll")}
+                </button>
+              )}
+            </div>
+            {panel}
           </div>
         </aside>
 
-        {/* Product grid & Infinite Scroll */}
-        {filtered.length > 0 ? (
-          <div className="flex flex-col">
-            <div className={gridClass}>
-              {displayedProducts.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
+        <div className="min-w-0">
+          {/* ── Toolbar ────────────────────────────────────────────────── */}
+          <div ref={toolbarRef} className="mb-3 flex items-center gap-2">
+            {/* Phone: two big buttons */}
+            <button
+              type="button"
+              onClick={() => setSheet("filters")}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-sand-200 bg-white text-sm font-bold text-slate-700 shadow-2xs lg:hidden"
+            >
+              <span aria-hidden>⚙️</span> {t("shop.filters")}
+              {active.length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ocean-700 px-1 text-[11px] text-white">{active.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheet("sort")}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-sand-200 bg-white text-sm font-bold text-slate-700 shadow-2xs lg:hidden"
+            >
+              <span aria-hidden>↕</span> {t(`shop.sort.${sort}` as MessageKey)}
+            </button>
 
-            {/* Infinite Scroll trigger element */}
-            {hasMore ? (
-              <div ref={loadMoreRef} className="my-8 flex flex-col items-center justify-center gap-2 py-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-ocean-800">
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ocean-700 border-t-transparent" />
-                  Loading more products…
-                </div>
-                <p className="text-xs text-slate-400">
-                  Showing {displayedProducts.length} of {filtered.length} products
-                </p>
-              </div>
-            ) : (
-              <div className="my-8 text-center text-xs text-slate-400">
-                ✓ You&apos;ve reached the end of the catalogue ({filtered.length} products)
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="card flex flex-col items-center gap-3 self-start p-12 text-center">
-            <span className="text-5xl">🔍</span>
-            <p className="font-display text-lg font-bold text-ocean-950">
-              No products match these filters
+            {/* Desktop: count, view, sort */}
+            <p className="hidden text-sm text-slate-500 lg:block">
+              <strong className="text-slate-900">{countLabel(filtered.length)}</strong>
+              {personalOrder && sort === "featured" && <span className="ml-2 text-xs text-ocean-700">· {t("shop.tuned")}</span>}
             </p>
-            <button onClick={clearFilters} className="btn-secondary !py-2 text-sm">
-              Clear filters
+            <div className="ml-auto hidden items-center gap-2.5 lg:flex">
+              <div className="flex items-center gap-1 rounded-full border border-sand-200 bg-white p-1 shadow-2xs">
+                <span className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{t("shop.view")}</span>
+                {([3, 4, 5] as const).map((cols) => (
+                  <button
+                    key={cols}
+                    type="button"
+                    onClick={() => setGridCols(cols)}
+                    aria-pressed={gridCols === cols}
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
+                      gridCols === cols ? "bg-ocean-800 text-white" : "text-slate-500 hover:bg-sand-100"
+                    }`}
+                  >
+                    {cols}
+                  </button>
+                ))}
+              </div>
+              <label className="relative">
+                <span className="sr-only">{t("shop.sortBy")}</span>
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  className="h-10 cursor-pointer appearance-none rounded-full border border-sand-200 bg-white pl-4 pr-10 text-sm font-semibold leading-none text-slate-700 shadow-2xs outline-none focus:border-ocean-500"
+                >
+                  {SORTS.map((key) => (
+                    <option key={key} value={key}>
+                      {t("shop.sortBy")}: {t(`shop.sort.${key}` as MessageKey)}
+                    </option>
+                  ))}
+                </select>
+                <span aria-hidden className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-500">
+                  ▼
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Phone: the count under the buttons */}
+          <p className="mb-3 text-sm text-slate-500 lg:hidden">
+            <strong className="text-slate-900">{countLabel(filtered.length)}</strong>
+            {personalOrder && sort === "featured" && <span className="ml-2 text-xs text-ocean-700">· {t("shop.tuned")}</span>}
+          </p>
+
+          {/* Applied filters */}
+          {active.length > 0 && (
+            <div className="rail-scroll -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
+              {active.map((a) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  onClick={a.remove}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ocean-50 px-3 py-1.5 text-xs font-semibold text-ocean-900 ring-1 ring-ocean-200 hover:bg-ocean-100"
+                >
+                  {a.label} <span aria-hidden className="text-ocean-500">✕</span>
+                </button>
+              ))}
+              <button type="button" onClick={clearAll} className="shrink-0 px-2 text-xs font-bold text-coral-600 hover:underline">
+                {t("shop.clearAll")}
+              </button>
+            </div>
+          )}
+
+          {/* ── Grid ───────────────────────────────────────────────────── */}
+          {filtered.length > 0 ? (
+            <>
+              <div className={gridClass}>
+                {shown.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+              <div ref={loadMoreRef} className="mx-auto my-8 max-w-xs text-center">
+                <p className="text-xs font-semibold text-slate-500">
+                  {hasMore ? t("shop.showing", { shown: shown.length, total: filtered.length }) : t("shop.end", { n: filtered.length })}
+                </p>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-sand-200">
+                  <div className="h-full rounded-full bg-ocean-600 transition-all" style={{ width: `${(shown.length / filtered.length) * 100}%` }} />
+                </div>
+                {hasMore && (
+                  <button
+                    type="button"
+                    onClick={() => setVisible((v) => Math.min(v + 24, filtered.length))}
+                    className="btn-secondary mt-4 !py-2 text-sm"
+                  >
+                    {t("shop.loadMore")}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="card flex flex-col items-center gap-3 p-10 text-center">
+              <span className="text-5xl" aria-hidden>
+                🔍
+              </span>
+              <p className="font-display text-lg font-bold text-ocean-950">{t("shop.noResults")}</p>
+              {active.length > 0 && (
+                <>
+                  <p className="text-sm text-slate-500">{t("shop.noResults.hint")}</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {active.map((a) => (
+                      <button
+                        key={a.key}
+                        type="button"
+                        onClick={a.remove}
+                        className="rounded-full bg-ocean-50 px-3 py-1.5 text-xs font-semibold text-ocean-900 ring-1 ring-ocean-200"
+                      >
+                        {a.label} ✕
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={clearAll} className="btn-secondary !py-2 text-sm">
+                    {t("shop.clearAll")}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Phone: floating Filter · Sort, once the toolbar has scrolled away */}
+      {pill && !atFooter && !sheet && (
+        <div className="fixed inset-x-0 bottom-[calc(4.6rem+env(safe-area-inset-bottom))] z-30 flex justify-center lg:hidden">
+          <div className="flex overflow-hidden rounded-full bg-ocean-900 text-sm font-bold text-white shadow-xl ring-4 ring-white/70">
+            <button type="button" onClick={() => setSheet("filters")} className="flex items-center gap-2 px-5 py-2.5">
+              ⚙️ {t("shop.filters")}
+              {active.length > 0 && <span className="rounded-full bg-white/20 px-1.5 text-xs">{active.length}</span>}
+            </button>
+            <span className="w-px bg-white/20" />
+            <button type="button" onClick={() => setSheet("sort")} className="flex items-center gap-2 px-5 py-2.5">
+              ↕ {t("shop.sort")}
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      <Sheet
+        open={sheet === "filters"}
+        onClose={() => setSheet(null)}
+        title={t("shop.filters")}
+        full
+        footer={
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={active.length === 0}
+              className="px-2 text-sm font-bold text-coral-600 disabled:text-slate-300"
+            >
+              {t("shop.clearAll")}
+            </button>
+            <button type="button" onClick={() => setSheet(null)} className="btn-primary flex-1 !py-3">
+              {showLabel(filtered.length)}
+            </button>
+          </div>
+        }
+      >
+        {panel}
+      </Sheet>
+
+      <Sheet open={sheet === "sort"} onClose={() => setSheet(null)} title={t("shop.sortBy")}>
+        <div role="radiogroup" className="space-y-1">
+          {SORTS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={sort === key}
+              onClick={() => {
+                setSort(key);
+                setSheet(null);
+              }}
+              className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm font-semibold ${
+                sort === key ? "bg-ocean-50 text-ocean-900" : "text-slate-700 hover:bg-sand-50"
+              }`}
+            >
+              {t(`shop.sort.${key}` as MessageKey)}
+              {sort === key && <span aria-hidden>✓</span>}
+            </button>
+          ))}
+        </div>
+      </Sheet>
     </div>
   );
 }
 
-/** A filter pill. The count is what makes it worth tapping — or not. */
-function Chip({
-  active,
-  onClick,
-  label,
-  count,
+// ── The filter panel (desktop sidebar and phone sheet) ──────────────────
+
+type Counted = {
+  cats: Map<string, number>;
+  stores: Map<string, number>;
+  subs: Map<string, number>;
+  under: Map<number, number>;
+  rating: Map<number, number>;
+  sale: number;
+  attrs: Record<string, Map<string, number>>;
+};
+
+function FilterPanel({
+  t,
+  f,
+  counted,
+  update,
+  toggleIn,
+  toggleAttr,
+  categories,
+  stores,
+  facets,
 }: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count?: number;
+  t: T;
+  f: Filters;
+  counted: Counted;
+  update: (patch: Partial<Filters>) => void;
+  toggleIn: (key: "cats" | "stores", value: string) => void;
+  toggleAttr: (handle: string, key: string) => void;
+  categories: { slug: string; name: string; icon?: string; parentName?: string }[];
+  stores: Store[];
+  facets: FacetData;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-        active
-          ? "bg-ocean-700 text-white"
-          : "border border-sand-200 bg-white text-slate-600 hover:border-ocean-400"
-      }`}
-    >
-      <span>{label}</span>
-      {count !== undefined && (
-        <span className={active ? "text-white/70" : "text-slate-400"}>{count}</span>
+    <div className="divide-y divide-sand-200 border-y border-sand-200">
+      {categories.length > 0 && (
+        <Section title={t("shop.f.category")} selected={f.cats.length}>
+          <OptionList
+            t={t}
+            label={t("shop.f.category")}
+            options={categories.map((c) => ({
+              key: c.slug,
+              label: `${c.icon ? `${c.icon} ` : ""}${c.name}`,
+              hint: c.parentName ? t("shop.f.in", { name: c.parentName }) : undefined,
+              count: counted.cats.get(c.slug) ?? 0,
+              checked: f.cats.includes(c.slug),
+            }))}
+            onToggle={(key) => toggleIn("cats", key)}
+          />
+        </Section>
       )}
-    </button>
+
+      <Section title={t("shop.f.price")} selected={f.under !== null || f.min !== null || f.max !== null ? 1 : 0}>
+        <div className="flex flex-wrap gap-1.5">
+          {UNDER.map((u) => {
+            const n = counted.under.get(u) ?? 0;
+            const on = f.under === u;
+            return (
+              <button
+                key={u}
+                type="button"
+                aria-pressed={on}
+                disabled={n === 0 && !on}
+                onClick={() => update({ under: on ? null : u, min: null, max: null })}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${
+                  on ? "bg-ocean-700 text-white" : "bg-white text-slate-700 ring-1 ring-sand-200 hover:ring-ocean-400"
+                }`}
+              >
+                {t("shop.f.under", { amount: money(u) })} <span className={on ? "text-white/70" : "text-slate-400"}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+        <PriceRange t={t} min={f.min} max={f.max} onApply={(min, max) => update({ min, max, under: null })} />
+      </Section>
+
+      {facets.facets.map((facet) => {
+        const counts = counted.attrs[facet.handle] ?? new Map<string, number>();
+        const selected = f.attrs[facet.handle] ?? [];
+        if (facet.handle === "color") {
+          return (
+            <Section key={facet.handle} title={facet.name} selected={selected.length}>
+              <div className="flex flex-wrap gap-1.5">
+                {facet.values.map((v) => {
+                  const on = selected.includes(v.key);
+                  const n = counts.get(v.key) ?? 0;
+                  return (
+                    <button
+                      key={v.key}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={n === 0 && !on}
+                      onClick={() => toggleAttr("color", v.key)}
+                      className={`flex items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-xs font-semibold ring-1 transition disabled:opacity-40 ${
+                        on ? "bg-ocean-50 text-ocean-900 ring-ocean-600" : "bg-white text-slate-600 ring-sand-200 hover:ring-ocean-400"
+                      }`}
+                    >
+                      <span className="h-4 w-4 rounded-full ring-1 ring-black/10" style={{ background: colorSwatch(v.name) }} />
+                      {v.name}
+                      <span className="text-slate-400">{n}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          );
+        }
+        const chips = facet.handle === "size" || facet.handle === "shoe-size";
+        return (
+          <Section key={facet.handle} title={facet.name} selected={selected.length} defaultOpen={selected.length > 0 || chips}>
+            {chips ? (
+              <div className="flex flex-wrap gap-1.5">
+                {facet.values.map((v) => {
+                  const on = selected.includes(v.key);
+                  const n = counts.get(v.key) ?? 0;
+                  return (
+                    <button
+                      key={v.key}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={n === 0 && !on}
+                      onClick={() => toggleAttr(facet.handle, v.key)}
+                      title={String(n)}
+                      className={`min-w-10 rounded-lg px-2 py-1.5 text-xs font-bold ring-1 transition disabled:opacity-40 ${
+                        on ? "bg-ocean-700 text-white ring-ocean-700" : "bg-white text-slate-700 ring-sand-200 hover:ring-ocean-400"
+                      }`}
+                    >
+                      {v.name.match(/\(([^)]+)\)$/)?.[1] ?? v.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <OptionList
+                t={t}
+                label={facet.name}
+                options={facet.values.map((v) => ({ key: v.key, label: v.name, count: counts.get(v.key) ?? 0, checked: selected.includes(v.key) }))}
+                onToggle={(key) => toggleAttr(facet.handle, key)}
+              />
+            )}
+          </Section>
+        );
+      })}
+
+      {stores.length > 1 && (
+        <Section title={t("shop.f.store")} selected={f.stores.length}>
+          <OptionList
+            t={t}
+            label={t("shop.f.store")}
+            options={stores.map((s) => ({
+              key: s.slug,
+              label: s.name,
+              badge: s.official ? t("shop.f.brand") : undefined,
+              count: counted.stores.get(s.slug) ?? 0,
+              checked: f.stores.includes(s.slug),
+            }))}
+            onToggle={(key) => toggleIn("stores", key)}
+          />
+        </Section>
+      )}
+
+      <Section title={t("shop.f.rating")} selected={f.rating !== null ? 1 : 0} defaultOpen={false}>
+        {RATINGS.map((r) => {
+          const n = counted.rating.get(r) ?? 0;
+          const on = f.rating === r;
+          return (
+            <OptionRow
+              key={r}
+              type="radio"
+              label={<><span className="text-mango-400">★</span> {t("shop.f.stars", { n: r }).replace("★", "")}</>}
+              count={n}
+              checked={on}
+              onChange={() => update({ rating: on ? null : r })}
+            />
+          );
+        })}
+      </Section>
+
+      <Section title={t("shop.f.deals")} selected={f.sale ? 1 : 0}>
+        <OptionRow label={t("shop.f.sale")} count={counted.sale} checked={f.sale} onChange={() => update({ sale: !f.sale })} />
+      </Section>
+    </div>
   );
 }
 
-/** One standard-attribute filter. Long lists show their first few until asked. */
-function AttributeFilter({
-  facet,
+/** A collapsible filter section; shows how many options are ticked. */
+function Section({
+  title,
   selected,
-  onToggle,
-  chips,
+  children,
+  defaultOpen = true,
 }: {
-  facet: FacetData["facets"][number];
-  selected: string[];
-  onToggle: (key: string) => void;
-  /** Sizes read better as a row of small buttons than as a checkbox list. */
-  chips?: boolean;
+  title: string;
+  selected: number;
+  children: ReactNode;
+  defaultOpen?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const FEW = chips ? 12 : 6;
-  const shown = expanded ? facet.values : facet.values.slice(0, FEW);
   return (
-    <FilterGroup label={facet.name}>
-      {chips ? (
-        <div className="flex flex-wrap gap-1.5">
-          {shown.map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              aria-pressed={selected.includes(v.key)}
-              onClick={() => onToggle(v.key)}
-              title={`${v.count} product${v.count === 1 ? "" : "s"}`}
-              className={`min-w-10 rounded-lg border px-2 py-1 text-xs font-bold transition ${
-                selected.includes(v.key)
-                  ? "border-ocean-700 bg-ocean-700 text-white"
-                  : "border-sand-200 text-slate-600 hover:border-ocean-400"
-              }`}
-            >
-              {/* "Medium (M)" → "M": the standard's long name is for the list, not the button. */}
-              {v.name.match(/\(([^)]+)\)$/)?.[1] ?? v.name}
-            </button>
-          ))}
-        </div>
-      ) : (
-        shown.map((v) => (
-          <label key={v.key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={selected.includes(v.key)}
-              onChange={() => onToggle(v.key)}
-              className="h-4 w-4 accent-ocean-700"
-            />
-            <span className="min-w-0 flex-1 truncate">{v.name}</span>
-            <span className="shrink-0 text-xs text-slate-400">{v.count}</span>
-          </label>
-        ))
+    <details open={defaultOpen || selected > 0} className="group py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-1 [&::-webkit-details-marker]:hidden">
+        <span className="font-display text-sm font-bold text-ocean-950">
+          {title}
+          {selected > 0 && (
+            <span className="ml-2 rounded-full bg-ocean-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{selected}</span>
+          )}
+        </span>
+        <span aria-hidden className="text-xs text-slate-400 transition group-open:rotate-180">
+          ▼
+        </span>
+      </summary>
+      <div className="mt-2 space-y-2">{children}</div>
+    </details>
+  );
+}
+
+interface Option {
+  key: string;
+  label: string;
+  hint?: string;
+  badge?: string;
+  count: number;
+  checked: boolean;
+}
+
+const FEW = 8;
+const SEARCH_FROM = 12;
+
+/**
+ * A checkbox list that never hides its own rows behind a scrollbar: the
+ * top rows (ticked ones first), "Show all N" to expand in place, and a
+ * search box once the list is long.
+ */
+function OptionList({ t, label, options, onToggle }: { t: T; label: string; options: Option[]; onToggle: (key: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const ordered = [...options].sort((a, b) => Number(b.checked) - Number(a.checked) || Number(b.count > 0) - Number(a.count > 0));
+  const matched = q ? ordered.filter((o) => o.label.toLowerCase().includes(q) || (o.hint ?? "").toLowerCase().includes(q)) : ordered;
+  const shown = expanded || q ? matched : matched.slice(0, FEW);
+
+  return (
+    <>
+      {expanded && options.length >= SEARCH_FROM && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("shop.searchIn", { label: label.toLowerCase() })}
+          aria-label={t("shop.searchIn", { label: label.toLowerCase() })}
+          className="input !py-2 text-sm"
+        />
       )}
-      {facet.values.length > FEW && (
+      {shown.map((o) => (
+        <OptionRow
+          key={o.key}
+          label={o.label}
+          hint={o.hint}
+          badge={o.badge}
+          count={o.count}
+          checked={o.checked}
+          onChange={() => onToggle(o.key)}
+        />
+      ))}
+      {options.length > FEW && (
         <button
           type="button"
-          onClick={() => setExpanded((e) => !e)}
+          onClick={() => {
+            setExpanded((e) => !e);
+            setQuery("");
+          }}
           className="text-xs font-bold text-ocean-700 hover:underline"
         >
-          {expanded ? "Show fewer" : `Show all ${facet.values.length}`}
+          {expanded ? t("shop.showFewer") : t("shop.showAll", { n: options.length })}
         </button>
       )}
-    </FilterGroup>
+    </>
   );
 }
 
-function FilterGroup({
+/** One option: label wraps instead of being cut off, and the count never hides. */
+function OptionRow({
   label,
-  children,
+  hint,
+  badge,
+  count,
+  checked,
+  onChange,
+  type = "checkbox",
 }: {
-  label: string;
-  children: React.ReactNode;
+  label: ReactNode;
+  hint?: string;
+  badge?: string;
+  count: number;
+  checked: boolean;
+  onChange: () => void;
+  type?: "checkbox" | "radio";
 }) {
+  const disabled = count === 0 && !checked;
   return (
-    <fieldset>
-      <legend className="mb-2.5 font-display text-sm font-bold uppercase tracking-wide text-ocean-950">
+    <label
+      className={`flex items-start gap-2.5 rounded-lg px-1 py-1 text-sm ${
+        disabled ? "cursor-not-allowed text-slate-300" : "cursor-pointer text-slate-700 hover:bg-sand-50"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        className={`mt-0.5 h-4 w-4 shrink-0 accent-ocean-700 ${type === "radio" ? "rounded-full" : ""}`}
+      />
+      <span className="min-w-0 flex-1 break-words leading-snug">
         {label}
-      </legend>
-      <div className="space-y-2">{children}</div>
-    </fieldset>
+        {badge && <span className="ml-1.5 rounded bg-mango-100 px-1 text-[9px] font-bold text-mango-800">{badge}</span>}
+        {hint && <span className="block text-[11px] text-slate-400">{hint}</span>}
+      </span>
+      <span
+        className={`shrink-0 rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+          checked ? "bg-ocean-100 text-ocean-800" : "bg-sand-100 text-slate-500"
+        } ${disabled ? "opacity-50" : ""}`}
+      >
+        {count}
+      </span>
+    </label>
+  );
+}
+
+/** Typed price range — applied on "Go" or Enter, not on every keystroke. */
+function PriceRange({
+  t,
+  min,
+  max,
+  onApply,
+}: {
+  t: T;
+  min: number | null;
+  max: number | null;
+  onApply: (min: number | null, max: number | null) => void;
+}) {
+  const [lo, setLo] = useState(min?.toString() ?? "");
+  const [hi, setHi] = useState(max?.toString() ?? "");
+  useEffect(() => {
+    setLo(min?.toString() ?? "");
+    setHi(max?.toString() ?? "");
+  }, [min, max]);
+  const apply = () => {
+    const a = lo.trim() === "" ? null : Math.max(0, Number(lo));
+    const b = hi.trim() === "" ? null : Math.max(0, Number(hi));
+    if ((a !== null && !Number.isFinite(a)) || (b !== null && !Number.isFinite(b))) return;
+    onApply(a !== null && b !== null && a > b ? b : a, a !== null && b !== null && a > b ? a : b);
+  };
+  return (
+    <form
+      className="flex items-center gap-2 pt-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        apply();
+      }}
+    >
+      <input
+        inputMode="decimal"
+        value={lo}
+        onChange={(e) => setLo(e.target.value)}
+        placeholder={`$ ${t("shop.f.min")}`}
+        aria-label={t("shop.f.min")}
+        className="input !w-0 flex-1 !px-3 !py-2 text-sm"
+      />
+      <span className="text-slate-400">–</span>
+      <input
+        inputMode="decimal"
+        value={hi}
+        onChange={(e) => setHi(e.target.value)}
+        placeholder={`$ ${t("shop.f.max")}`}
+        aria-label={t("shop.f.max")}
+        className="input !w-0 flex-1 !px-3 !py-2 text-sm"
+      />
+      <button type="submit" className="rounded-full bg-ocean-700 px-3 py-2 text-xs font-bold text-white hover:bg-ocean-800">
+        {t("shop.f.apply")}
+      </button>
+    </form>
   );
 }

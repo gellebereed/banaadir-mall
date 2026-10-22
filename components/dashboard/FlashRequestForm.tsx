@@ -5,7 +5,8 @@ import { requestFlashDeal, type SaveState } from "@/app/actions";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
-import type { Category, Product } from "@/lib/types";
+import type { Category } from "@/lib/types";
+import type { PickerProduct } from "@/lib/product-utils";
 
 const INITIAL: SaveState = { ok: false, message: "" };
 
@@ -16,10 +17,13 @@ const INITIAL: SaveState = { ok: false, message: "" };
 export default function FlashRequestForm({
   products,
   categories,
+  campaignEndsAt,
 }: {
-  /** Products without an open application. */
-  products: Product[];
+  /** Products not already waiting or in the campaign. */
+  products: PickerProduct[];
   categories: Category[];
+  /** The campaign's end, as a datetime-local value — the latest a shop can pick. */
+  campaignEndsAt?: string;
 }) {
   const [state, formAction] = useActionState(requestFlashDeal, INITIAL);
   useRefreshOnSuccess(state);
@@ -27,7 +31,7 @@ export default function FlashRequestForm({
   if (products.length === 0) {
     return (
       <p className="mt-4 rounded-xl bg-sand-100 px-4 py-3 text-sm text-slate-600">
-        Every product already has an open application.
+        Every product is already waiting for review or in the campaign.
       </p>
     );
   }
@@ -39,10 +43,25 @@ export default function FlashRequestForm({
         <ProductPicker products={products} categories={categories} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-[140px_1fr]">
+      <div className="grid gap-4 sm:grid-cols-[140px_240px_1fr]">
         <div>
           <label htmlFor="pct" className="label">Discount %</label>
           <input id="pct" name="pct" type="number" min="1" max="90" defaultValue={20} className="input" />
+        </div>
+        <div>
+          <label htmlFor="flash-req-ends" className="label">
+            My discount ends <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            id="flash-req-ends"
+            name="endsAt"
+            type="datetime-local"
+            max={campaignEndsAt || undefined}
+            className="input"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Mogadishu time. Blank = until the campaign ends.
+          </p>
         </div>
         <div>
           <label htmlFor="note" className="label">

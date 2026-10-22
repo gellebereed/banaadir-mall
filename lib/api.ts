@@ -9,6 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { endedFlashProducts, flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal, type FlashPrice } from "./flash";
 import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
 import { orders as seedOrders } from "./data/orders";
@@ -27,6 +28,9 @@ import {
   fetchOrdersFromSupabase,
   fetchProductsFromSupabase,
   fetchPromotionsFromSupabase,
+  fetchOffersFromSupabase,
+  fetchFlashFromSupabase,
+  fetchFlashRequestsFromSupabase,
   fetchRecoSettingsFromSupabase,
   fetchReviewsFromSupabase,
   fetchStoriesFromSupabase,
@@ -45,6 +49,8 @@ import {
   flattenCategoryTree,
   visibleCategories,
 } from "./category-tree";
+import { isOfferLive, offerCovers } from "./offers";
+import { inShopWindow } from "./shop-time";
 import type {
   Category,
   CategoryNode,
@@ -59,6 +65,7 @@ import type {
   ProductionRun,
   ProductReview,
   ProductStory,
+  Offer,
   Promotion,
   Recipe,
   RecoSettings,
@@ -260,6 +267,20 @@ export async function getPromotions(): Promise<Promotion[]> {
   return (await getDB()).promotions;
 }
 
+/** Every shop's cart offers, live or not (lib/offers.ts prices them). */
+export async function getOffers(): Promise<Offer[]> {
+  const fromSupabase = await fetchOffersFromSupabase();
+  if (fromSupabase) return fromSupabase;
+  return (await getDB()).offers ?? [];
+}
+
+/** One shop's offers, newest first — for its dashboard. */
+export async function getOffersByStore(store: string): Promise<Offer[]> {
+  return (await getOffers())
+    .filter((o) => o.store === store)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
 /**
  * Is this promotion running right now? `active` is the seller's on/off
  * switch; the optional window lets them schedule one in advance or have it
@@ -267,49 +288,65 @@ export async function getPromotions(): Promise<Promotion[]> {
  */
 export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
   if (!promo.active) return false;
-  if (promo.startsAt && new Date(promo.startsAt) > now) return false;
-  if (promo.endsAt && new Date(promo.endsAt) < now) return false;
-  return true;
+  return inShopWindow(promo.startsAt, promo.endsAt, now.getTime());
 }
 
 /**
  * Highest discount percentage applying to a product right now. A promotion
  * covers the whole store when it has no productIds, or only the listed
- * products when it does. The site-wide campaign always applies.
+ * products when it does. The site-wide campaign applies to the shops that
+ * accepted it — they pay for it.
  */
 function discountPctFor(
   product: Product,
   promotions: Promotion[],
-  campaignPct: number,
+  campaign: Campaign,
+  flash: Map<string, FlashPrice> = new Map(),
 ): number {
   const promo = promotions
     .filter(
       (p) =>
         isPromotionLive(p) &&
+        // Approvals used to create one of these, and it never ended. The
+        // flash discount now comes from the campaign itself (flashPct).
+        !isLegacyFlashPromotion(p.id) &&
         p.store === product.store &&
         (!p.productIds?.length || p.productIds.includes(product.id)),
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
-  return Math.max(promo, campaignPct);
+  const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
+  return Math.max(promo, campaignPct, flash.get(product.id)?.pct ?? 0);
 }
 
-/** The site-wide campaign percentage, or 0 when it isn't running. */
-async function campaignPct(): Promise<number> {
-  const marketing = await getMarketingSettings();
-  return marketing.campaign.active ? marketing.campaign.pct : 0;
+/** The flash discounts in force right now (lib/flash.ts). */
+async function flashPct(): Promise<Map<string, FlashPrice>> {
+  const [flash, requests] = await Promise.all([getFlashDeal(), getFlashRequests()]);
+  return flashDiscounts(flash, requests);
+}
+
+interface Campaign {
+  pct: number;
+  stores: Set<string>;
+}
+
+/** The site-wide campaign: its percentage (0 when off) and the shops in it. */
+async function campaignPct(): Promise<Campaign> {
+  const { campaign } = await getMarketingSettings();
+  return { pct: campaign.active ? campaign.pct : 0, stores: new Set(campaign.stores ?? []) };
 }
 
 /** Discount percentage per product id, for dashboard tables and notices. */
 export async function getDiscountMap(storeSlug?: string): Promise<Record<string, number>> {
-  const [promotions, campaign, products] = await Promise.all([
+  const [promotions, campaign, products, flash] = await Promise.all([
     getPromotions(),
     campaignPct(),
     getBaseProducts(),
+    flashPct(),
   ]);
   const map: Record<string, number> = {};
   for (const p of products) {
     if (storeSlug && p.store !== storeSlug) continue;
-    const pct = discountPctFor(p, promotions, campaign);
+    const pct = discountPctFor(p, promotions, campaign, flash);
     if (pct > 0) map[p.id] = pct;
   }
   return map;
@@ -322,26 +359,43 @@ export async function getDiscountMap(storeSlug?: string): Promise<Record<string,
  * Includes hidden products; use getProducts() for the storefront.
  */
 export async function getAllProducts(): Promise<Product[]> {
-  const [base, promotions, campaign] = await Promise.all([
+  const [base, promotions, campaign, offers, flash] = await Promise.all([
     getBaseProducts(),
     getPromotions(),
     campaignPct(),
+    getOffers(),
+    flashPct(),
   ]);
+  const live = offers.filter((o) => isOfferLive(o));
 
   return base.map((p) => {
-    const pct = discountPctFor(p, promotions, campaign);
-    if (pct <= 0) return p;
-    const factor = 1 - pct / 100;
-    const round = (n: number) => Math.round(n * factor * 100) / 100;
-    return {
-      ...p,
-      price: round(p.price),
-      compareAt: p.compareAt ?? p.price,
-      badge: "Sale" as const,
-      variants: p.variants?.map((v) =>
-        v.price === undefined ? v : { ...v, price: round(v.price) },
-      ),
-    };
+    const pct = discountPctFor(p, promotions, campaign, flash);
+    const priced =
+      pct <= 0
+        ? p
+        : (() => {
+            const factor = 1 - pct / 100;
+            const round = (n: number) => Math.round(n * factor * 100) / 100;
+            return {
+              ...p,
+              price: round(p.price),
+              compareAt: p.compareAt ?? p.price,
+              badge: "Sale" as const,
+              variants: p.variants?.map((v) =>
+                v.price === undefined ? v : { ...v, price: round(v.price) },
+              ),
+            };
+          })();
+    // The shop offer this product counts towards, for its badge. A "full
+    // price only" offer skips products already marked down.
+    const onSale = (priced.compareAt ?? 0) > priced.price;
+    // Coupon-only offers are private to whoever has the code — no badge.
+    const offer = live.find((o) => !o.code && offerCovers(o, p.id, p.store) && !(o.fullPriceOnly && onSale));
+    const flashEndsAt = flash.get(p.id)?.endsAt;
+    // The chip only means something when the flash price is the one shown.
+    const flashWins = flashEndsAt && pct === (flash.get(p.id)?.pct ?? 0);
+    const withFlash = flashWins ? { ...priced, flashEndsAt } : priced;
+    return offer ? { ...withFlash, offer } : withFlash;
   });
 }
 
@@ -360,7 +414,26 @@ export async function getAllProducts(): Promise<Product[]> {
  * getMarketplaceProducts() instead.
  */
 export async function getProducts(): Promise<Product[]> {
-  return (await getAllProducts()).filter((p) => !p.hidden);
+  const [all, stores] = await Promise.all([getAllProducts(), getAllStores()]);
+  const visible = all.filter((p) => !p.hidden);
+
+  // A shop's optional safety buffer (Stock page): online, show N fewer than
+  // it has, so the last unit on the shop floor isn't sold twice. Off (0)
+  // for every shop unless it chooses it. Dashboards read the true count.
+  const buffers = new Map(
+    stores.filter((s) => (s.pos?.stockBuffer ?? 0) > 0).map((s) => [s.slug, s.pos!.stockBuffer!]),
+  );
+  if (buffers.size === 0) return visible;
+  return visible.map((p) => {
+    const buffer = buffers.get(p.store);
+    if (!buffer) return p;
+    const less = (n: number) => Math.max(0, n - buffer);
+    return {
+      ...p,
+      stock: less(p.stock),
+      variants: p.variants?.map((v) => ({ ...v, stock: less(v.stock) })),
+    };
+  });
 }
 
 /**
@@ -730,29 +803,46 @@ export async function getSupplyMap(storeSlug: string): Promise<Map<string, Suppl
 
 // ── Flash deals ────────────────────────────────────────────────────────
 
+/**
+ * The campaign. Supabase when its table exists (migration-flash.sql) —
+ * data/db.json alone is per-server memory on Netlify, which is how edits
+ * used to report "saved" and then vanish.
+ */
 export async function getFlashDeal(): Promise<FlashDeal> {
-  return (await getDB()).flash;
+  return (await fetchFlashFromSupabase()) ?? (await getDB()).flash;
 }
 
 /**
- * Products in the flash-deal campaign. When the admin hasn't curated a
- * list yet, fall back to whatever is on sale so the rail is never empty.
+ * The flash rail: products in a LIVE campaign that are genuinely marked
+ * down and can be bought. A paused or ended campaign shows nothing; a
+ * product at full price or sold out is left out rather than sitting under
+ * "⚡ Flash Deals" as an advert for nothing. With no products picked, the
+ * best current markdowns stand in.
  */
 export async function getFlashProducts(): Promise<Product[]> {
-  const [flash, products] = await Promise.all([
+  const [flash, products, requests] = await Promise.all([
     getFlashDeal(),
     getMarketplaceProducts(),
+    getFlashRequests(),
   ]);
-  if (!flash.active) return [];
+  if (!isFlashLive(flash)) return [];
   if (flash.productIds.length > 0) {
-    return products.filter((p) => flash.productIds.includes(p.id));
+    // A shop whose own end has passed is out, even if it has a markdown
+    // of its own — the rail is for flash prices.
+    const ended = endedFlashProducts(requests);
+    const byId = new Map(products.map((p) => [p.id, p]));
+    return flash.productIds
+      .filter((id) => !ended.has(id))
+      .map((id) => byId.get(id))
+      .filter((p): p is Product => !!p && isRealDeal(p));
   }
-  return products.filter((p) => p.compareAt).slice(0, 8);
+  const pct = (p: Product) => 1 - p.price / (p.compareAt ?? p.price);
+  return products.filter(isRealDeal).sort((a, b) => pct(b) - pct(a)).slice(0, 8);
 }
 
 /** Flash-deal applications; pass a store slug to see just that seller's. */
 export async function getFlashRequests(storeSlug?: string): Promise<FlashRequest[]> {
-  const requests = (await getDB()).flashRequests;
+  const requests = (await fetchFlashRequestsFromSupabase()) ?? (await getDB()).flashRequests;
   return storeSlug ? requests.filter((r) => r.store === storeSlug) : requests;
 }
 
@@ -792,6 +882,9 @@ async function withProductNames(orders: Order[]): Promise<Order[]> {
         name: product.name,
         image: item.image ?? product.images?.[0],
         store: item.store ?? product.store,
+        // Only a record with no price at all gets one — an order keeps the
+        // price it was sold at, never today's.
+        price: item.price ?? product.price,
       };
     }),
   }));
@@ -807,7 +900,8 @@ export async function getOrders(): Promise<Order[]> {
     return withProductNames(supabaseOrders);
   }
   const db = await getDB();
-  return seedOrders.map((o) => ({
+  // The demo orders carry only product ids — name them the same way.
+  return withProductNames(seedOrders.map((o) => ({
     ...o,
     ...(db.orderStatus[o.id] ? { status: db.orderStatus[o.id] } : {}),
     // Courier and timeline edits made in the dashboard, for the local-dev
@@ -818,7 +912,7 @@ export async function getOrders(): Promise<Order[]> {
     // the overlay says otherwise — a badge of 40 on first login is the
     // fastest way to teach someone to ignore badges forever.
     seenAt: db.ordersSeen?.[o.id] ?? o.seenAt ?? new Date(0).toISOString(),
-  }));
+  })));
 }
 
 export async function getOrdersByStore(storeSlug: string): Promise<Order[]> {

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import ProductImage from "@/components/ProductImage";
 import { money } from "@/lib/format";
-import type { Category, Product, Store } from "@/lib/types";
+import type { Category, Store } from "@/lib/types";
+import type { PickerProduct } from "@/lib/product-utils";
 
 /**
  * Reusable multi-product selector used by flash deals and promotions.
@@ -20,7 +21,7 @@ export default function ProductPicker({
   initial = [],
   name = "productIds",
 }: {
-  products: Product[];
+  products: PickerProduct[];
   categories: Category[];
   /** Omit to hide the store filter (sellers only see their own store). */
   stores?: Store[];

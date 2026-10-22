@@ -15,6 +15,23 @@ export function isDashboardPath(pathname: string | null): boolean {
  * check would leave the dashboard's "no header" state in place after
  * clicking back into the shop (and vice versa).
  */
-export default function ShopChrome({ children }: { children: React.ReactNode }) {
-  return isDashboardPath(usePathname()) ? null : <>{children}</>;
+export default function ShopChrome({
+  children,
+  hideOnCheckout = false,
+}: {
+  children: React.ReactNode;
+  /**
+   * Also hide on /checkout. Checkout is a focused page — no footer, tab bar
+   * or install banner offering a way out halfway through paying.
+   */
+  hideOnCheckout?: boolean;
+}) {
+  const pathname = usePathname();
+  if (isDashboardPath(pathname)) return null;
+  if (hideOnCheckout && isCheckoutPath(pathname)) return null;
+  return <>{children}</>;
+}
+
+export function isCheckoutPath(pathname: string | null): boolean {
+  return pathname === "/checkout";
 }

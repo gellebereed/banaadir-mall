@@ -204,7 +204,18 @@ export interface Product {
   /** Current selling price in USD. */
   price: number;
   /** Original price when the product is on sale. */
-  compareAt?: number;
+compareAt?: number;
+  /**
+   * The live shop offer this product counts towards ("Buy 1, get the next
+   * for $1"). Attached by getAllProducts for the badge; pricing itself is
+   * always done from the basket by lib/offers.ts.
+   */
+  offer?: Offer;
+  /**
+   * When this product's flash price stops, if its shop chose an end earlier
+   * than the campaign's own (lib/flash.ts) — for its card's "ends in" chip.
+   */
+  flashEndsAt?: string;
   /**
    * Odoo `standard_price` — what the goods cost to buy, per unit.
    *
@@ -340,7 +351,14 @@ export interface OrderItem {
    */
   storeName?: string;
   name?: string;
+  /** What was charged per unit — after any shop offer or promo code. */
   price?: number;
+  /** The catalogue price per unit, when an offer charged less. */
+  listPrice?: number;
+  /** Name of the offer or promo code behind the lower price. */
+  offer?: string;
+  /** Its id, so usage limits and budgets can be counted. "promo" for the marketplace code. */
+  offerId?: string;
   image?: string;
   selectedColor?: string;
   selectedSize?: string;
@@ -491,6 +509,86 @@ export interface Promotion {
   endsAt?: string;
 }
 
+/**
+ * A shop's cart offer — a discount that depends on what else is in the
+ * basket, unlike a Promotion which changes one product's price on its own.
+ * Priced by lib/offers.ts, the same function in the cart, at checkout, on
+ * the server and at the counter.
+ */
+export type OfferKind =
+  /** Each full-price item unlocks one item of equal or lower price for `price`. */
+  | "next_fixed"
+  /** Each item unlocks `pct`% off one item of equal or lower price. */
+  | "next_pct"
+  /** Buy `buy`, get `get` (the cheapest) at `pct`% off — 100 is free. */
+  | "bxgy"
+  /** Quantity tiers: n+ items, every one `pct`% off. */
+  | "tiers"
+  /** Spend `minSpend`, save `amountOff` (or `pct`%). */
+  | "spend"
+  /** One of each product in `bundle` for `price` together. */
+  | "bundle"
+  /** Any `qty` items (from the scope) for `price` together. */
+  | "mix"
+  /** Spend `minSpend` and `gift` is free. */
+  | "gift";
+
+/**
+ * A product an offer names, captured when the offer is saved so the cart
+ * can say "add the Oxford Shirt" for an item that isn't in it yet.
+ */
+export interface OfferProductRef {
+  productId: string;
+  name: string;
+  slug: string;
+  price?: number;
+  image?: string;
+  icon?: string;
+}
+
+export interface Offer {
+  id: string;
+  store: string;
+  name: string;
+  kind: OfferKind;
+  active: boolean;
+  /** Empty or missing: every product in the shop. */
+  productIds?: string[];
+  /** Items already on sale don't count — "buy at full price". */
+  fullPriceOnly?: boolean;
+  /** next_fixed: what the next item costs. */
+  price?: number;
+  /** next_pct / bxgy / tiers / spend (as an alternative to amountOff). */
+  pct?: number;
+  buy?: number;
+  get?: number;
+  tiers?: { minQty: number; pct: number }[];
+  minSpend?: number;
+  amountOff?: number;
+  /** How many times one order may use it (pairs / groups). Empty: no limit. */
+  maxPerOrder?: number;
+  /** bundle: the products in the set (also listed in productIds). */
+  bundle?: OfferProductRef[];
+  /** mix: how many items make a group. */
+  qty?: number;
+  /** gift: the free product. */
+  gift?: OfferProductRef;
+  /**
+   * A shop coupon: the offer only applies when this code is entered —
+   * for the shop's own Instagram or WhatsApp followers. Upper case.
+   */
+  code?: string;
+  /** Stop after this many orders have used it. */
+  maxUses?: number;
+  /** Stop once customers have saved this much in total (the shop's cost). */
+  budget?: number;
+  /** Set when the offer switched itself off after its order limit or budget ran out. */
+  usedUpAt?: string;
+  startsAt?: string;
+  endsAt?: string;
+  createdAt?: string;
+}
+
 export type EmployeeRole = "manager" | "products" | "orders" | "marketing" | "viewer";
 
 /**
@@ -622,6 +720,11 @@ export interface FlashRequest {
   /** Discount the seller is offering for the campaign. */
   pct: number;
   note?: string;
+  /**
+   * The shop's own end for this discount — optional, and never later than
+   * the campaign's. Lets a shop with limited stock join for a few hours.
+   */
+  endsAt?: string;
   status: "pending" | "approved" | "rejected";
   date: string;
 }
@@ -647,7 +750,18 @@ export interface MarketingSettings {
   banners: Banner[];
   promoTiles: PromoTile[];
   /** Site-wide sale applied to every product when active. */
-  campaign: { active: boolean; name: string; pct: number };
+  /**
+   * Site-wide sale. `stores` are the shops that accepted it — the discount
+   * is theirs to give, so it applies to their products only.
+   */
+  campaign: {
+    active: boolean;
+    name: string;
+    pct: number;
+    stores?: string[];
+    /** Shops that said "no thanks" to this campaign — not asked again. */
+    declined?: string[];
+  };
   /**
    * Checkout rules the admin controls, instead of constants buried in the
    * cart page. `freeThreshold` of 0 means delivery is always charged.
@@ -657,9 +771,24 @@ export interface MarketingSettings {
     freeThreshold: number;
     /** Shown on the cart and checkout, e.g. "2–4 days nationwide". */
     estimate: string;
+    /**
+     * Shown by the header's "Deliver to" picker (components/layout/DeliveryCity).
+     * `localTime` for Banaadir (Mogadishu), `nationalTime` for the rest of
+     * Somalia. Absent on settings saved before they existed, when the
+     * picker falls back to `estimate`.
+     */
+    localTime?: string;
+    nationalTime?: string;
   };
   /** Single promo code accepted at checkout. Empty disables the field. */
-  promo: { code: string; pct: number };
+  promo: {
+    code: string;
+    pct: number;
+    /** Shops that accepted the code. It discounts their items only. */
+    stores?: string[];
+    /** Shops that said "no thanks". */
+    declined?: string[];
+  };
   /**
    * What the marketplace keeps from each sale.
    *
@@ -810,6 +939,22 @@ export interface PosSettings {
   roundTo: number;
   /** Payment methods offered at the counter. */
   methods: PaymentMethod[];
+  /**
+   * How this shop's POS stock report is laid out — remembered after the
+   * first upload so every day after is "upload, check, confirm".
+   */
+  stockImport?: {
+    codeColumn: string;
+    qtyColumn: string;
+    sheet?: string;
+    mode: "set" | "add";
+  };
+  /**
+   * Optional safety buffer: show this many fewer online than the shop has.
+   * OFF (0) unless the shop chooses it — some shops keep the last unit for
+   * the shop floor; most want every unit sellable online.
+   */
+  stockBuffer?: number;
 }
 
 // ── Commission: what the marketplace keeps from each sale ──────────────

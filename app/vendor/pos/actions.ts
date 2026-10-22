@@ -116,7 +116,10 @@ export async function savePosSettings(
     return { ok: false, message: "Only someone who can change store settings can do this." };
   }
 
+  // Merge over what's saved: this form owns the counter settings only, and
+  // must not wipe the stock page's remembered columns or buffer.
   const settings: PosSettings = {
+    ...(await getPosSettings(storeSlug)),
     enabled: formData.get("enabled") === "on",
     targetMarginPct: Math.min(90, Math.max(0, num(formData.get("targetMarginPct"), 35))),
     roundTo: Math.max(0, num(formData.get("roundTo"), 5)),
@@ -602,7 +605,26 @@ export async function ringUpSale(_prev: SaleResult, formData: FormData): Promise
     });
   }
 
-  const totals = tillTotals(lines);
+  // Shop offers apply at the counter too — same engine as the website.
+  const { getOffersByStore } = await import("@/lib/api");
+  const { groupUnits, priceCart } = await import("@/lib/offers");
+  const pricing = priceCart(
+    await Promise.all(
+      lines.map(async (line) => {
+        const product = await getProduct(line.productId);
+        return {
+          key: line.productId,
+          productId: line.productId,
+          store: storeSlug,
+          price: line.price,
+          qty: line.qty,
+          onSale: (product?.compareAt ?? 0) > line.price,
+        };
+      }),
+    ),
+    await getOffersByStore(storeSlug),
+  );
+  const totals = { ...tillTotals(lines), total: pricing.total };
   const method = String(formData.get("payment") ?? "cash") as PaymentMethod;
   const cashGiven = num(formData.get("cashGiven"));
 
@@ -619,13 +641,17 @@ export async function ringUpSale(_prev: SaleResult, formData: FormData): Promise
     address: "",
     city: "",
     store: storeSlug,
-    items: lines.map((line) => ({
-      productId: line.productId,
-      qty: line.qty,
-      name: line.name,
-      price: line.price,
-      store: storeSlug,
-    })),
+    // One item per price charged, naming the offer behind a lower one.
+    items: lines.flatMap((line) =>
+      groupUnits(pricing.lines[line.productId]).map((c) => ({
+        productId: line.productId,
+        qty: c.qty,
+        name: line.name,
+        price: c.price,
+        ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
+        store: storeSlug,
+      })),
+    ),
     total: totals.total,
     // Paid for and carried out of the shop — it is finished, not pending.
     status: "delivered" as const,

@@ -4,7 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { useCart } from "@/lib/cart-context";
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
+import { LITE_CARD_SIZES, LITE_QUALITY } from "@/lib/lite";
+import type { MessageKey } from "@/lib/i18n";
 import { compact, discountPct, money } from "@/lib/format";
+import { offerHeadline } from "@/lib/offers";
 import {
   colorOptions,
   displayPrice,
@@ -15,6 +19,7 @@ import {
   variantSizes,
 } from "@/lib/product-utils";
 import type { Product } from "@/lib/types";
+import FlashEndsChip from "./FlashEndsChip";
 import ProductImage from "./ProductImage";
 import Rating from "./Rating";
 
@@ -58,6 +63,8 @@ export default function ProductCard({
   footer?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const t = useT();
+  const { lite } = usePrefs();
   const wished = isWishlisted(product.id);
 
   // With variants the card shows the cheapest option ("from $X").
@@ -123,7 +130,7 @@ export default function ProductCard({
 
   return (
     <div
-      className="group card relative flex h-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
+      className="group card relative flex h-full w-full flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-xl hover:shadow-ocean-900/10"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => {
         setHovering(false);
@@ -132,14 +139,15 @@ export default function ProductCard({
         setSlideIndex(0);
       }}
     >
-      <Link href={`/product/${product.slug}`} className="block">
+      <Link href={`/product/${product.slug}`} className="relative block">
         {mainImage ? (
           <div className="relative aspect-square w-full overflow-hidden bg-sand-100">
             <Image
               src={mainImage}
               alt={product.name}
               fill
-              sizes="(max-width: 768px) 50vw, 25vw"
+              sizes={lite ? LITE_CARD_SIZES : "(max-width: 768px) 50vw, 25vw"}
+              quality={lite ? LITE_QUALITY : undefined}
               className="object-cover transition-opacity duration-300"
             />
 
@@ -160,6 +168,20 @@ export default function ProductCard({
         ) : (
           <ProductImage product={product} className="aspect-square w-full" />
         )}
+
+        {/* The shop's cart offer — "Buy 1, get the next for $1". Over the
+            photo so a card with an offer is the same height as one without. */}
+        {(product.offer || product.flashEndsAt) && !(canSlide && hovering) && (
+          <span className="pointer-events-none absolute bottom-2 left-2 right-2 flex flex-col items-start gap-1">
+            {/* This product's flash price ends before the campaign's. */}
+            {product.flashEndsAt && <FlashEndsChip endsAt={product.flashEndsAt} className="max-w-full truncate" />}
+            {product.offer && (
+              <span className="max-w-full truncate rounded-full bg-emerald-600/95 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
+                🎁 {offerHeadline(product.offer, t, money)}
+              </span>
+            )}
+          </span>
+        )}
       </Link>
 
       {/*
@@ -172,7 +194,7 @@ export default function ProductCard({
         because a discount percentage is money and outranks everything.
       */}
       {(cornerBadge || product.badge) && (
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-col items-start gap-1.5">
+        <div className="absolute left-2 top-2 flex max-w-[calc(100%-3.25rem)] flex-col items-start gap-1.5 sm:left-3 sm:top-3 sm:max-w-[calc(100%-4rem)]">
           {cornerBadge}
           {product.badge && (!cornerBadge || product.badge === "Sale") && (
             <span
@@ -180,14 +202,14 @@ export default function ProductCard({
             >
               {product.badge === "Sale" && product.compareAt
                 ? `-${discountPct(price, product.compareAt)}%`
-                : product.badge}
+                : t(`badge.${product.badge}` as MessageKey)}
             </span>
           )}
         </div>
       )}
 
       <button
-        aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
+        aria-label={wished ? t("product.wishRemove") : t("product.wishAdd")}
         onClick={() =>
           toggleWishlist(product.id, {
             name: product.name,
@@ -195,14 +217,14 @@ export default function ProductCard({
             images: mainImage ? [mainImage] : product.images,
           })
         }
-        className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full shadow-md transition active:scale-90 ${
+        className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition active:scale-90 sm:right-3 sm:top-3 sm:h-9 sm:w-9 ${
           wished ? "bg-coral-500 text-white" : "bg-white/90 text-slate-500 hover:text-coral-500"
         }`}
       >
         {wished ? "♥" : "♡"}
       </button>
 
-      <div className="flex flex-1 flex-col p-3.5">
+      <div className="flex flex-1 flex-col p-3 sm:p-3.5">
         <Link
           href={`/product/${product.slug}`}
           className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-slate-800 hover:text-ocean-700"
@@ -246,15 +268,15 @@ export default function ProductCard({
                 </span>
               )}
               {sizes.length > 0 && (
-                <span className="ml-auto text-[10px] font-medium text-slate-400">
-                  {sizes.length} size{sizes.length === 1 ? "" : "s"}
+                <span className="ml-auto whitespace-nowrap text-[10px] font-medium text-slate-400">
+                  {t("product.sizes", { n: sizes.length })}
                 </span>
               )}
             </>
           )}
           {withVariants && colors.length === 0 && sizes.length > 0 && (
             <p className="text-[10px] font-medium text-slate-400">
-              {sizes.length} size{sizes.length === 1 ? "" : "s"} available
+              {t("product.sizes", { n: sizes.length })}
             </p>
           )}
         </div>
@@ -262,11 +284,16 @@ export default function ProductCard({
         {/* Hairline above the price — separates "what it is" from "what it
             costs", and gives the row of cards a shared horizontal line to
             settle on instead of ending at whatever height the title left. */}
+        {/*
+          On a narrow phone card the old-price strike-through wraps under the
+          price rather than shoving the button out of the card — which is
+          what clipped "Options" in half.
+        */}
         <div className="mt-auto flex items-end justify-between gap-2 border-t border-sand-100 pt-2.5">
-          <div>
-            <div className="flex items-baseline gap-1.5">
-              {showFrom && <span className="text-[11px] text-slate-400">from</span>}
-              <span className="font-display text-lg font-bold text-ocean-950">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-1.5">
+              {showFrom && <span className="text-[11px] text-slate-400">{t("product.from")}</span>}
+              <span className="font-display text-base font-bold text-ocean-950 sm:text-lg">
                 {money(price)}
               </span>
               {product.compareAt && product.compareAt > price && (
@@ -277,9 +304,9 @@ export default function ProductCard({
             </div>
             <p className="text-[11px] text-slate-400">
               {soldOut ? (
-                <span className="font-semibold text-coral-600">Out of stock</span>
+                <span className="font-semibold text-coral-600">{t("product.outOfStock")}</span>
               ) : (
-                `${compact(product.sold)} sold`
+                t("product.sold", { n: compact(product.sold) })
               )}
             </p>
           </div>
@@ -289,9 +316,9 @@ export default function ProductCard({
             <Link
               href={`/product/${product.slug}`}
               aria-label={`Choose options for ${product.name}`}
-              className="flex h-9 items-center rounded-full bg-ocean-700 px-3 text-[11px] font-bold text-white shadow-md transition hover:bg-mango-500"
+              className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-ocean-700 px-2.5 text-[11px] font-bold text-white shadow-md transition hover:bg-mango-500 sm:px-3"
             >
-              Options
+              {t("product.options")}
             </Link>
           ) : (
             <button
@@ -312,7 +339,7 @@ export default function ProductCard({
                   },
                 })
               }
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-ocean-700 text-lg text-white shadow-md transition hover:bg-mango-500 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ocean-700 text-lg text-white shadow-md transition hover:bg-mango-500 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               +
             </button>
