@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getOrders, getStore, getVendorStats } from "@/lib/api";
+import { getBaseProducts, getOrders, getStore, getVendorStats } from "@/lib/api";
 import { money } from "@/lib/format";
+import { orderBelongsTo } from "@/lib/order-utils";
 import { getSession } from "@/lib/session";
 import SignOutButton from "@/components/SignOutButton";
 import StoreAvatar from "@/components/StoreAvatar";
@@ -39,11 +40,11 @@ export const metadata: Metadata = { title: "My Account" };
  */
 
 /** The order journey, in the order it actually happens. */
-const ORDER_STAGES: { status: OrderStatus; label: string; icon: string }[] = [
-  { status: "pending", label: "Pending", icon: "🕒" },
-  { status: "processing", label: "Processing", icon: "📦" },
-  { status: "shipped", label: "On the way", icon: "🚚" },
-  { status: "delivered", label: "Delivered", icon: "✓" },
+const ORDER_STAGES: { status: OrderStatus; label: string; icon: string; tab: string }[] = [
+  { status: "pending", label: "Pending", icon: "🕒", tab: "active" },
+  { status: "processing", label: "Processing", icon: "📦", tab: "active" },
+  { status: "shipped", label: "On the way", icon: "🚚", tab: "active" },
+  { status: "delivered", label: "Delivered", icon: "✓", tab: "delivered" },
 ];
 
 export default async function AccountPage() {
@@ -57,17 +58,18 @@ export default async function AccountPage() {
   const stats = store ? await getVendorStats(store.slug) : undefined;
 
   const allOrders = await getOrders();
-  const cleanEmail = session.email.trim().toLowerCase();
-  const cleanName = session.name.trim().toLowerCase();
-
-  const serverOrders = allOrders.filter((o) => {
-    if (o.email && o.email.trim().toLowerCase() === cleanEmail) return true;
-    if (o.customer && o.customer.trim().toLowerCase() === cleanName) return true;
-    return false;
-  });
+  // Same rule as everywhere else: an order with an email is matched on it
+  // alone, so two customers with the same name never see each other's.
+  const serverOrders = allOrders.filter((o) => orderBelongsTo(o, session));
 
   // Cancelled orders are excluded from spend — money that came back is not
   // money spent, and a lifetime total that counts it is simply wrong.
+  // "Write a review" needs each product's page.
+  const orderedIds = new Set(serverOrders.flatMap((o) => o.items.map((i) => i.productId)));
+  const slugs = Object.fromEntries(
+    (await getBaseProducts()).filter((p) => orderedIds.has(p.id)).map((p) => [p.id, p.slug]),
+  );
+
   const spent = serverOrders
     .filter((order) => order.status !== "cancelled")
     .reduce((total, order) => total + (order.total || 0), 0);
@@ -139,26 +141,30 @@ export default async function AccountPage() {
         </div>
       </header>
 
-      <div className="mx-auto -mt-16 max-w-5xl space-y-4 px-4">
+      {/* `relative` puts these cards ABOVE the header they overlap — without
+          it the header painted over the top half of the first card. */}
+      <div className="relative mx-auto -mt-16 max-w-5xl space-y-4 px-4">
         {/* ── My orders ────────────────────────────────────────────── */}
         <section className="card p-5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-display font-bold text-ocean-950">My Orders</h2>
-            <Link
-              href="#my-orders"
+            <h2 className="font-display font-bold text-ocean-950">Order status</h2>
+            {/* Plain <a>: a hash-only next/link doesn't fire "hashchange",
+                which is what switches the orders tab below. */}
+            <a
+              href="#orders-all"
               className="text-xs font-bold text-slate-400 transition hover:text-ocean-700"
             >
               All orders →
-            </Link>
+            </a>
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-1">
             {ORDER_STAGES.map((stage) => {
               const count = countByStatus(stage.status);
               return (
-                <Link
+                <a
                   key={stage.status}
-                  href="#my-orders"
+                  href={`#orders-${stage.tab}`}
                   className="group flex flex-col items-center gap-1.5 rounded-xl py-2 transition hover:bg-sand-50"
                 >
                   <span className="relative flex h-11 w-11 items-center justify-center rounded-full bg-sand-100 text-lg transition group-hover:bg-ocean-50">
@@ -175,7 +181,7 @@ export default async function AccountPage() {
                   <span className="text-center text-[11px] font-semibold leading-tight text-slate-600">
                     {stage.label}
                   </span>
-                </Link>
+                </a>
               );
             })}
           </div>
@@ -215,6 +221,16 @@ export default async function AccountPage() {
           </Link>
         )}
 
+        {/* ── Orders list ──────────────────────────────────────────── */}
+        <div id="my-orders" className="scroll-mt-24 pt-2">
+          <AccountOrdersClient
+            userName={session.name}
+            userEmail={session.email}
+            serverOrders={serverOrders}
+            slugs={slugs}
+          />
+        </div>
+
         {/* ── Service ──────────────────────────────────────────────── */}
         <section className="card p-5">
           <h2 className="font-display font-bold text-ocean-950">Help &amp; Services</h2>
@@ -235,15 +251,6 @@ export default async function AccountPage() {
             ))}
           </div>
         </section>
-
-        {/* ── Orders list ──────────────────────────────────────────── */}
-        <div id="my-orders" className="scroll-mt-24">
-          <AccountOrdersClient
-            userName={session.name}
-            userEmail={session.email}
-            serverOrders={serverOrders}
-          />
-        </div>
 
         {/* ── What the recommender knows, and the button that wipes it. */}
         <RecoControls />

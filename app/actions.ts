@@ -2764,7 +2764,48 @@ export async function submitOrderAction(payload: {
   return { ok: true, message: "Order placed successfully!", orderId: id, discount, parcels };
 }
 
+/**
+ * ── Who may see an order's personal details ──────────────────────────────
+ * Tracking is open to anyone with an order number — that is the point of
+ * it: the person the parcel is for may not be the one who ordered it. But
+ * order numbers are short ("BM-10240"), so anyone could step through them,
+ * and these actions used to hand back the customer's full name, phone,
+ * email and street address with every one.
+ *
+ * Now the full record goes only to the customer it belongs to (signed in,
+ * same email), the admin, and the shop that is packing it. Everyone else
+ * gets what tracking actually needs: status, items, courier, and the city —
+ * with the customer named as "Ayaan W.".
+ */
+async function viewerSeesDetails(order: Order): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  if (session.role === "admin") return true;
+  if (session.role === "seller" && session.store === order.store) return true;
+  return Boolean(order.email && order.email.trim().toLowerCase() === session.email.trim().toLowerCase());
+}
+
+function redactOrder(order: Order): Order {
+  const [first = "", last = ""] = (order.customer ?? "").trim().split(/\s+/);
+  return {
+    ...order,
+    customer: last ? `${first} ${last.charAt(0)}.` : first,
+    email: "",
+    phone: "",
+    address: "",
+  };
+}
+
+async function forViewer(order: Order): Promise<Order> {
+  return (await viewerSeesDetails(order)) ? order : redactOrder(order);
+}
+
 export async function getOrderAction(id: string): Promise<Order | undefined> {
+  const order = await findOrderForTracking(id);
+  return order ? forViewer(order) : undefined;
+}
+
+async function findOrderForTracking(id: string): Promise<Order | undefined> {
   const { getOrder, getOrders } = await import("@/lib/api");
 
   const exact = await getOrder(id);
@@ -2825,18 +2866,48 @@ export async function getUserOrdersAction(): Promise<Order[]> {
   const { getOrders } = await import("@/lib/api");
   const allOrders = await getOrders();
 
-  const email = session.email.trim().toLowerCase();
-  const name = session.name.trim().toLowerCase();
+  const { orderBelongsTo } = await import("@/lib/order-utils");
+  return allOrders.filter((order) => orderBelongsTo(order, session));
+}
 
-  return allOrders.filter((order) => {
-    if (order.email) {
-      // An order that carries an email is matched on it ALONE. Falling back
-      // to the name here is what let two customers called "Ahmed" see each
-      // other's orders.
-      return order.email.trim().toLowerCase() === email;
+/**
+ * "Buy again": the items of a past order as cart lines, at TODAY's price
+ * and only if they can still be bought. Takes the lines rather than an
+ * order id — an order kept only on this device has no server record, and
+ * a product id reveals nothing about anyone.
+ */
+export async function reorderItemsAction(
+  items: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+): Promise<{ lines: import("@/lib/types").CartItem[]; unavailable: string[] }> {
+  const { getProducts } = await import("@/lib/api");
+  const { findVariant, primaryImage, variantPrice } = await import("@/lib/product-utils");
+  const catalog = await getProducts();
+  const lines: import("@/lib/types").CartItem[] = [];
+  const unavailable: string[] = [];
+  for (const item of items.slice(0, 50)) {
+    const product = catalog.find((p) => p.id === item.productId);
+    const variant = product ? findVariant(product, item.selectedColor, item.selectedSize) : undefined;
+    const stock = variant?.stock ?? product?.stock ?? 0;
+    if (!product || stock <= 0) {
+      unavailable.push(product?.name ?? item.productId);
+      continue;
     }
-    return Boolean(name) && order.customer?.trim().toLowerCase() === name;
-  });
+    lines.push({
+      productId: product.id,
+      qty: Math.max(1, Math.min(Math.floor(item.qty) || 1, stock)),
+      color: item.selectedColor,
+      size: item.selectedSize,
+      snapshot: {
+        name: product.name,
+        price: variantPrice(product, variant),
+        icon: product.icon,
+        slug: product.slug,
+        store: product.store,
+        image: primaryImage(product),
+      },
+    });
+  }
+  return { lines, unavailable };
 }
 
 /**
@@ -2916,8 +2987,10 @@ export async function getOrderParcelsAction(orderId: string): Promise<OrderParce
   const [allOrders, stores] = await Promise.all([getOrders(), getAllStores()]);
 
   const base = baseOrderId(orderId);
-  return allOrders
-    .filter((o) => belongsToOrder(o.id, base))
+  const parcels = allOrders.filter((o) => belongsToOrder(o.id, base));
+  // Personal details only for the customer, the admin, or that parcel's shop.
+  const visible = await Promise.all(parcels.map(forViewer));
+  return visible
     .map((order) => {
       const store = stores.find((s) => s.slug === order.store);
       return {

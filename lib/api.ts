@@ -827,6 +827,9 @@ async function withProductNames(orders: Order[]): Promise<Order[]> {
         name: product.name,
         image: item.image ?? product.images?.[0],
         store: item.store ?? product.store,
+        // Only a record with no price at all gets one — an order keeps the
+        // price it was sold at, never today's.
+        price: item.price ?? product.price,
       };
     }),
   }));
@@ -842,7 +845,8 @@ export async function getOrders(): Promise<Order[]> {
     return withProductNames(supabaseOrders);
   }
   const db = await getDB();
-  return seedOrders.map((o) => ({
+  // The demo orders carry only product ids — name them the same way.
+  return withProductNames(seedOrders.map((o) => ({
     ...o,
     ...(db.orderStatus[o.id] ? { status: db.orderStatus[o.id] } : {}),
     // Courier and timeline edits made in the dashboard, for the local-dev
@@ -853,7 +857,7 @@ export async function getOrders(): Promise<Order[]> {
     // the overlay says otherwise — a badge of 40 on first login is the
     // fastest way to teach someone to ignore badges forever.
     seenAt: db.ordersSeen?.[o.id] ?? o.seenAt ?? new Date(0).toISOString(),
-  }));
+  })));
 }
 
 export async function getOrdersByStore(storeSlug: string): Promise<Order[]> {

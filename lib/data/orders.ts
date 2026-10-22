@@ -50,9 +50,13 @@ function buildOrders(): Order[] {
       .toISOString()
       .slice(0, 10);
 
+    const customer = CUSTOMERS[Math.floor(rnd() * CUSTOMERS.length)];
     orders.push({
       id: `BM-${String(10240 + i)}`,
-      customer: CUSTOMERS[Math.floor(rnd() * CUSTOMERS.length)],
+      customer,
+      // The demo shopper's login (lib/auth.ts) — so "My orders" has a
+      // history to show. Accounts are matched by email, not by name.
+      ...(customer === "Ayaan Warsame" ? { email: "ayaan@banaadirmall.com" } : {}),
       city: CITIES[Math.floor(rnd() * CITIES.length)],
       store: product.store,
       items: [{ productId: product.id, qty }],
