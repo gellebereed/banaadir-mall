@@ -26,6 +26,7 @@
  */
 
 import type { T } from "./i18n";
+import { inShopWindow, parseShopTime } from "./shop-time";
 import type { Offer, OfferProductRef } from "./types";
 
 export interface PricingLine {
@@ -108,9 +109,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function isOfferLive(offer: Offer, now = new Date()): boolean {
   if (!offer.active) return false;
-  if (offer.startsAt && new Date(offer.startsAt) > now) return false;
-  if (offer.endsAt && new Date(offer.endsAt) < now) return false;
-  return true;
+  return inShopWindow(offer.startsAt, offer.endsAt, now.getTime());
 }
 
 /** Does `offer` cover this product at all (ignoring price conditions)? */
@@ -726,7 +725,7 @@ export function offerProblem(offer: Offer): string | null {
     return "A coupon code is 3–20 letters or numbers, no spaces.";
   if (offer.maxUses !== undefined && !(offer.maxUses >= 1)) return "The order limit must be 1 or more.";
   if (offer.budget !== undefined && !(offer.budget > 0)) return "The budget must be more than zero.";
-  if (offer.startsAt && offer.endsAt && new Date(offer.startsAt) >= new Date(offer.endsAt))
+  if (offer.startsAt && offer.endsAt && parseShopTime(offer.startsAt) >= parseShopTime(offer.endsAt))
     return "The end date must come after the start date.";
   return null;
 }

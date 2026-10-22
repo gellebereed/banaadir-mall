@@ -47,6 +47,7 @@ import {
   visibleCategories,
 } from "./category-tree";
 import { isOfferLive, offerCovers } from "./offers";
+import { inShopWindow } from "./shop-time";
 import type {
   Category,
   CategoryNode,
@@ -284,9 +285,7 @@ export async function getOffersByStore(store: string): Promise<Offer[]> {
  */
 export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
   if (!promo.active) return false;
-  if (promo.startsAt && new Date(promo.startsAt) > now) return false;
-  if (promo.endsAt && new Date(promo.endsAt) < now) return false;
-  return true;
+  return inShopWindow(promo.startsAt, promo.endsAt, now.getTime());
 }
 
 /**

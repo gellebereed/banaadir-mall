@@ -96,6 +96,7 @@ import {
   toggleCategoryVisibilityInSupabase,
 } from "@/lib/supabase/mutations";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
+import { formatShopTime, normaliseShopTime } from "@/lib/shop-time";
 import { logActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
 
@@ -1437,8 +1438,9 @@ export async function createOffer(_prev: SaveState, formData: FormData): Promise
     code,
     maxUses: num(raw.maxUses) ? Math.floor(num(raw.maxUses)!) : undefined,
     budget: num(raw.budget) || undefined,
-    startsAt: String(raw.startsAt ?? "").trim() || undefined,
-    endsAt: String(raw.endsAt ?? "").trim() || undefined,
+    // Exact moments; a value with no zone is the seller's Mogadishu time.
+    startsAt: normaliseShopTime(raw.startsAt),
+    endsAt: normaliseShopTime(raw.endsAt),
     createdAt: new Date().toISOString(),
   };
 
@@ -1462,7 +1464,7 @@ export async function createOffer(_prev: SaveState, formData: FormData): Promise
   return {
     ok: true,
     message: offer.startsAt && new Date(offer.startsAt) > new Date()
-      ? `Scheduled — "${offer.name}" starts on its start date.`
+      ? `Scheduled — "${offer.name}" starts ${formatShopTime(offer.startsAt)} (Mogadishu time).`
       : `Live now — "${offer.name}". Customers see it on your products and in their cart.`,
   };
 }
@@ -1540,8 +1542,10 @@ export async function createPromotion(
     return { ok: false, message: "Pick at least one product, or choose the whole store." };
   }
 
-  const startsAt = String(formData.get("startsAt") ?? "").trim() || undefined;
-  const endsAt = String(formData.get("endsAt") ?? "").trim() || undefined;
+  // The form's datetime-local has no time zone: it is the seller's
+  // Mogadishu time, saved as an exact moment (lib/shop-time.ts).
+  const startsAt = normaliseShopTime(formData.get("startsAt"));
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
   if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
     return { ok: false, message: "The end date must come after the start date." };
   }
@@ -3020,7 +3024,7 @@ export async function updateFlashDeal(
     db.flash = {
       active: formData.get("active") === "on",
       name: String(formData.get("name")).trim() || "Flash Deals",
-      endsAt: String(formData.get("endsAt") ?? "").trim(),
+      endsAt: normaliseShopTime(formData.get("endsAt")) ?? "",
       productIds: formData.getAll("productIds").map(String),
     };
   });
@@ -3439,8 +3443,8 @@ export async function addRecoPin(formData: FormData): Promise<void> {
 
   const shelf = String(formData.get("shelf") ?? "auto").trim() || "auto";
   const note = String(formData.get("note") ?? "").trim().slice(0, 90);
-  const startsAt = String(formData.get("startsAt") ?? "").trim();
-  const endsAt = String(formData.get("endsAt") ?? "").trim();
+  const startsAt = normaliseShopTime(formData.get("startsAt"));
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
 
   await mutateReco((settings) => {
     // Re-pinning a product replaces the old push rather than stacking a

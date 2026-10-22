@@ -55,6 +55,7 @@ import { deriveTaste } from "./taste";
 import type { RecoContext } from "./strategies";
 import { emptyProfile } from "./profile";
 import type { RecoRequest, RecoResponse } from "./types";
+import { inShopWindow } from "../shop-time";
 
 /**
  * How long a built index is trusted. Short enough that a seller who edits a
@@ -261,8 +262,8 @@ function livePins(
 
 export function isPinLive(pin: RecoPin, now = Date.now()): boolean {
   if (!pin.active) return false;
-  if (pin.startsAt && Date.parse(pin.startsAt) > now) return false;
-  if (pin.endsAt && Date.parse(pin.endsAt) < now) return false;
+  // Mogadishu time when no zone was saved — see lib/shop-time.ts.
+  if (!inShopWindow(pin.startsAt, pin.endsAt, now)) return false;
   return true;
 }
 

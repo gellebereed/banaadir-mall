@@ -18,8 +18,9 @@ import {
 } from "@/lib/api";
 import { isOfferLive, offerCoverage, offerHeadline, offerTerms, offerUsageFrom } from "@/lib/offers";
 import { getT } from "@/lib/prefs-server";
+import { formatShopTime, parseShopTime } from "@/lib/shop-time";
 import { may } from "@/lib/auth";
-import { money, shortDate } from "@/lib/format";
+import { money } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 import type { Offer, Promotion } from "@/lib/types";
 
@@ -31,12 +32,12 @@ export const dynamic = "force-dynamic";
 
 /** Human status for a promotion, including scheduled and expired states. */
 function promoStatus(promo: Promotion | Offer): { label: string; tone: string } {
-  const now = new Date();
+  const now = Date.now();
   if (!promo.active) return { label: "Paused", tone: "bg-sand-100 text-slate-500" };
-  if (promo.startsAt && new Date(promo.startsAt) > now) {
-    return { label: "Scheduled", tone: "bg-sky-100 text-sky-700" };
+  if (promo.startsAt && parseShopTime(promo.startsAt) > now) {
+    return { label: `Scheduled · starts ${formatShopTime(promo.startsAt)}`, tone: "bg-sky-100 text-sky-700" };
   }
-  if (promo.endsAt && new Date(promo.endsAt) < now) {
+  if (promo.endsAt && parseShopTime(promo.endsAt) < now) {
     return { label: "Expired", tone: "bg-slate-200 text-slate-600" };
   }
   return { label: "Live", tone: "bg-emerald-100 text-emerald-700" };
@@ -140,8 +141,8 @@ export default async function VendorPromotionsPage() {
                       : targeted <= 3
                         ? offer.productIds!.map(productName).join(", ")
                         : `${targeted} selected products`}
-                    {offer.startsAt && ` · from ${shortDate(offer.startsAt.slice(0, 10))}`}
-                    {offer.endsAt && ` · until ${shortDate(offer.endsAt.slice(0, 10))}`}
+                    {offer.startsAt && ` · from ${formatShopTime(offer.startsAt)}`}
+                    {offer.endsAt && ` · until ${formatShopTime(offer.endsAt)}`}
                     {result
                       ? ` · used in ${result.orders} order${result.orders === 1 ? "" : "s"}, customers saved ${money(result.saved)}`
                       : " · not used yet"}
@@ -321,8 +322,8 @@ export default async function VendorPromotionsPage() {
                     : targeted <= 3
                       ? promo.productIds!.map(productName).join(", ")
                       : `${targeted} selected products`}
-                  {promo.startsAt && ` · from ${shortDate(promo.startsAt.slice(0, 10))}`}
-                  {promo.endsAt && ` · until ${shortDate(promo.endsAt.slice(0, 10))}`}
+                  {promo.startsAt && ` · from ${formatShopTime(promo.startsAt)}`}
+                  {promo.endsAt && ` · until ${formatShopTime(promo.endsAt)}`}
                 </p>
               </div>
               <div className="flex gap-2">
