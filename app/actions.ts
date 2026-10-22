@@ -2740,6 +2740,24 @@ export async function submitOrderAction(payload: {
   }
 
   refresh();
+  // Take what was sold off the website's stock, so the next shopper can't
+  // buy the same last item. A failure here must never undo an order that
+  // is already placed — it is logged and the shop's next stock upload
+  // corrects the count.
+  try {
+    const { deductStock } = await import("@/lib/stock-write");
+    await deductStock(
+      payload.items.map((i) => ({
+        productId: i.productId,
+        qty: i.qty,
+        selectedColor: i.selectedColor,
+        selectedSize: i.selectedSize,
+      })),
+    );
+  } catch (err) {
+    console.error("[submitOrder] stock deduction failed:", err);
+  }
+
   // An offer with an order limit or a budget switches itself off once it
   // is used up, so its badge stops promising a deal that has run out.
   const limited = Object.values(priced.pricing.stores)

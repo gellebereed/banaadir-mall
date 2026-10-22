@@ -929,6 +929,22 @@ export interface PosSettings {
   roundTo: number;
   /** Payment methods offered at the counter. */
   methods: PaymentMethod[];
+  /**
+   * How this shop's POS stock report is laid out — remembered after the
+   * first upload so every day after is "upload, check, confirm".
+   */
+  stockImport?: {
+    codeColumn: string;
+    qtyColumn: string;
+    sheet?: string;
+    mode: "set" | "add";
+  };
+  /**
+   * Optional safety buffer: show this many fewer online than the shop has.
+   * OFF (0) unless the shop chooses it — some shops keep the last unit for
+   * the shop floor; most want every unit sellable online.
+   */
+  stockBuffer?: number;
 }
 
 // ── Commission: what the marketplace keeps from each sale ──────────────

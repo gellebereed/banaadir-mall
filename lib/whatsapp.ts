@@ -258,6 +258,9 @@ export function buildVendorOrderMessage(input: VendorOrderMessage): string {
     // Spelled out because it is the single most likely thing to be
     // misread, and misreading it means a vendor invoices for the wrong sum.
     `_Your items only. Delivery is charged once on the full order and settled by Banaadir Mall._`,
+    // The website already took these off its stock; the shop's own till
+    // didn't — and the next stock upload from it would put them back.
+    `_📦 Banaadir Mall stock is already reduced — take these items off your shop's till too._`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━`,
     b("DELIVER TO"),

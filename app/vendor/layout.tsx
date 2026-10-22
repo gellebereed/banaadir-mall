@@ -145,6 +145,10 @@ export default async function VendorLayout({
           { href: "/vendor/collections", icon: "collections" as const, label: "Collections" },
         ]
       : []),
+    // Bringing the shop's own till counts onto the website, daily.
+    ...(may(session, "products.edit")
+      ? [{ href: "/vendor/stock", icon: "stock" as const, label: "Stock" }]
+      : []),
     // Only for shops that have switched the counter on. Everyone else never
     // learns it exists, which is the point of a toggle.
     ...(store?.pos?.enabled && may(session, "products.edit")

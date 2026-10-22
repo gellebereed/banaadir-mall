@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import TillClient from "@/components/pos/TillClient";
-import { getOffersByStore, getOrdersByStore, getPosSettings, getProductsByStore } from "@/lib/api";
+import { getAllProductsByStore, getOffersByStore, getOrdersByStore, getPosSettings } from "@/lib/api";
 import { money } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 
@@ -18,7 +18,9 @@ export default async function TillPage() {
   const { storeSlug } = await requireVendor();
 
   const [products, settings, orders, offers] = await Promise.all([
-    getProductsByStore(storeSlug),
+    // The true count — a shop's online safety buffer is for the website,
+    // not for its own counter.
+    getAllProductsByStore(storeSlug).then((list) => list.filter((p) => !p.hidden)),
     getPosSettings(storeSlug),
     getOrdersByStore(storeSlug),
     getOffersByStore(storeSlug),

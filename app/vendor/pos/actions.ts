@@ -116,7 +116,10 @@ export async function savePosSettings(
     return { ok: false, message: "Only someone who can change store settings can do this." };
   }
 
+  // Merge over what's saved: this form owns the counter settings only, and
+  // must not wipe the stock page's remembered columns or buffer.
   const settings: PosSettings = {
+    ...(await getPosSettings(storeSlug)),
     enabled: formData.get("enabled") === "on",
     targetMarginPct: Math.min(90, Math.max(0, num(formData.get("targetMarginPct"), 35))),
     roundTo: Math.max(0, num(formData.get("roundTo"), 5)),

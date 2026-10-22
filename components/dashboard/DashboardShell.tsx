@@ -5,6 +5,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  Boxes,
   BarChart3,
   ClipboardList,
   Compass,
@@ -84,6 +85,7 @@ export type ShellIcon =
   | "payouts"
   | "activity"
   | "collections"
+  | "stock"
   | "reviews";
 
 const ICONS: Record<ShellIcon, LucideIcon> = {
@@ -107,6 +109,7 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   payouts: Wallet,
   activity: History,
   collections: Layers,
+  stock: Boxes,
   reviews: MessageSquareWarning,
 };
 

@@ -395,7 +395,26 @@ export async function getAllProducts(): Promise<Product[]> {
  * getMarketplaceProducts() instead.
  */
 export async function getProducts(): Promise<Product[]> {
-  return (await getAllProducts()).filter((p) => !p.hidden);
+  const [all, stores] = await Promise.all([getAllProducts(), getAllStores()]);
+  const visible = all.filter((p) => !p.hidden);
+
+  // A shop's optional safety buffer (Stock page): online, show N fewer than
+  // it has, so the last unit on the shop floor isn't sold twice. Off (0)
+  // for every shop unless it chooses it. Dashboards read the true count.
+  const buffers = new Map(
+    stores.filter((s) => (s.pos?.stockBuffer ?? 0) > 0).map((s) => [s.slug, s.pos!.stockBuffer!]),
+  );
+  if (buffers.size === 0) return visible;
+  return visible.map((p) => {
+    const buffer = buffers.get(p.store);
+    if (!buffer) return p;
+    const less = (n: number) => Math.max(0, n - buffer);
+    return {
+      ...p,
+      stock: less(p.stock),
+      variants: p.variants?.map((v) => ({ ...v, stock: less(v.stock) })),
+    };
+  });
 }
 
 /**
