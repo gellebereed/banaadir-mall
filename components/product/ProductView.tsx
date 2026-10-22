@@ -359,12 +359,32 @@ export default function ProductView({
               {offerTerms(product.offer, t).length > 0 && (
                 <p className="text-xs text-slate-600">{offerTerms(product.offer, t).join(" · ")}</p>
               )}
-              <Link
-                href={`/products?store=${product.store}`}
-                className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
-              >
-                {t("offer.shopItems")} →
-              </Link>
+              {product.offer.kind === "bundle" ? (
+                // The rest of the set, one tap each.
+                <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {(product.offer.bundle ?? [])
+                    .filter((b) => b.productId !== product.id)
+                    .map((b) => (
+                      <Link key={b.productId} href={`/product/${b.slug}`} className="text-xs font-bold text-emerald-800 hover:underline">
+                        {b.name} →
+                      </Link>
+                    ))}
+                </span>
+              ) : product.offer.kind === "gift" && product.offer.gift ? (
+                <Link
+                  href={`/product/${product.offer.gift.slug}`}
+                  className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
+                >
+                  {product.offer.gift.name} →
+                </Link>
+              ) : (
+                <Link
+                  href={`/products?store=${product.store}`}
+                  className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
+                >
+                  {t("offer.shopItems")} →
+                </Link>
+              )}
             </div>
           </div>
         )}

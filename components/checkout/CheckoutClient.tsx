@@ -9,7 +9,7 @@
 import { deliveryTimeFor, localiseTime, readDeliveryCity, shortName } from "@/components/layout/DeliveryCity";
 import { usePrefs } from "@/components/prefs/PrefsProvider";
 import StoreAvatar from "@/components/StoreAvatar";
-import { promoMatches, readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
+import { readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
 import { attributePurchase } from "@/lib/reco/metrics-client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -20,7 +20,7 @@ import OrderConfirmation, {
 import ProductImage from "@/components/ProductImage";
 import { CartSkeleton } from "@/components/cart/CartClient";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
-import { useCartPricing } from "@/components/cart/useCartPricing";
+import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
@@ -304,10 +304,10 @@ export default function CheckoutClient({
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [promoError, setPromoError] = useState(false);
-  useEffect(() => setAppliedPromo(readAppliedPromo(promo)), [promo]);
+  useEffect(() => setAppliedPromo(readAppliedPromo()), [promo]);
 
-  function applyPromo() {
-    if (promoMatches(promoInput, promo)) {
+  async function applyPromo() {
+    if (await verifyCode(promoInput.trim().toUpperCase())) {
       const code = promoInput.trim().toUpperCase();
       setAppliedPromo(code);
       writeAppliedPromo(code);
@@ -673,7 +673,7 @@ export default function CheckoutClient({
   /** Subtotal → total, with the promo field and the delivery promise. */
   const totals = (
     <>
-      {promo.code && promo.pct > 0 && !appliedPromo && (
+      {!appliedPromo && (
         <div className="mt-4">
           {promoOpen ? (
             <div>

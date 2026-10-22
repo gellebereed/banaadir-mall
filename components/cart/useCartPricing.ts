@@ -55,3 +55,16 @@ export function useCartPricing(lines: LineLike[], promoCode: string | null) {
     stale: state !== null && state.key !== key,
   };
 }
+
+/**
+ * Is this code worth applying — the marketplace promo, or a live shop
+ * coupon? Asked of the server, which is the only place that knows.
+ */
+export async function verifyCode(code: string): Promise<boolean> {
+  try {
+    const { checkCodeAction } = await import("@/app/actions");
+    return (await checkCodeAction(code)).ok;
+  } catch {
+    return false;
+  }
+}

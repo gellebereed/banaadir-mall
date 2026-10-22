@@ -1369,12 +1369,37 @@ export async function createOffer(_prev: SaveState, formData: FormData): Promise
 
   const raw = parseJsonField<Record<string, unknown>>(formData.get("offerJson"), {});
   const num = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : Number(v));
-  const kinds = ["next_fixed", "next_pct", "bxgy", "tiers", "spend"] as const;
+  const kinds = ["next_fixed", "next_pct", "bxgy", "tiers", "spend", "bundle", "mix", "gift"] as const;
   const kind = kinds.find((k) => k === raw.kind);
   if (!kind) return { ok: false, message: "Choose a type of offer." };
 
-  const { getBaseProductsByStore } = await import("@/lib/api");
-  const own = new Set((await getBaseProductsByStore(store)).map((p) => p.id));
+  const { getBaseProductsByStore, getOffers, getMarketingSettings } = await import("@/lib/api");
+  const ownProducts = await getBaseProductsByStore(store);
+  const own = new Set(ownProducts.map((p) => p.id));
+  // Products the offer names, captured with their names so the cart can
+  // say "add the Oxford Shirt" for something not in the basket yet.
+  const ref = (id: string) => {
+    const p = ownProducts.find((x) => x.id === id);
+    return p
+      ? { productId: p.id, name: p.name, slug: p.slug, price: p.price, image: p.images?.[0], icon: p.icon }
+      : undefined;
+  };
+  const bundle =
+    kind === "bundle" && Array.isArray(raw.bundleIds)
+      ? [...new Set(raw.bundleIds.map(String))].map(ref).filter((r) => r !== undefined).slice(0, 6)
+      : undefined;
+  const gift = kind === "gift" && raw.giftId ? ref(String(raw.giftId)) : undefined;
+
+  // A shop coupon code must not clash with the marketplace code or with
+  // another live offer's code — one code, one meaning.
+  const code = String(raw.code ?? "").trim().toUpperCase() || undefined;
+  if (code) {
+    const [offers, marketing] = await Promise.all([getOffers(), getMarketingSettings()]);
+    if (code === marketing.promo.code.trim().toUpperCase())
+      return { ok: false, message: "That code is the marketplace's own promo code — choose another." };
+    if (offers.some((o) => o.code === code && o.active))
+      return { ok: false, message: "Another offer already uses that code — choose another." };
+  }
   // Scope and products come from the form's own fields (ProductPicker
   // submits hidden `productIds`), and only this shop's products count.
   const scopedToProducts = String(formData.get("scope")) === "products";
@@ -1389,9 +1414,10 @@ export async function createOffer(_prev: SaveState, formData: FormData): Promise
     name: String(raw.name ?? "").trim().slice(0, 80) || "Shop offer",
     kind,
     active: true,
-    productIds: scopedToProducts ? productIds : [],
+    // A bundle covers exactly its own products.
+    productIds: kind === "bundle" ? (bundle ?? []).map((b) => b.productId) : scopedToProducts ? productIds : [],
     fullPriceOnly: raw.fullPriceOnly === true,
-    price: kind === "next_fixed" ? num(raw.price) : undefined,
+    price: kind === "next_fixed" || kind === "bundle" || kind === "mix" ? num(raw.price) : undefined,
     pct: kind === "next_pct" || kind === "bxgy" || (kind === "spend" && !num(raw.amountOff)) ? num(raw.pct) : undefined,
     buy: kind === "bxgy" ? Math.floor(num(raw.buy) ?? 0) : undefined,
     get: kind === "bxgy" ? Math.floor(num(raw.get) ?? 0) : undefined,
@@ -1402,9 +1428,15 @@ export async function createOffer(_prev: SaveState, formData: FormData): Promise
             .filter((t) => t.minQty > 0 && t.pct > 0)
             .slice(0, 5)
         : undefined,
-    minSpend: kind === "spend" ? num(raw.minSpend) : undefined,
+    minSpend: kind === "spend" || kind === "gift" ? num(raw.minSpend) : undefined,
     amountOff: kind === "spend" ? num(raw.amountOff) : undefined,
     maxPerOrder: num(raw.maxPerOrder) ? Math.max(1, Math.floor(num(raw.maxPerOrder)!)) : undefined,
+    qty: kind === "mix" ? Math.floor(num(raw.qty) ?? 0) : undefined,
+    bundle,
+    gift,
+    code,
+    maxUses: num(raw.maxUses) ? Math.floor(num(raw.maxUses)!) : undefined,
+    budget: num(raw.budget) || undefined,
     startsAt: String(raw.startsAt ?? "").trim() || undefined,
     endsAt: String(raw.endsAt ?? "").trim() || undefined,
     createdAt: new Date().toISOString(),
@@ -1447,7 +1479,8 @@ async function findOwnOffer(id: string): Promise<{ session: Session; offer: Offe
 export async function toggleOffer(id: string): Promise<void> {
   const found = await findOwnOffer(id);
   if (!found) return;
-  const next = { ...found.offer, active: !found.offer.active };
+  // Switching a used-up offer back on starts it afresh.
+  const next = { ...found.offer, active: !found.offer.active, usedUpAt: undefined };
   if (useSupabaseMutations()) await upsertOfferInSupabase(next);
   else
     await mutateDB((db) => {
@@ -2456,6 +2489,15 @@ export interface ResolvedParcel {
  * exactly this — they all go through lib/cart-pricing.ts. Line keys in the
  * result are the items' positions in the request.
  */
+/** Check a code typed in the cart: the marketplace promo or a shop coupon. */
+export async function checkCodeAction(
+  code: string,
+): Promise<{ ok: boolean; status: import("@/lib/cart-pricing").PromoStatus | null }> {
+  const { checkCode } = await import("@/lib/cart-pricing");
+  const status = await checkCode(String(code ?? "").slice(0, 30));
+  return { ok: Boolean(status && (status.valid || status.shopOffers.length > 0)), status };
+}
+
 export async function priceCartAction(
   items: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
   promoCode?: string,
@@ -2619,7 +2661,7 @@ export async function submitOrderAction(payload: {
           qty: c.qty,
           name: i.name,
           price: c.price,
-          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName } : {}),
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
           image: i.image,
           store: storeSlug,
           storeName: i.storeName,
@@ -2651,7 +2693,7 @@ export async function submitOrderAction(payload: {
           name: i.name,
           qty: c.qty,
           price: c.price,
-          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName } : {}),
+          ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
           options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
           reference: i.reference,
           image: i.image,
@@ -2661,6 +2703,26 @@ export async function submitOrderAction(payload: {
   }
 
   refresh();
+  // An offer with an order limit or a budget switches itself off once it
+  // is used up, so its badge stops promising a deal that has run out.
+  const limited = Object.values(priced.pricing.stores)
+    .flatMap((st) => st.applied.map((a) => a.offer))
+    .filter((o) => o.maxUses || o.budget);
+  if (limited.length > 0) {
+    const { getOrders } = await import("@/lib/api");
+    const { isExhausted, offerUsageFrom } = await import("@/lib/offers");
+    const usage = offerUsageFrom(await getOrders());
+    for (const offer of limited) {
+      if (!isExhausted(offer, usage[offer.id])) continue;
+      const ended = { ...offer, active: false, usedUpAt: new Date().toISOString() };
+      if (useSupabaseMutations()) await upsertOfferInSupabase(ended);
+      else
+        await mutateDB((db) => {
+          db.offers = (db.offers ?? []).map((o) => (o.id === offer.id ? ended : o));
+        });
+    }
+  }
+
   const discount = Math.round((priced.pricing.offerDiscount + priced.pricing.promoDiscount) * 100) / 100;
   return { ok: true, message: "Order placed successfully!", orderId: id, discount, parcels };
 }

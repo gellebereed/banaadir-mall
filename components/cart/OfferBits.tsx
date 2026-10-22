@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useT } from "@/components/prefs/PrefsProvider";
+import { useCart } from "@/lib/cart-context";
 import type { PromoStatus } from "@/lib/cart-pricing";
 import { money } from "@/lib/format";
 import { nudgeText, offerHeadline, type CartPricing, type LinePricing, type StorePricing } from "@/lib/offers";
@@ -48,6 +49,7 @@ export function LinePrice({
 /** Under a shop's header: what its offers saved, and what would unlock more. */
 export function ParcelOffers({ store, compact = false }: { store?: StorePricing; compact?: boolean }) {
   const t = useT();
+  const { addToCart } = useCart();
   if (!store || (store.applied.length === 0 && store.nudges.length === 0)) return null;
   return (
     <div className={`space-y-1.5 ${compact ? "mb-2" : "border-b border-sand-100 px-4 py-3"}`}>
@@ -62,12 +64,37 @@ export function ParcelOffers({ store, compact = false }: { store?: StorePricing;
           key={n.offer.id + n.kind}
           className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-mango-500/10 px-3 py-2 text-xs font-semibold text-ocean-900"
         >
-          <span>💡 {nudgeText(n, t, money)}</span>
-          {!compact && (
+          <span>{n.kind === "giftAdd" ? "🎀" : "💡"} {nudgeText(n, t, money)}</span>
+          {n.kind === "giftAdd" ? (
+            <button
+              type="button"
+              onClick={() =>
+                addToCart({
+                  productId: n.gift.productId,
+                  qty: 1,
+                  snapshot: {
+                    name: n.gift.name,
+                    price: n.gift.price ?? 0,
+                    icon: n.gift.icon ?? "🎁",
+                    slug: n.gift.slug,
+                    store: n.offer.store,
+                    image: n.gift.image,
+                  },
+                })
+              }
+              className="shrink-0 rounded-full bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-700"
+            >
+              {t("offer.addGift")}
+            </button>
+          ) : !compact && n.kind === "bundle" ? (
+            <Link href={`/product/${n.missing[0].slug}`} className="shrink-0 font-bold text-ocean-700 hover:underline">
+              {t("offer.viewItem")} →
+            </Link>
+          ) : !compact ? (
             <Link href={`/products?store=${store.store}`} className="shrink-0 font-bold text-ocean-700 hover:underline">
               {t("offer.shopItems")} →
             </Link>
-          )}
+          ) : null}
         </p>
       ))}
     </div>
@@ -103,7 +130,7 @@ export function DiscountRows({
         <div className="text-emerald-700">
           <div className="flex justify-between">
             <dt className="flex items-center gap-2">
-              {t("cart.discount", { code, pct })}
+              {promo?.valid ? t("cart.discount", { code, pct }) : t("offer.codeLine", { code })}
               <button
                 type="button"
                 onClick={onRemove}
@@ -112,16 +139,27 @@ export function DiscountRows({
                 {t("cart.remove")}
               </button>
             </dt>
-            <dd className="font-semibold tabular-nums">
-              {pricing ? `−${money(pricing.promoDiscount)}` : "…"}
-            </dd>
+            {(!pricing || promo?.valid) && (
+              <dd className="font-semibold tabular-nums">
+                {pricing ? `−${money(pricing.promoDiscount)}` : "…"}
+              </dd>
+            )}
           </div>
-          {/* The code is the shops' to honour — say plainly where it doesn't. */}
-          {pricing && promo?.valid && accepting === 0 && (
+          {/* A shop's own coupon: its saving shows under "Shop offers". */}
+          {pricing && promo && promo.shopOffers.map((o) => (
+            <p key={o.store + o.name} className="mt-1 text-xs font-medium">
+              ✓ {t("offer.codeUnlocked", { code, name: o.name })}
+            </p>
+          ))}
+          {/* The marketplace code is the shops' to honour — say plainly where it doesn't. */}
+          {pricing && promo?.valid && accepting === 0 && promo.shopOffers.length === 0 && (
             <p className="mt-1 text-xs font-medium text-amber-700">{t("offer.promoNotHere", { code })}</p>
           )}
           {pricing && promo?.valid && accepting > 0 && accepting < shops.length && (
             <p className="mt-1 text-xs font-medium text-slate-500">{t("offer.promoSome", { n: accepting })}</p>
+          )}
+          {pricing && promo && !promo.valid && promo.shopOffers.length === 0 && (
+            <p className="mt-1 text-xs font-medium text-coral-600">{t("offer.codeInvalid")}</p>
           )}
         </div>
       )}

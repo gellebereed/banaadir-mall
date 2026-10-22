@@ -645,7 +645,7 @@ export async function ringUpSale(_prev: SaleResult, formData: FormData): Promise
         qty: c.qty,
         name: line.name,
         price: c.price,
-        ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName } : {}),
+        ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
         store: storeSlug,
       })),
     ),

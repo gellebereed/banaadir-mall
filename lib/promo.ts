@@ -13,10 +13,15 @@ export function promoMatches(input: string, promo: { code: string; pct: number }
   return Boolean(code) && promo.pct > 0 && input.trim().toUpperCase() === code;
 }
 
-export function readAppliedPromo(promo: { code: string; pct: number }): string | null {
+/**
+ * The code applied earlier in this visit, if any. Not checked here: the
+ * code may be the marketplace promo or a shop's own coupon, and only the
+ * server knows which (priceCartAction says, every time it prices).
+ */
+export function readAppliedPromo(): string | null {
   try {
-    const saved = sessionStorage.getItem(PROMO_KEY);
-    return saved && promoMatches(saved, promo) ? saved.trim().toUpperCase() : null;
+    const saved = sessionStorage.getItem(PROMO_KEY)?.trim().toUpperCase();
+    return saved && /^[A-Z0-9]{3,20}$/.test(saved) ? saved : null;
   } catch {
     return null;
   }

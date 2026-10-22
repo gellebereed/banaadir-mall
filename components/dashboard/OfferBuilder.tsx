@@ -5,7 +5,7 @@ import { createOffer, type SaveState } from "@/app/actions";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { money } from "@/lib/format";
 import { offerHeadline, offerProblem, offerTerms, priceCart } from "@/lib/offers";
-import type { Category, Offer, OfferKind, Product } from "@/lib/types";
+import type { Category, Offer, OfferKind, OfferProductRef, Product } from "@/lib/types";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 
@@ -22,6 +22,15 @@ interface Template {
 }
 
 const round = (n: number, step: number) => Math.max(step, Math.round(n / step) * step);
+
+const toRef = (p: Product): OfferProductRef => ({
+  productId: p.id,
+  name: p.name,
+  slug: p.slug,
+  price: p.price,
+  image: p.images?.[0],
+  icon: p.icon,
+});
 
 /**
  * The templates, with numbers suggested from the shop's OWN prices — a
@@ -70,6 +79,47 @@ function templatesFor(products: Product[]): Template[] {
       pitch: `Spend ${money(spendAt)}, save ${money(save)} — suggested from your prices (a typical item is ${money(median)}).`,
       draft: { kind: "spend", minSpend: spendAt, amountOff: save },
     },
+    ...bundleTemplates(products, median, spendAt),
+  ];
+}
+
+/** Set price, mix & match and free gift — seeded with the shop's own items. */
+function bundleTemplates(products: Product[], median: number, spendAt: number): Template[] {
+  const byPrice = [...products].filter((p) => p.price > 0).sort((a, b) => b.price - a.price);
+  const pair = byPrice.slice(0, 2);
+  const pairSum = pair.reduce((t, p) => t + p.price, 0);
+  const cheapest = byPrice[byPrice.length - 1];
+  const mixPrice = round(median * 3 * 0.8, 5);
+  return [
+    {
+      kind: "bundle",
+      icon: "🧩",
+      title: "Bundle price",
+      pitch: pair.length === 2
+        ? `${pair[0].name} + ${pair[1].name} together for ${money(round(pairSum * 0.85, 1))} instead of ${money(pairSum)}.`
+        : "Chosen products together for one price — complete the look.",
+      draft: {
+        kind: "bundle",
+        bundle: pair.map(toRef),
+        price: pair.length === 2 ? round(pairSum * 0.85, 1) : undefined,
+      },
+    },
+    {
+      kind: "mix",
+      icon: "🔀",
+      title: "Mix & match",
+      pitch: `Any 3 for ${money(mixPrice)} — customers pick, you move more items.`,
+      draft: { kind: "mix", qty: 3, price: mixPrice },
+    },
+    {
+      kind: "gift",
+      icon: "🎀",
+      title: "Free gift",
+      pitch: cheapest
+        ? `Free ${cheapest.name} when they spend ${money(spendAt)}.`
+        : "A free product when they spend enough.",
+      draft: { kind: "gift", minSpend: spendAt, gift: cheapest ? toRef(cheapest) : undefined },
+    },
   ];
 }
 
@@ -80,8 +130,31 @@ function exampleBasket(offer: Offer, products: Product[]): { product: Product; q
     .sort((a, b) => b.price - a.price);
   if (pool.length === 0) return [];
 
+  if (offer.kind === "bundle") {
+    return (offer.bundle ?? [])
+      .map((b) => products.find((p) => p.id === b.productId))
+      .filter((p): p is Product => Boolean(p))
+      .map((product) => ({ product, qty: 1 }));
+  }
+  if (offer.kind === "gift") {
+    const gift = products.find((p) => p.id === offer.gift?.productId);
+    const basket: { product: Product; qty: number }[] = [];
+    const others = pool.filter((p) => p.id !== gift?.id);
+    let sum = 0;
+    for (let i = 0; i < 8 && others.length && sum < (offer.minSpend ?? 0); i++) {
+      const product = others[i % others.length];
+      const line = basket.find((b) => b.product.id === product.id);
+      if (line) line.qty += 1;
+      else basket.push({ product, qty: 1 });
+      sum += product.price;
+    }
+    if (gift) basket.push({ product: gift, qty: 1 });
+    return basket;
+  }
+
   let units = 2;
   if (offer.kind === "bxgy") units = (offer.buy ?? 1) + (offer.get ?? 1);
+  if (offer.kind === "mix") units = Math.max(2, offer.qty ?? 2);
   if (offer.kind === "tiers") units = Math.max(2, ...(offer.tiers ?? []).map((t) => t.minQty));
   if (offer.kind === "spend") {
     const basket: { product: Product; qty: number }[] = [];
@@ -148,7 +221,8 @@ export default function OfferBuilder({
       qty: b.qty,
       onSale: (b.product.compareAt ?? 0) > b.product.price,
     })),
-    problem ? [] : [{ ...offer, productIds: [], startsAt: undefined, endsAt: undefined }],
+    problem ? [] : [{ ...offer, productIds: offer.kind === "bundle" ? offer.productIds : [], startsAt: undefined, endsAt: undefined }],
+    { codes: offer.code ? [offer.code] : [] },
   );
 
   // Margin guard: any unit in the example sold below what it cost the shop.
@@ -161,7 +235,7 @@ export default function OfferBuilder({
     .filter(Boolean) as { product: Product; price: number }[];
 
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
-  const numField = (key: "price" | "pct" | "buy" | "get" | "minSpend" | "amountOff" | "maxPerOrder", label: string, opts: { prefix?: string; suffix?: string; min?: number; max?: number; step?: number } = {}) => (
+  const numField = (key: "price" | "pct" | "buy" | "get" | "minSpend" | "amountOff" | "maxPerOrder" | "qty" | "maxUses" | "budget", label: string, opts: { prefix?: string; suffix?: string; min?: number; max?: number; step?: number } = {}) => (
     <div>
       <label htmlFor={`offer-${key}`} className="label">{label}</label>
       <div className="flex items-center gap-2">
@@ -185,7 +259,7 @@ export default function OfferBuilder({
   return (
     <form action={formAction} className="mt-4 space-y-5">
       {/* 1 — what kind of offer */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {templates.map((template) => (
           <button
             key={template.kind}
@@ -209,7 +283,18 @@ export default function OfferBuilder({
 
       {kind && (
         <div className="animate-fade-up space-y-5">
-          <input type="hidden" name="offerJson" value={JSON.stringify({ ...draft, name: shownName, startsAt, endsAt })} />
+          <input
+            type="hidden"
+            name="offerJson"
+            value={JSON.stringify({
+              ...draft,
+              bundleIds: draft.bundle?.map((b) => b.productId),
+              giftId: draft.gift?.productId,
+              name: shownName,
+              startsAt,
+              endsAt,
+            })}
+          />
 
           {/* 2 — the numbers */}
           <div className="grid gap-4 sm:grid-cols-3">
@@ -228,8 +313,44 @@ export default function OfferBuilder({
                 {numField("amountOff", "They save", { prefix: "$", min: 0, step: 0.5 })}
               </>
             )}
-            {kind !== "tiers" && kind !== "spend" && numField("maxPerOrder", "Times per order (blank = no limit)", { min: 1 })}
+            {kind === "bundle" && numField("price", "The whole set costs", { prefix: "$", min: 0, step: 0.5 })}
+            {kind === "mix" && (
+              <>
+                {numField("qty", "Any this many items", { min: 2, max: 10 })}
+                {numField("price", "For", { prefix: "$", min: 0, step: 0.5 })}
+              </>
+            )}
+            {kind === "gift" && numField("minSpend", "When they spend", { prefix: "$", min: 1 })}
+            {kind !== "tiers" && kind !== "spend" && kind !== "gift" &&
+              numField("maxPerOrder", "Times per order (blank = no limit)", { min: 1 })}
           </div>
+
+          {kind === "mix" && scope === "store" && (
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+              💡 Mix &amp; match works best on products of a similar price — with your whole shop, a
+              customer can pick your dearest items (the preview below shows exactly that). Choose
+              &ldquo;Selected products&rdquo; below to limit it.
+            </p>
+          )}
+
+          {kind === "bundle" && (
+            <ProductChooser
+              label="Products in the set (2–6, one of each)"
+              products={products}
+              chosen={draft.bundle ?? []}
+              max={6}
+              onChange={(bundle) => set({ bundle })}
+            />
+          )}
+          {kind === "gift" && (
+            <ProductChooser
+              label="The free gift"
+              products={products}
+              chosen={draft.gift ? [draft.gift] : []}
+              max={1}
+              onChange={(chosen) => set({ gift: chosen[0] })}
+            />
+          )}
 
           {kind === "tiers" && (
             <div className="space-y-2">
@@ -296,8 +417,8 @@ export default function OfferBuilder({
             </span>
           </label>
 
-          {/* 3 — which products */}
-          <div>
+          {/* 3 — which products (a bundle names its own) */}
+          <div className={kind === "bundle" ? "hidden" : ""}>
             <span className="label">Applies to</span>
             <div className="grid gap-3 sm:grid-cols-2">
               {(
@@ -333,6 +454,30 @@ export default function OfferBuilder({
               </div>
             )}
           </div>
+
+          {/* Limits and a private coupon code */}
+          <details className="rounded-2xl border border-sand-200 bg-sand-50 p-4" open={Boolean(draft.code || draft.maxUses || draft.budget)}>
+            <summary className="cursor-pointer text-sm font-bold text-ocean-800">
+              🔒 Coupon code &amp; limits (optional)
+            </summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              <div>
+                <label htmlFor="offer-code" className="label">Only with this code</label>
+                <input
+                  id="offer-code"
+                  value={draft.code ?? ""}
+                  onChange={(e) => set({ code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) || undefined })}
+                  placeholder="e.g. SAHRA15"
+                  className="input uppercase"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  A private deal for your Instagram or WhatsApp followers — no badge on your products.
+                </p>
+              </div>
+              {numField("maxUses", "Stop after this many orders", { min: 1 })}
+              {numField("budget", "Stop when customers have saved", { prefix: "$", min: 1 })}
+            </div>
+          </details>
 
           {/* 4 — name and dates */}
           <div className="grid gap-4 sm:grid-cols-3">
@@ -420,5 +565,76 @@ export default function OfferBuilder({
         </div>
       )}
     </form>
+  );
+}
+
+/** Pick products by name — for a bundle's members or the free gift. */
+function ProductChooser({
+  label,
+  products,
+  chosen,
+  max,
+  onChange,
+}: {
+  label: string;
+  products: Product[];
+  chosen: OfferProductRef[];
+  max: number;
+  onChange: (chosen: OfferProductRef[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? products.filter((p) => p.name.toLowerCase().includes(q) && !chosen.some((c) => c.productId === p.id)).slice(0, 8)
+    : [];
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <div className="flex flex-wrap gap-2">
+        {chosen.map((c) => (
+          <span key={c.productId} className="flex items-center gap-1.5 rounded-full bg-ocean-50 px-3 py-1.5 text-xs font-semibold text-ocean-900 ring-1 ring-ocean-200">
+            {c.name}
+            {typeof c.price === "number" && <span className="text-slate-500">{money(c.price)}</span>}
+            <button
+              type="button"
+              aria-label={`Remove ${c.name}`}
+              onClick={() => onChange(chosen.filter((x) => x.productId !== c.productId))}
+              className="text-slate-400 hover:text-coral-600"
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      {chosen.length < max && (
+        <div className="relative mt-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search your products…"
+            className="input"
+          />
+          {matches.length > 0 && (
+            <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-sand-200 bg-white shadow-lg">
+              {matches.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(max === 1 ? [toRef(p)] : [...chosen, toRef(p)]);
+                      setQuery("");
+                    }}
+                    className="flex w-full justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-sand-50"
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <span className="shrink-0 text-slate-500">{money(p.price)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

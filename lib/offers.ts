@@ -26,7 +26,7 @@
  */
 
 import type { T } from "./i18n";
-import type { Offer } from "./types";
+import type { Offer, OfferProductRef } from "./types";
 
 export interface PricingLine {
   /** Unique per cart line (the product id — one line per product). */
@@ -60,7 +60,12 @@ export type Nudge =
   | { kind: "next"; offer: Offer; upTo: number }
   | { kind: "bxgy"; offer: Offer; more: number }
   | { kind: "tiers"; offer: Offer; more: number; pct: number }
-  | { kind: "spend"; offer: Offer; more: number };
+  | { kind: "spend"; offer: Offer; more: number }
+  | { kind: "bundle"; offer: Offer; missing: OfferProductRef[] }
+  | { kind: "mix"; offer: Offer; more: number }
+  /** The gift is earned but not in the cart yet — offer to add it. */
+  | { kind: "giftAdd"; offer: Offer; gift: OfferProductRef }
+  | { kind: "giftSpend"; offer: Offer; gift: OfferProductRef; more: number };
 
 export interface StorePricing {
   store: string;
@@ -82,6 +87,14 @@ export interface CartPricing {
   offerDiscount: number;
   promoDiscount: number;
   total: number;
+}
+
+/** How much an offer has been used so far — for maxUses and budget. */
+export interface OfferUsage {
+  /** Orders (parcels) it was applied to. */
+  uses: number;
+  /** What customers saved through it. */
+  saved: number;
 }
 
 export interface PromoInput {
@@ -124,7 +137,12 @@ interface Evaluation {
 /** Highest price first; ties keep basket order so results are stable. */
 const byPriceDesc = (a: Unit, b: Unit) => b.price - a.price || a.idx - b.idx;
 
-function evaluate(offer: Offer, units: Unit[]): Evaluation {
+/**
+ * What `offer` would take off the free units. `all` is every unit of the
+ * shop, used only for thresholds that count the whole basket (a free gift
+ * is earned by everything bought, even items another offer discounted).
+ */
+function evaluate(offer: Offer, units: Unit[], all: Unit[] = units): Evaluation {
   const discounts = new Map<number, number>();
   const used: number[] = [];
   const pool = units.filter(
@@ -182,15 +200,53 @@ function evaluate(offer: Offer, units: Unit[]): Evaluation {
         const off = offer.amountOff
           ? Math.min(offer.amountOff, sum)
           : (sum * clampPct(offer.pct)) / 100;
-        // Spread across the units in proportion to price, so a returned
-        // item refunds its fair share. The last unit takes the rounding.
-        let left = round2(off);
-        sorted.forEach((u, i) => {
-          used.push(u.idx);
-          const share = i === sorted.length - 1 ? left : round2((off * u.price) / sum);
-          left = round2(left - share);
-          discounts.set(u.idx, share);
-        });
+        spread(sorted, off, discounts, used);
+      }
+      break;
+    }
+    case "bundle": {
+      // One of each member per set; the set costs `price` together.
+      const members = [...new Set((offer.bundle ?? []).map((b) => b.productId))];
+      if (members.length < 2) break;
+      const queues = members.map((id) => units.filter((u) => u.productId === id && u.price > 0));
+      const sets = Math.min(...queues.map((q) => q.length), limit);
+      for (let i = 0; i < sets; i++) {
+        const set = queues.map((q) => q[i]);
+        const sum = set.reduce((t, u) => t + u.price, 0);
+        const off = sum - Math.max(0, offer.price ?? 0);
+        if (off > 0) spread(set, off, discounts, used);
+      }
+      break;
+    }
+    case "mix": {
+      // Any `qty` for `price`: the dearest items first, so the saving is
+      // as large as it can be.
+      const n = Math.max(2, Math.floor(offer.qty ?? 2));
+      const groups = Math.min(Math.floor(sorted.length / n), limit);
+      for (let g = 0; g < groups; g++) {
+        const group = sorted.slice(g * n, (g + 1) * n);
+        const sum = group.reduce((t, u) => t + u.price, 0);
+        const off = sum - Math.max(0, offer.price ?? 0);
+        if (off > 0) spread(group, off, discounts, used);
+      }
+      break;
+    }
+    case "gift": {
+      const giftId = offer.gift?.productId;
+      if (!giftId) break;
+      // Earned by what else is in the basket — the gift itself doesn't count.
+      const spent = all
+        .filter(
+          (u) =>
+            u.productId !== giftId &&
+            (!offer.productIds?.length || offer.productIds.includes(u.productId)) &&
+            !(offer.fullPriceOnly && u.onSale),
+        )
+        .reduce((t, u) => t + u.price, 0);
+      const giftUnit = units.find((u) => u.productId === giftId && u.price > 0);
+      if (giftUnit && spent > 0 && spent >= (offer.minSpend ?? 0)) {
+        used.push(giftUnit.idx);
+        discounts.set(giftUnit.idx, giftUnit.price);
       }
       break;
     }
@@ -199,6 +255,22 @@ function evaluate(offer: Offer, units: Unit[]): Evaluation {
   let total = 0;
   for (const value of discounts.values()) total += value;
   return { discounts, used, total: round2(total) };
+}
+
+/**
+ * Spread a saving across units in proportion to price, so a returned item
+ * refunds its fair share. The last unit takes the rounding.
+ */
+function spread(units: Unit[], off: number, discounts: Map<number, number>, used: number[]) {
+  const sum = units.reduce((t, u) => t + u.price, 0);
+  if (sum <= 0) return;
+  let left = round2(Math.min(off, sum));
+  units.forEach((u, i) => {
+    used.push(u.idx);
+    const share = i === units.length - 1 ? left : round2((Math.min(off, sum) * u.price) / sum);
+    left = round2(left - share);
+    discounts.set(u.idx, Math.max(0, share));
+  });
 }
 
 function bestTier(offer: Offer, count: number) {
@@ -248,7 +320,55 @@ function nudgeFor(offer: Offer, units: Unit[], applied: number): Nudge | null {
       const min = offer.minSpend ?? 0;
       return sum < min ? { kind: "spend", offer, more: round2(min - sum) } : null;
     }
+    case "bundle": {
+      const bundle = offer.bundle ?? [];
+      const have = new Set(units.map((u) => u.productId));
+      const missing = bundle.filter((b) => !have.has(b.productId));
+      // Only once they have started the set, and only if it's incomplete.
+      return missing.length > 0 && missing.length < bundle.length ? { kind: "bundle", offer, missing } : null;
+    }
+    case "mix": {
+      const n = Math.max(2, Math.floor(offer.qty ?? 2));
+      const rest = pool.length % n;
+      if (rest === 0 || Math.floor(pool.length / n) >= limit) return null;
+      return { kind: "mix", offer, more: n - rest };
+    }
+    case "gift": {
+      const gift = offer.gift;
+      if (!gift || applied > 0) return null;
+      const spent = pool.filter((u) => u.productId !== gift.productId).reduce((t, u) => t + u.price, 0);
+      const min = offer.minSpend ?? 0;
+      if (spent >= min) {
+        return units.some((u) => u.productId === gift.productId) ? null : { kind: "giftAdd", offer, gift };
+      }
+      return { kind: "giftSpend", offer, gift, more: round2(min - spent) };
+    }
   }
+}
+
+/** Used up: as many orders as allowed, or the budget spent. */
+export function isExhausted(offer: Offer, used?: OfferUsage): boolean {
+  if (!used) return false;
+  if (offer.maxUses && used.uses >= offer.maxUses) return true;
+  if (offer.budget && used.saved >= offer.budget) return true;
+  return false;
+}
+
+/** Never give away more than what is left of the offer's budget. */
+function capToBudget(offer: Offer, ev: Evaluation, used?: OfferUsage): Evaluation {
+  if (!offer.budget || ev.total <= 0) return ev;
+  const left = round2(offer.budget - (used?.saved ?? 0));
+  if (ev.total <= left) return ev;
+  if (left <= 0) return { discounts: new Map(), used: [], total: 0 };
+  const factor = left / ev.total;
+  const discounts = new Map<number, number>();
+  let total = 0;
+  for (const [idx, off] of ev.discounts) {
+    const scaled = round2(off * factor);
+    discounts.set(idx, scaled);
+    total += scaled;
+  }
+  return { discounts, used: ev.used, total: round2(total) };
 }
 
 /**
@@ -262,10 +382,24 @@ function nudgeFor(offer: Offer, units: Unit[], applied: number): Nudge | null {
 export function priceCart(
   lines: PricingLine[],
   offers: Offer[],
-  options: { promo?: PromoInput | null; now?: Date } = {},
+  options: {
+    promo?: PromoInput | null;
+    now?: Date;
+    /** Shop coupon codes entered (upper case). Coded offers need theirs. */
+    codes?: string[];
+    /** Use so far per offer id — for maxUses and budget. */
+    usage?: Record<string, OfferUsage>;
+  } = {},
 ): CartPricing {
   const now = options.now ?? new Date();
-  const live = offers.filter((o) => isOfferLive(o, now));
+  const codes = new Set((options.codes ?? []).map((c) => c.trim().toUpperCase()));
+  const usage = options.usage ?? {};
+  const live = offers.filter(
+    (o) =>
+      isOfferLive(o, now) &&
+      (!o.code || codes.has(o.code.toUpperCase())) &&
+      !isExhausted(o, usage[o.id]),
+  );
   const promo = options.promo && options.promo.pct > 0 ? options.promo : null;
 
   const units: Unit[] = [];
@@ -296,7 +430,7 @@ export function priceCart(
       const free = storeUnits.filter((u) => !consumed.has(u.idx));
       let best: { offer: Offer; ev: Evaluation } | null = null;
       for (const offer of remaining) {
-        const ev = evaluate(offer, free);
+        const ev = capToBudget(offer, evaluate(offer, free, storeUnits), usage[offer.id]);
         if (ev.total > 0 && (!best || ev.total > best.ev.total)) best = { offer, ev };
       }
       if (!best) break;
@@ -381,14 +515,53 @@ export function priceCart(
  * so "1 × Shirt $75" and "1 × Shirt $1 (Next for $1)" are separate lines a
  * picker and an accountant can both read.
  */
-export function groupUnits(line: LinePricing): { qty: number; price: number; listPrice: number; offerName?: string }[] {
-  const groups: { qty: number; price: number; listPrice: number; offerName?: string }[] = [];
+export interface ChargedGroup {
+  qty: number;
+  price: number;
+  listPrice: number;
+  offerName?: string;
+  offerId?: string;
+}
+
+export function groupUnits(line: LinePricing): ChargedGroup[] {
+  const groups: ChargedGroup[] = [];
   for (const unit of line.units) {
-    const existing = groups.find((g) => g.price === unit.price && g.offerName === unit.offerName);
+    const existing = groups.find((g) => g.price === unit.price && g.offerId === unit.offerId);
     if (existing) existing.qty += 1;
-    else groups.push({ qty: 1, price: unit.price, listPrice: unit.listPrice, offerName: unit.offerName });
+    else
+      groups.push({
+        qty: 1,
+        price: unit.price,
+        listPrice: unit.listPrice,
+        offerName: unit.offerName,
+        offerId: unit.offerId,
+      });
   }
   return groups;
+}
+
+/**
+ * Use so far per offer, counted from recorded orders: each order (parcel)
+ * an offer appears in, and what it took off. Cancelled orders don't count.
+ */
+export function offerUsageFrom(
+  orders: { status?: string; items: { offerId?: string; price?: number; listPrice?: number; qty: number }[] }[],
+): Record<string, OfferUsage> {
+  const usage: Record<string, OfferUsage> = {};
+  for (const order of orders) {
+    if (order.status === "cancelled") continue;
+    const seen = new Set<string>();
+    for (const item of order.items) {
+      if (!item.offerId || item.offerId === "promo" || item.listPrice === undefined || item.price === undefined) continue;
+      const entry = (usage[item.offerId] ??= { uses: 0, saved: 0 });
+      if (!seen.has(item.offerId)) {
+        entry.uses += 1;
+        seen.add(item.offerId);
+      }
+      entry.saved = round2(entry.saved + (item.listPrice - item.price) * item.qty);
+    }
+  }
+  return usage;
 }
 
 // ── Words ───────────────────────────────────────────────────────────────
@@ -416,6 +589,12 @@ export function offerHeadline(offer: Offer, t: T, money: Money): string {
       return offer.amountOff
         ? t("offer.spendAmount", { min: money(offer.minSpend ?? 0), amount: money(offer.amountOff) })
         : t("offer.spendPct", { min: money(offer.minSpend ?? 0), pct: offer.pct ?? 0 });
+    case "bundle":
+      return t("offer.bundle", { price: money(offer.price ?? 0) });
+    case "mix":
+      return t("offer.mix", { qty: offer.qty ?? 2, price: money(offer.price ?? 0) });
+    case "gift":
+      return t("offer.gift", { gift: offer.gift?.name ?? "", min: money(offer.minSpend ?? 0) });
   }
 }
 
@@ -425,7 +604,11 @@ export function offerTerms(offer: Offer, t: T): string[] {
   if (offer.kind === "next_fixed" || offer.kind === "next_pct") terms.push(t("offer.term.equalOrLower"));
   if (offer.kind === "bxgy") terms.push(t("offer.term.cheapest"));
   if (offer.fullPriceOnly) terms.push(t("offer.term.fullPrice"));
+  if (offer.kind === "bundle" && offer.bundle?.length)
+    terms.push(t("offer.term.bundle", { items: offer.bundle.map((b) => b.name).join(" + ") }));
   if (offer.maxPerOrder) terms.push(t("offer.term.limit", { n: offer.maxPerOrder }));
+  if (offer.maxUses) terms.push(t("offer.term.maxUses", { n: offer.maxUses }));
+  if (offer.code) terms.push(t("offer.term.code", { code: offer.code }));
   return terms;
 }
 
@@ -447,6 +630,17 @@ export function nudgeText(nudge: Nudge, t: T, money: Money): string {
       return offer.amountOff
         ? t("offer.nudge.spendAmount", { more: money(nudge.more), amount: money(offer.amountOff) })
         : t("offer.nudge.spendPct", { more: money(nudge.more), pct: offer.pct ?? 0 });
+    case "bundle":
+      return t("offer.nudge.bundle", {
+        items: nudge.missing.map((m) => m.name).join(" + "),
+        price: money(offer.price ?? 0),
+      });
+    case "mix":
+      return t("offer.nudge.mix", { n: nudge.more, qty: offer.qty ?? 2, price: money(offer.price ?? 0) });
+    case "giftAdd":
+      return t("offer.nudge.giftAdd", { gift: nudge.gift.name });
+    case "giftSpend":
+      return t("offer.nudge.giftSpend", { more: money(nudge.more), gift: nudge.gift.name });
   }
 }
 
@@ -476,9 +670,29 @@ export function offerProblem(offer: Offer): string | null {
       if (!(offer.amountOff && offer.amountOff > 0) && !pctOk(offer.pct)) return "Set the saving — an amount or a percentage.";
       if (offer.amountOff && offer.amountOff >= offer.minSpend) return "The saving must be less than the amount spent.";
       break;
+    case "bundle":
+      if ((offer.bundle?.length ?? 0) < 2) return "Pick at least two products for the set.";
+      if (!offer.price || offer.price <= 0) return "Set what the whole set costs.";
+      if (offer.bundle!.every((b) => typeof b.price === "number")) {
+        const full = offer.bundle!.reduce((t, b) => t + (b.price ?? 0), 0);
+        if (offer.price >= full) return `The set price must be less than buying them separately (${full.toFixed(2)}).`;
+      }
+      break;
+    case "mix":
+      if (!offer.qty || offer.qty < 2) return "A group needs at least 2 items.";
+      if (!offer.price || offer.price <= 0) return "Set what the group costs.";
+      break;
+    case "gift":
+      if (!offer.gift) return "Choose the free gift.";
+      if (!offer.minSpend || offer.minSpend <= 0) return "Set how much the customer must spend.";
+      break;
     default:
       return "Unknown offer type.";
   }
+  if (offer.code !== undefined && !/^[A-Z0-9]{3,20}$/.test(offer.code))
+    return "A coupon code is 3–20 letters or numbers, no spaces.";
+  if (offer.maxUses !== undefined && !(offer.maxUses >= 1)) return "The order limit must be 1 or more.";
+  if (offer.budget !== undefined && !(offer.budget > 0)) return "The budget must be more than zero.";
   if (offer.startsAt && offer.endsAt && new Date(offer.startsAt) >= new Date(offer.endsAt))
     return "The end date must come after the start date.";
   return null;

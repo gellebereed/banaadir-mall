@@ -352,6 +352,8 @@ export interface OrderItem {
   listPrice?: number;
   /** Name of the offer or promo code behind the lower price. */
   offer?: string;
+  /** Its id, so usage limits and budgets can be counted. "promo" for the marketplace code. */
+  offerId?: string;
   image?: string;
   selectedColor?: string;
   selectedSize?: string;
@@ -518,7 +520,26 @@ export type OfferKind =
   /** Quantity tiers: n+ items, every one `pct`% off. */
   | "tiers"
   /** Spend `minSpend`, save `amountOff` (or `pct`%). */
-  | "spend";
+  | "spend"
+  /** One of each product in `bundle` for `price` together. */
+  | "bundle"
+  /** Any `qty` items (from the scope) for `price` together. */
+  | "mix"
+  /** Spend `minSpend` and `gift` is free. */
+  | "gift";
+
+/**
+ * A product an offer names, captured when the offer is saved so the cart
+ * can say "add the Oxford Shirt" for an item that isn't in it yet.
+ */
+export interface OfferProductRef {
+  productId: string;
+  name: string;
+  slug: string;
+  price?: number;
+  image?: string;
+  icon?: string;
+}
 
 export interface Offer {
   id: string;
@@ -541,6 +562,23 @@ export interface Offer {
   amountOff?: number;
   /** How many times one order may use it (pairs / groups). Empty: no limit. */
   maxPerOrder?: number;
+  /** bundle: the products in the set (also listed in productIds). */
+  bundle?: OfferProductRef[];
+  /** mix: how many items make a group. */
+  qty?: number;
+  /** gift: the free product. */
+  gift?: OfferProductRef;
+  /**
+   * A shop coupon: the offer only applies when this code is entered —
+   * for the shop's own Instagram or WhatsApp followers. Upper case.
+   */
+  code?: string;
+  /** Stop after this many orders have used it. */
+  maxUses?: number;
+  /** Stop once customers have saved this much in total (the shop's cost). */
+  budget?: number;
+  /** Set when the offer switched itself off after its order limit or budget ran out. */
+  usedUpAt?: string;
   startsAt?: string;
   endsAt?: string;
   createdAt?: string;

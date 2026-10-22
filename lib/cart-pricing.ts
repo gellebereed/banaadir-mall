@@ -7,8 +7,8 @@
  * uses the same engine for walk-in sales. See lib/offers.ts for the rules.
  */
 
-import { getAllProducts, getMarketingSettings, getOffers } from "./api";
-import { priceCart, type CartPricing, type PricingLine } from "./offers";
+import { getAllProducts, getMarketingSettings, getOffers, getOrders } from "./api";
+import { isExhausted, isOfferLive, offerUsageFrom, priceCart, type CartPricing, type OfferUsage, type PricingLine } from "./offers";
 import { findVariant, variantPrice } from "./product-utils";
 import type { Product } from "./types";
 
@@ -29,6 +29,8 @@ export interface PromoStatus {
   valid: boolean;
   /** Shops that accepted it. */
   stores: string[];
+  /** Shop coupons this code unlocks (an offer with this `code`). */
+  shopOffers: { store: string; name: string }[];
 }
 
 export interface ServerPricing {
@@ -48,6 +50,7 @@ export async function priceItems(
     getOffers(),
     getMarketingSettings(),
   ]);
+  const usage = await usageFor(offers);
   const byId = new Map(catalog.map((p) => [p.id, p]));
 
   const products = items.map((item) => byId.get(item.productId));
@@ -67,18 +70,49 @@ export async function priceItems(
   });
 
   const typed = (promoCode ?? "").trim().toUpperCase();
-  const code = marketing.promo.code.trim().toUpperCase();
-  const promo: PromoStatus | null = typed
-    ? {
-        code: typed,
-        pct: marketing.promo.pct,
-        valid: Boolean(code) && marketing.promo.pct > 0 && typed === code,
-        stores: marketing.promo.stores ?? [],
-      }
-    : null;
+  const promo = typed ? codeStatus(typed, marketing.promo, offers, usage) : null;
 
   const pricing = priceCart(lines, offers, {
     promo: promo?.valid ? { code: promo.code, pct: promo.pct, stores: promo.stores } : null,
+    codes: typed ? [typed] : [],
+    usage,
   });
   return { pricing, lines, products, promo };
+}
+
+/** What a typed code is: the marketplace promo, a shop coupon, or nothing. */
+function codeStatus(
+  typed: string,
+  marketplace: { code: string; pct: number; stores?: string[] },
+  offers: Awaited<ReturnType<typeof getOffers>>,
+  usage: Record<string, OfferUsage>,
+): PromoStatus {
+  const code = marketplace.code.trim().toUpperCase();
+  const shopOffers = offers
+    .filter((o) => o.code === typed && isOfferLive(o) && !isExhausted(o, usage[o.id]))
+    .map((o) => ({ store: o.store, name: o.name }));
+  return {
+    code: typed,
+    pct: marketplace.pct,
+    valid: Boolean(code) && marketplace.pct > 0 && typed === code,
+    stores: marketplace.stores ?? [],
+    shopOffers,
+  };
+}
+
+/**
+ * Usage so far — only worked out when some live offer is actually limited,
+ * because it means reading the orders.
+ */
+async function usageFor(offers: Awaited<ReturnType<typeof getOffers>>): Promise<Record<string, OfferUsage>> {
+  if (!offers.some((o) => isOfferLive(o) && (o.maxUses || o.budget))) return {};
+  return offerUsageFrom(await getOrders());
+}
+
+/** Is this code worth applying? Marketplace promo or a live shop coupon. */
+export async function checkCode(promoCode: string): Promise<PromoStatus | null> {
+  const typed = promoCode.trim().toUpperCase();
+  if (!typed) return null;
+  const [offers, marketing] = await Promise.all([getOffers(), getMarketingSettings()]);
+  return codeStatus(typed, marketing.promo, offers, await usageFor(offers));
 }

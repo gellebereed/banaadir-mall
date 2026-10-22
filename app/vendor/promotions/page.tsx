@@ -16,7 +16,7 @@ import {
   getPromotionsByStore,
   isPromotionLive,
 } from "@/lib/api";
-import { isOfferLive, offerHeadline, offerTerms } from "@/lib/offers";
+import { isOfferLive, offerHeadline, offerTerms, offerUsageFrom } from "@/lib/offers";
 import { getT } from "@/lib/prefs-server";
 import { may } from "@/lib/auth";
 import { money, shortDate } from "@/lib/format";
@@ -74,6 +74,8 @@ export default async function VendorPromotionsPage() {
       offerResults.set(item.offer, result);
     }
   }
+  // By id — exact, and what limits and budgets are counted by.
+  const usageById = offerUsageFrom(orders);
   const promoJoined = (marketing.promo.stores ?? []).includes(storeSlug);
   const campaignJoined = (marketing.campaign.stores ?? []).includes(storeSlug);
 
@@ -103,10 +105,13 @@ export default async function VendorPromotionsPage() {
       {offers.length > 0 && (
         <div className="mt-5 space-y-3">
           {offers.map((offer) => {
-            const status = promoStatus(offer);
+            const status = offer.usedUpAt
+              ? { label: "Used up", tone: "bg-amber-100 text-amber-800" }
+              : promoStatus(offer);
             const live = isOfferLive(offer);
             const targeted = offer.productIds?.length ?? 0;
-            const result = offerResults.get(offer.name);
+            const byId = usageById[offer.id];
+            const result = byId ? { orders: byId.uses, saved: byId.saved } : offerResults.get(offer.name);
             return (
               <div key={offer.id} className="card flex flex-wrap items-center gap-4 p-4">
                 <span
@@ -140,6 +145,25 @@ export default async function VendorPromotionsPage() {
                       ? ` · used in ${result.orders} order${result.orders === 1 ? "" : "s"}, customers saved ${money(result.saved)}`
                       : " · not used yet"}
                   </p>
+                  {(offer.code || offer.maxUses || offer.budget) && (
+                    <p className="mt-1 flex flex-wrap gap-2 text-[11px] font-semibold">
+                      {offer.code && (
+                        <span className="rounded-full bg-ocean-50 px-2 py-0.5 text-ocean-800 ring-1 ring-ocean-200">
+                          🔒 Code {offer.code}
+                        </span>
+                      )}
+                      {offer.maxUses && (
+                        <span className="rounded-full bg-sand-100 px-2 py-0.5 text-slate-600">
+                          {result?.orders ?? 0} / {offer.maxUses} orders
+                        </span>
+                      )}
+                      {offer.budget && (
+                        <span className="rounded-full bg-sand-100 px-2 py-0.5 text-slate-600">
+                          {money(result?.saved ?? 0)} of {money(offer.budget)} budget
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <form action={toggleOffer.bind(null, offer.id)}>

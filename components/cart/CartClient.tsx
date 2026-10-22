@@ -9,11 +9,11 @@ import { useT } from "@/components/prefs/PrefsProvider";
 import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
-import { useCartPricing } from "@/components/cart/useCartPricing";
+import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import { groupByStore } from "@/lib/order-utils";
-import { promoMatches, readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
+import { readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
 import type { MarketingSettings, Store } from "@/lib/types";
 
 /**
@@ -45,7 +45,7 @@ export default function CartClient({
   const [promoError, setPromoError] = useState(false);
 
   // Restore a code applied earlier in this visit (or on the checkout page).
-  useEffect(() => setApplied(readAppliedPromo(promo)), [promo]);
+  useEffect(() => setApplied(readAppliedPromo()), [promo]);
 
   const units = lines.reduce((sum, l) => sum + l.qty, 0);
 
@@ -65,9 +65,9 @@ export default function CartClient({
     [lines],
   );
 
-  function applyPromo(e: React.FormEvent) {
+  async function applyPromo(e: React.FormEvent) {
     e.preventDefault();
-    if (promoMatches(promoInput, promo)) {
+    if (await verifyCode(promoInput.trim().toUpperCase())) {
       const code = promoInput.trim().toUpperCase();
       setApplied(code);
       writeAppliedPromo(code);
@@ -305,7 +305,7 @@ export default function CartClient({
 
               {/* Collapsed by default: an open code box tells everyone
                   without a code that they are paying more than somebody. */}
-              {promo.code && promo.pct > 0 && !applied && (
+              {!applied && (
                 <div className="mt-3">
                   {promoOpen ? (
                     <form onSubmit={applyPromo} className="animate-fade-up">

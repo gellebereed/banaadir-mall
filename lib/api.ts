@@ -375,7 +375,8 @@ export async function getAllProducts(): Promise<Product[]> {
     // The shop offer this product counts towards, for its badge. A "full
     // price only" offer skips products already marked down.
     const onSale = (priced.compareAt ?? 0) > priced.price;
-    const offer = live.find((o) => offerCovers(o, p.id, p.store) && !(o.fullPriceOnly && onSale));
+    // Coupon-only offers are private to whoever has the code — no badge.
+    const offer = live.find((o) => !o.code && offerCovers(o, p.id, p.store) && !(o.fullPriceOnly && onSale));
     return offer ? { ...priced, offer } : priced;
   });
 }
