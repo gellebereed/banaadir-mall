@@ -1,5 +1,6 @@
 "use client";
 
+import PendingButton from "@/components/dashboard/PendingButton";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
@@ -806,7 +807,7 @@ function StatusToggles({ product: p, mayEdit }: { product: Product; mayEdit: boo
   return (
     <div className="flex items-center gap-1.5">
       <form action={toggleProductHidden.bind(null, p.id)}>
-        <button
+        <PendingButton
           type="submit"
           title={p.hidden ? "Hidden — click to put it in the shop" : "Live — click to hide it from the shop"}
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
@@ -817,10 +818,10 @@ function StatusToggles({ product: p, mayEdit }: { product: Product; mayEdit: boo
         >
           <span className={`h-1.5 w-1.5 rounded-full ${p.hidden ? "bg-slate-400" : "bg-emerald-500"}`} />
           {p.hidden ? "Hidden" : "Live"}
-        </button>
+        </PendingButton>
       </form>
       <form action={toggleProductFeatured.bind(null, p.id)}>
-        <button
+        <PendingButton iconOnly
           type="submit"
           title={p.featured ? "Featured on your brand page — click to remove" : "Feature on your brand page"}
           aria-label={p.featured ? "Unfeature" : "Feature"}
@@ -829,7 +830,7 @@ function StatusToggles({ product: p, mayEdit }: { product: Product; mayEdit: boo
           }`}
         >
           {p.featured ? "★" : "☆"}
-        </button>
+        </PendingButton>
       </form>
     </div>
   );

@@ -5,7 +5,8 @@ import { requestFlashDeal, type SaveState } from "@/app/actions";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
-import type { Category, Product } from "@/lib/types";
+import type { Category } from "@/lib/types";
+import type { PickerProduct } from "@/lib/product-utils";
 
 const INITIAL: SaveState = { ok: false, message: "" };
 
@@ -19,7 +20,7 @@ export default function FlashRequestForm({
   campaignEndsAt,
 }: {
   /** Products not already waiting or in the campaign. */
-  products: Product[];
+  products: PickerProduct[];
   categories: Category[];
   /** The campaign's end, as a datetime-local value — the latest a shop can pick. */
   campaignEndsAt?: string;

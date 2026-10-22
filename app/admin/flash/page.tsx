@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { decideFlashRequest } from "@/app/actions";
 import FlashDealForm from "@/components/dashboard/FlashDealForm";
+import SubmitButton from "@/components/dashboard/SubmitButton";
+import { pickerProduct } from "@/lib/product-utils";
 import ProductImage from "@/components/ProductImage";
 import { dealProblem, flashState } from "@/lib/flash";
 import { formatShopTime } from "@/lib/shop-time";
@@ -123,14 +125,20 @@ export default async function AdminFlashPage() {
                   </div>
                   <div className="flex gap-2">
                     <form action={decideFlashRequest.bind(null, r.id, "approved")}>
-                      <button className="rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700">
+                      <SubmitButton
+                        pendingLabel="Approving…"
+                        className="rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700"
+                      >
                         Approve
-                      </button>
+                      </SubmitButton>
                     </form>
                     <form action={decideFlashRequest.bind(null, r.id, "rejected")}>
-                      <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-100">
+                      <SubmitButton
+                        pendingLabel="Rejecting…"
+                        className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-100"
+                      >
                         Reject
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 </div>
@@ -169,7 +177,7 @@ export default async function AdminFlashPage() {
         <h2 className="font-display font-bold text-ocean-950">Campaign</h2>
         <FlashDealForm
           flash={flash}
-          products={products}
+          products={products.map(pickerProduct)}
           categories={categories}
           stores={stores}
         />

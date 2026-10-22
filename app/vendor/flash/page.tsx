@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { withdrawFlashRequest } from "@/app/actions";
 import FlashRequestForm from "@/components/dashboard/FlashRequestForm";
+import SubmitButton from "@/components/dashboard/SubmitButton";
+import { pickerProduct } from "@/lib/product-utils";
 import ProductImage from "@/components/ProductImage";
 import {
   getBaseProductsByStore,
@@ -93,7 +95,7 @@ export default async function VendorFlashPage() {
           to be accepted.
         </p>
         <FlashRequestForm
-          products={available}
+          products={available.map(pickerProduct)}
           categories={categories}
           campaignEndsAt={flash.endsAt ? toShopInput(flash.endsAt) : undefined}
         />
@@ -135,9 +137,12 @@ export default async function VendorFlashPage() {
                 {status.label}
               </span>
               <form action={withdrawFlashRequest.bind(null, r.id)}>
-                <button className="text-xs font-bold text-slate-400 hover:text-coral-600 hover:underline">
+                <SubmitButton
+                  pendingLabel={r.status === "approved" ? "Leaving…" : "Removing…"}
+                  className="text-xs font-bold text-slate-400 hover:text-coral-600 hover:underline"
+                >
                   {r.status === "approved" && inCampaign.has(r.productId) ? "Leave campaign" : r.status === "pending" ? "Withdraw" : "Remove"}
-                </button>
+                </SubmitButton>
               </form>
             </div>
           );

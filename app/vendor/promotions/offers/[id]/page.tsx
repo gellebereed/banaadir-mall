@@ -1,3 +1,4 @@
+import PendingButton from "@/components/dashboard/PendingButton";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -84,13 +85,13 @@ export default async function OfferResultsPage({ params }: { params: Promise<{ i
           </p>
         </div>
         <form action={toggleOffer.bind(null, offer.id)}>
-          <button
+          <PendingButton
             className={`rounded-full px-4 py-2 text-sm font-bold transition ${
               offer.active ? "bg-sand-100 text-slate-600 hover:bg-sand-200" : "bg-emerald-600 text-white hover:bg-emerald-700"
             }`}
           >
             {offer.active ? "Pause offer" : "Switch on"}
-          </button>
+          </PendingButton>
         </form>
       </div>
 

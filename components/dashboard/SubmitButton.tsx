@@ -2,6 +2,7 @@
 
 import { useContext } from "react";
 import { useFormStatus } from "react-dom";
+import { Spinner } from "./PendingButton";
 import { SafeFormPendingContext } from "./SafeForm";
 
 /**
@@ -31,9 +32,19 @@ export default function SubmitButton({
     <button
       type="submit"
       disabled={pending}
-      className={`${className} disabled:cursor-not-allowed disabled:opacity-60`}
+      aria-busy={pending}
+      className={`${className} disabled:cursor-wait disabled:opacity-70`}
     >
-      {pending ? pendingLabel : children}
+      {pending ? (
+        // A turning ring as well as the words: a label change alone is easy
+        // to miss on a small button, and then it looks like nothing happened.
+        <span className="inline-flex items-center justify-center gap-1.5">
+          <Spinner />
+          {pendingLabel}
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 }

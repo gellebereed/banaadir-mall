@@ -1,3 +1,4 @@
+import PendingButton from "@/components/dashboard/PendingButton";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -181,9 +182,9 @@ export default async function VendorPromotionsPage() {
                         price, and it is set to full-price items only.
                       </p>
                       <form action={includeSaleItemsInOffer.bind(null, offer.id)} className="mt-1.5">
-                        <button className="rounded-full bg-amber-600 px-3 py-1 font-bold text-white hover:bg-amber-700">
+                        <PendingButton className="rounded-full bg-amber-600 px-3 py-1 font-bold text-white hover:bg-amber-700">
                           Count sale items too
-                        </button>
+                        </PendingButton>
                       </form>
                     </div>
                   ) : coverage.eligible === 0 ? (
@@ -208,7 +209,7 @@ export default async function VendorPromotionsPage() {
                     Results →
                   </Link>
                   <form action={toggleOffer.bind(null, offer.id)}>
-                    <button
+                    <PendingButton
                       className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
                         offer.active
                           ? "bg-sand-100 text-slate-600 hover:bg-sand-200"
@@ -216,12 +217,12 @@ export default async function VendorPromotionsPage() {
                       }`}
                     >
                       {offer.active ? "Pause" : "Activate"}
-                    </button>
+                    </PendingButton>
                   </form>
                   <form action={deleteOffer.bind(null, offer.id)}>
-                    <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+                    <PendingButton className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
                       Delete
-                    </button>
+                    </PendingButton>
                   </form>
                 </div>
               </div>
@@ -339,7 +340,7 @@ export default async function VendorPromotionsPage() {
               </div>
               <div className="flex gap-2">
                 <form action={togglePromotion.bind(null, promo.id)}>
-                  <button
+                  <PendingButton
                     className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
                       promo.active
                         ? "bg-sand-100 text-slate-600 hover:bg-sand-200"
@@ -347,12 +348,12 @@ export default async function VendorPromotionsPage() {
                     }`}
                   >
                     {promo.active ? "Pause" : "Activate"}
-                  </button>
+                  </PendingButton>
                 </form>
                 <form action={deletePromotion.bind(null, promo.id)}>
-                  <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+                  <PendingButton className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
                     Delete
-                  </button>
+                  </PendingButton>
                 </form>
               </div>
             </div>

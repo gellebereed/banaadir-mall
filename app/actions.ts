@@ -12,7 +12,7 @@
  */
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
+import { ALL_CACHE_TAGS, CACHE_TAGS } from "@/lib/supabase/public-client";
 import { redirect } from "next/navigation";
 import {
   findCodeConflicts,
@@ -3158,7 +3158,11 @@ async function persistFlash(change: {
     }
     if (change.remove?.length) db.flashRequests = db.flashRequests.filter((r) => !change.remove!.includes(r.id));
   });
-  refresh();
+  // Only what flash touches. refresh() drops EVERY cached table — orders,
+  // stores, categories… — so the page drawn after an Approve had to fetch
+  // all of them from Supabase again, for nothing that changed.
+  revalidateTag(CACHE_TAGS.flash);
+  revalidatePath("/", "page");
   return null;
 }
 

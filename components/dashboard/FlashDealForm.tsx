@@ -6,7 +6,8 @@ import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import useRefreshOnSuccess from "./useRefreshOnSuccess";
 import { toShopInput } from "@/lib/shop-time";
-import type { Category, Product, Store } from "@/lib/types";
+import type { Category, Store } from "@/lib/types";
+import type { PickerProduct } from "@/lib/product-utils";
 
 const INITIAL: SaveState = { ok: false, message: "" };
 
@@ -22,7 +23,7 @@ export default function FlashDealForm({
   stores,
 }: {
   flash: { active: boolean; name: string; endsAt: string; productIds: string[] };
-  products: Product[];
+  products: PickerProduct[];
   categories: Category[];
   stores: Store[];
 }) {
