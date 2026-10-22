@@ -22,6 +22,10 @@ const nextConfig: NextConfig = {
      */
     // 40: light data mode (lib/lite.ts).
     qualities: [40, 75, 90],
+    // AVIF first: the same photo at roughly half the WebP bytes on the
+    // browsers that take it (every current one); WebP for the rest. The
+    // encode is slower, but it happens once per size and is then cached.
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       {
         protocol: "https",

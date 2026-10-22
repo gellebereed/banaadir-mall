@@ -80,6 +80,19 @@ const M = {
 
   // ── Home page ─────────────────────────────────────────────────────────
   "home.startShopping": { en: "Start Shopping", so: "Bilow Iibsashada" },
+  "hero.flash.eyebrow": { en: "⚡ Flash deals", so: "⚡ Qiimo-dhimis degdeg ah" },
+  "hero.flash.title": { en: "Up to {pct}% off", so: "Ilaa {pct}% dhimis" },
+  "hero.flash.cta": { en: "Shop the deals", so: "Eeg qiimo-dhimista" },
+  "hero.offer.eyebrow": { en: "🎁 Shop offer · {store}", so: "🎁 Dalab dukaan · {store}" },
+  "hero.offer.sub": {
+    en: "Taken off automatically in your cart — no code needed.",
+    so: "Si toos ah ayaa looga jarayaa gaadhigaaga — kood looma baahna.",
+  },
+  "hero.offer.cta": { en: "Shop {store}", so: "Ka iibso {store}" },
+  "hero.new.eyebrow": { en: "✨ New in", so: "✨ Cusub" },
+  "hero.new.cta": { en: "See what's new", so: "Eeg waxa cusub" },
+  "hero.brands.eyebrow": { en: "✓ 100% genuine", so: "✓ 100% asal ah" },
+  "hero.brands.cta": { en: "Meet the brands", so: "Baro summadaha" },
   "home.welcome": { en: "Welcome back, {name} 👋", so: "Ku soo dhowow, {name} 👋" },
   "home.order.pending": { en: "Order #{id} has been received — track it", so: "Dalabka #{id} waa la helay — la soco" },
   "home.order.processing": { en: "Order #{id} is being prepared — track it", so: "Dalabka #{id} waa la diyaarinayaa — la soco" },

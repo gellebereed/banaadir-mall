@@ -2,7 +2,7 @@
 
 import { usePrefs } from "@/components/prefs/PrefsProvider";
 import { LITE_QUALITY } from "@/lib/lite";
-import Image from "next/image";
+import Image, { getImageProps } from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -62,6 +62,14 @@ export interface HeroSlide {
    * decoration, and never renders a scrim it does not need.
    */
   brand?: boolean;
+  /**
+   * A live-data slide's picture side — real products, brand logos — built
+   * on the server. Unlike the brand decoration it shows on phones too, as a
+   * compact row above the copy.
+   */
+  visual?: ReactNode;
+  /** Under the subtitle: the flash-deal countdown, in practice. */
+  below?: ReactNode;
 }
 
 const AUTOPLAY_MS = 6000;
@@ -78,6 +86,24 @@ export default function HeroCarousel({
   const [paused, setPaused] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const count = slides.length;
+  const { lite } = usePrefs();
+
+  /*
+   * Which slides' artwork has been asked for. Stacked slides used to all
+   * load their photos up front — four banners meant four full-width images
+   * competing with the first screen for a phone's bandwidth, three of them
+   * invisible. Now: the slide on screen, plus (after the page has loaded)
+   * the NEXT one so autoplay never fades to a blank frame, plus any slide
+   * already shown. Light data mode skips the look-ahead.
+   */
+  const [wanted, setWanted] = useState<Set<number>>(() => new Set([0]));
+  useEffect(() => {
+    setWanted((prev) => {
+      const ahead = lite || count < 2 ? [] : [(index + 1) % count];
+      if ([index, ...ahead].every((i) => prev.has(i))) return prev;
+      return new Set([...prev, index, ...ahead]);
+    });
+  }, [index, count, lite]);
 
   const go = useCallback(
     (next: number) => setIndex(((next % count) + count) % count),
@@ -92,9 +118,7 @@ export default function HeroCarousel({
    * idea the first three existed.
    */
   // Light data mode: no autoplay — each slide's photo is only fetched
-  // when the shopper actually swipes to it (see HeroSlideView).
-  const { lite } = usePrefs();
-
+  // when the shopper actually swipes to it.
   useEffect(() => {
     if (paused || count < 2 || lite) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
@@ -145,6 +169,7 @@ export default function HeroCarousel({
             slide={slide}
             active={i === index}
             priority={i === 0}
+            loadArt={wanted.has(i)}
             decoration={slide.brand ? brandDecoration : undefined}
           />
         ))}
@@ -185,26 +210,23 @@ function HeroSlideView({
   slide,
   active,
   priority,
+  loadArt,
   decoration,
 }: {
   slide: HeroSlide;
   active: boolean;
   priority: boolean;
+  loadArt: boolean;
   decoration?: ReactNode;
 }) {
   const hasText = Boolean(slide.title || slide.subtitle || slide.cta);
   const contain = slide.fit === "contain";
   const hasArt = Boolean(slide.image || slide.mobileImage);
   const { lite } = usePrefs();
-  // Every slide's photo normally loads up front (they are stacked, only one
-  // visible). In light data mode only slides that have been shown load,
-  // and at lower quality.
-  const [seen, setSeen] = useState(active);
-  useEffect(() => {
-    if (active) setSeen(true);
-  }, [active]);
-  const loadArt = !lite || seen;
-  const quality = lite ? LITE_QUALITY : undefined;
+  // Artwork that is shown whole ("contain") is almost always a designed
+  // banner with lettering on it, and 75 is where small type starts to
+  // fringe. Photos that fill the frame hide it; they stay at the default.
+  const quality = lite ? LITE_QUALITY : contain ? 90 : undefined;
 
   return (
     <div
@@ -215,30 +237,7 @@ function HeroSlideView({
       style={{ background: `linear-gradient(125deg, ${slide.from}, ${slide.to})` }}
     >
       {/* Artwork. Portrait on phones when the admin supplied one. */}
-      {slide.mobileImage && loadArt && (
-        <Image
-          src={slide.mobileImage}
-          alt=""
-          fill
-          quality={quality}
-          sizes="100vw"
-          priority={priority}
-          className={`sm:hidden ${contain ? "object-contain" : "object-cover"}`}
-        />
-      )}
-      {slide.image && loadArt && (
-        <Image
-          src={slide.image}
-          alt=""
-          fill
-          quality={quality}
-          sizes="100vw"
-          priority={priority}
-          className={`${slide.mobileImage ? "hidden sm:block" : ""} ${
-            contain ? "object-contain" : "object-cover"
-          }`}
-        />
-      )}
+      {hasArt && loadArt && <SlideArt slide={slide} quality={quality} priority={priority} />}
 
       {/* Brand-slide atmosphere — the soft colour blooms behind the copy. */}
       {slide.brand && (
@@ -262,7 +261,7 @@ function HeroSlideView({
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/35 to-black/10 sm:bg-gradient-to-r sm:from-black/70 sm:via-black/30 sm:to-transparent" />
       )}
 
-      <div className="relative mx-auto grid h-full max-w-7xl items-end gap-8 px-5 pb-10 pt-6 sm:items-center sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
+      <div className="relative mx-auto grid h-full max-w-7xl content-end items-end gap-4 px-5 pb-10 pt-6 sm:content-center sm:items-center sm:gap-8 sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
         <div className={active ? "animate-fade-up" : ""}>
           {slide.eyebrow && (
             <span className="hidden items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 sm:inline-flex text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm">
@@ -277,8 +276,18 @@ function HeroSlideView({
           )}
 
           {slide.subtitle && (
-            <p className="mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg">{slide.subtitle}</p>
+            // A slide with something underneath (the countdown) drops its
+            // subtitle on a phone — the frame there has room for one.
+            <p
+              className={`mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg ${
+                slide.below ? "hidden sm:block" : ""
+              }`}
+            >
+              {slide.subtitle}
+            </p>
           )}
+
+          {slide.below && <div className="mt-3 sm:mt-4">{slide.below}</div>}
 
           {(slide.cta || slide.secondaryCta) && (
             <div className="mt-4 flex flex-wrap items-center gap-3 sm:mt-6">
@@ -299,6 +308,10 @@ function HeroSlideView({
           )}
         </div>
 
+        {slide.visual && (
+          <div className="order-first lg:order-none">{slide.visual}</div>
+        )}
+
         {decoration && (
           <div className="relative mx-auto hidden h-[440px] w-full max-w-lg lg:block">
             {decoration}
@@ -316,6 +329,46 @@ function HeroSlideView({
       )}
     </div>
   );
+}
+
+/**
+ * One slide's artwork, and only ONE download for it.
+ *
+ * Two <Image>s toggled with `sm:hidden` / `hidden sm:block` look like art
+ * direction but are not: CSS hides an image, it does not stop the browser
+ * fetching it, so every phone paid for the wide banner as well (and every
+ * computer for the portrait one). A <picture> lets the browser choose
+ * before it fetches. getImageProps keeps next/image's resizing and AVIF/WebP
+ * negotiation for both sources.
+ */
+function SlideArt({
+  slide,
+  quality,
+  priority,
+}: {
+  slide: HeroSlide;
+  quality?: number;
+  priority: boolean;
+}) {
+  const fit = slide.fit === "contain" ? "object-contain" : "object-cover";
+  const common = { alt: "", fill: true, sizes: "100vw", quality, priority } as const;
+
+  if (slide.image && slide.mobileImage) {
+    const {
+      props: { srcSet: mobileSrcSet },
+    } = getImageProps({ ...common, src: slide.mobileImage });
+    const { props } = getImageProps({ ...common, src: slide.image });
+    return (
+      <picture>
+        <source media="(max-width: 639px)" srcSet={mobileSrcSet} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img {...props} alt="" className={fit} />
+      </picture>
+    );
+  }
+
+  const src = slide.image ?? slide.mobileImage!;
+  return <Image {...common} src={src} className={fit} />;
 }
 
 function HeroArrow({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {

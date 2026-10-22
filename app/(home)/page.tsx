@@ -12,6 +12,7 @@ import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import { discountPct, money } from "@/lib/format";
+import { offerHeadline } from "@/lib/offers";
 import { getSession } from "@/lib/session";
 import { getT } from "@/lib/prefs-server";
 import { RAIL_CARD } from "@/lib/card-sizes";
@@ -142,6 +143,99 @@ export default async function HomePage() {
         }))
       : []),
   ];
+
+  /*
+   * ── Smart slides ─────────────────────────────────────────────────────
+   *
+   * A hero that only ever says "welcome" is wasted on everyone who has
+   * already been welcomed. After the admin's banners (paid placements go
+   * first), the frame fills itself from what is actually true on the
+   * marketplace today — the flash sale and when it ends, a shop's live
+   * offer, what just landed, the official brands — each with real
+   * products at real prices, so every slide is something a shopper can
+   * act on. Nothing here is invented: a slide with no data behind it is
+   * simply not built. Each follows its own section's switch in
+   * /admin/marketing, so hiding Flash Deals hides its slide too.
+   */
+  const MAX_SLIDES = 6;
+  const smart: HeroSlide[] = [];
+
+  if (isVisibleSection(marketing, "flash") && flashProducts.length > 0) {
+    const best = Math.max(
+      ...flashProducts.map((p) => (p.compareAt && p.compareAt > p.price ? discountPct(p.price, p.compareAt) : 0)),
+    );
+    smart.push({
+      id: "__flash__",
+      href: "/flash",
+      eyebrow: t("hero.flash.eyebrow"),
+      title: best > 0 ? t("hero.flash.title", { pct: best }) : flash.name,
+      subtitle: best > 0 ? flash.name : undefined,
+      cta: t("hero.flash.cta"),
+      below: (
+        <span className="inline-flex rounded-full bg-white/95 px-3 py-1.5 shadow-sm">
+          <CountdownTimer endsAt={flash.endsAt} />
+        </span>
+      ),
+      from: "#5c1a10",
+      to: "#d9542c",
+      visual: <HeroShelf products={flashProducts.slice(0, 4)} />,
+    });
+  }
+
+  // The shop offer with the most products behind it — a public one (coupon
+  // offers never get a badge, so they never reach here).
+  const offerShelves = new Map<string, Product[]>();
+  for (const p of allProducts) {
+    if (!p.offer) continue;
+    offerShelves.set(p.offer.id, [...(offerShelves.get(p.offer.id) ?? []), p]);
+  }
+  const topOffer = [...offerShelves.values()].sort((a, b) => b.length - a.length)[0];
+  if (topOffer) {
+    const offer = topOffer[0].offer!;
+    const shop = stores.find((s) => s.slug === offer.store);
+    const shopName = shop?.name ?? offer.store.replace(/-/g, " ");
+    smart.push({
+      id: "__offer__",
+      href: `/store/${offer.store}`,
+      eyebrow: t("hero.offer.eyebrow", { store: shopName }),
+      title: offerHeadline(offer, t, money),
+      subtitle: t("hero.offer.sub"),
+      cta: t("hero.offer.cta", { store: shopName }),
+      from: "#0f3527",
+      to: "#2a8a57",
+      visual: <HeroShelf products={topOffer.slice(0, 4)} />,
+    });
+  }
+
+  if (isVisibleSection(marketing, "new") && newArrivals.length > 0) {
+    smart.push({
+      id: "__new__",
+      href: "/products?sort=new",
+      eyebrow: t("hero.new.eyebrow"),
+      title: t("section.new"),
+      subtitle: t("section.new.sub"),
+      cta: t("hero.new.cta"),
+      from: "#3b2208",
+      to: "#b5761a",
+      visual: <HeroShelf products={newArrivals.slice(0, 4)} />,
+    });
+  }
+
+  if (isVisibleSection(marketing, "brands") && officialBrands.length >= 2) {
+    smart.push({
+      id: "__brands__",
+      href: "/stores",
+      eyebrow: t("hero.brands.eyebrow"),
+      title: t("section.brands"),
+      subtitle: t("section.brands.sub"),
+      cta: t("hero.brands.cta"),
+      from: "#161a38",
+      to: "#3b4790",
+      visual: <BrandWall brands={officialBrands.slice(0, 4)} />,
+    });
+  }
+
+  heroSlides.push(...smart.slice(0, Math.max(0, MAX_SLIDES - heroSlides.length)));
 
   /** Every section the admin can place, keyed by its section id. */
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
@@ -298,6 +392,77 @@ function CampaignBanner({ campaign }: { campaign: MarketingSettings["campaign"] 
 
 /* ── Hero ─────────────────────────────────────────────────────────── */
 
+function isVisibleSection(marketing: MarketingSettings, key: SectionKey): boolean {
+  return marketing.sections.some((s) => s.key === key && s.visible);
+}
+
+/**
+ * A smart slide's products: three thumbnails on a phone (a row above the
+ * headline), a 2 × 2 of cards with name and price on a computer. The
+ * photos are lazy and small — the hero's first slide never waits on them.
+ */
+function HeroShelf({ products }: { products: Product[] }) {
+  return (
+    <div className="flex gap-2 sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
+      {products.map((p, i) => {
+        const off = p.compareAt && p.compareAt > p.price ? discountPct(p.price, p.compareAt) : 0;
+        return (
+          <Link
+            key={p.id}
+            href={`/product/${p.slug}`}
+            className={`group relative block w-[4.5rem] shrink-0 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 lg:w-auto lg:rounded-2xl ${
+              i === 3 ? "hidden sm:block" : ""
+            }`}
+          >
+            <ProductImage
+              product={p}
+              iconClass="text-3xl lg:text-5xl"
+              sizes="(max-width: 1023px) 96px, 220px"
+              className="aspect-square w-full lg:aspect-[4/3]"
+            />
+            {off > 0 && (
+              <span className="absolute left-1.5 top-1.5 rounded-full bg-coral-500 px-1.5 py-0.5 text-[10px] font-extrabold text-white shadow-sm lg:left-2 lg:top-2 lg:text-xs">
+                −{off}%
+              </span>
+            )}
+            <div className="px-1.5 py-1 lg:px-3 lg:py-2">
+              <p className="hidden truncate text-xs font-semibold text-slate-700 group-hover:text-ocean-700 lg:block">{p.name}</p>
+              <p className="font-display text-[11px] font-extrabold text-ocean-950 lg:text-sm">
+                {money(p.price)}
+                {off > 0 && p.compareAt && (
+                  <span className="ml-1 hidden font-sans text-[11px] font-medium text-slate-400 line-through lg:inline">
+                    {money(p.compareAt)}
+                  </span>
+                )}
+              </p>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The official brands' logos, on white tiles so every logo reads. */
+function BrandWall({ brands }: { brands: Store[] }) {
+  return (
+    <div className="flex gap-2 sm:gap-3 lg:ml-auto lg:grid lg:w-[26rem] lg:grid-cols-2 lg:gap-4">
+      {brands.map((b, i) => (
+        <Link
+          key={b.slug}
+          href={`/store/${b.slug}`}
+          className={`flex w-[4.5rem] shrink-0 flex-col items-center gap-1.5 rounded-xl bg-white p-2 shadow-lg ring-1 ring-black/5 transition hover:-translate-y-0.5 sm:w-24 lg:w-auto lg:rounded-2xl lg:p-4 ${
+            i === 3 ? "hidden sm:flex" : ""
+          }`}
+        >
+          <StoreAvatar store={b} size={64} className="h-10 w-10 rounded-lg lg:h-16 lg:w-16 lg:rounded-xl" />
+          <span className="w-full truncate text-center text-[10px] font-bold text-slate-700 lg:text-sm">{b.name}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function shortHeroTitle(name: string): string {
   if (!name) return "";
   // Remove duplicate words like "Slim Fit Slim Fit"
@@ -352,6 +517,7 @@ function HeroProductCards({ products }: { products: Product[] }) {
           >
             <ProductImage
               product={p}
+              sizes="44px"
               className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
             />
             <div className="min-w-0 flex-1">
