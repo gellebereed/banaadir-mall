@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import MarketplaceInvites, { type MarketplaceInvite } from "@/components/dashboard/MarketplaceInvites";
 import SetupChecklist from "@/components/dashboard/SetupChecklist";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import {
@@ -30,6 +31,7 @@ import {
   getAllProductsByStore,
   getCategories,
   getCommissionSettings,
+  getMarketingSettings,
   getOrdersByStore,
   getStore,
 } from "@/lib/api";
@@ -75,13 +77,37 @@ export default async function VendorDashboardPage({
 
   const { session, storeSlug } = await requireVendor();
   const seesCosts = may(session, "costs.view");
-  const [store, orders, products, categories, commission] = await Promise.all([
+  const [store, orders, products, categories, commission, marketing] = await Promise.all([
     getStore(storeSlug),
     getOrdersByStore(storeSlug),
     getAllProductsByStore(storeSlug),
     getCategories(true),
     getCommissionSettings(),
+    getMarketingSettings(),
   ]);
+
+  // Marketplace deals this shop hasn't answered yet. Only for whoever may
+  // decide on promotions — the discount comes out of the shop's takings.
+  const unanswered = (deal: { stores?: string[]; declined?: string[] }) =>
+    !(deal.stores ?? []).includes(storeSlug) && !(deal.declined ?? []).includes(storeSlug);
+  const invites: MarketplaceInvite[] = may(session, "promotions.manage")
+    ? [
+        ...(marketing.campaign.active && unanswered(marketing.campaign)
+          ? [{
+              kind: "campaign" as const,
+              title: `${marketing.campaign.name} — ${marketing.campaign.pct}% off`,
+              detail: `Join and your products show ${marketing.campaign.pct}% off with the sale badge while it runs. Your shop pays for its own discount.`,
+            }]
+          : []),
+        ...(marketing.promo.code && marketing.promo.pct > 0 && unanswered(marketing.promo)
+          ? [{
+              kind: "promo" as const,
+              title: `Promo code ${marketing.promo.code} — ${marketing.promo.pct}% off`,
+              detail: `Customers who enter ${marketing.promo.code} get ${marketing.promo.pct}% off your items (not ones already in your own offers).`,
+            }]
+          : []),
+      ]
+    : [];
 
   const sales = summariseSales({ orders, products, period });
 
@@ -149,6 +175,8 @@ export default async function VendorDashboardPage({
           </Link>
         </div>
       </div>
+
+      <MarketplaceInvites invites={invites} />
 
       <AttentionPanel items={attention} />
 

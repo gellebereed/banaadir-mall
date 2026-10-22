@@ -2202,6 +2202,7 @@ export async function updateMarketing(
       // The shops that accepted. They pay for the discount, so a different
       // percentage is a different deal and has to be accepted afresh.
       stores: current.campaign.pct === campaignPctValue ? (current.campaign.stores ?? []) : [],
+      declined: current.campaign.pct === campaignPctValue ? (current.campaign.declined ?? []) : [],
     },
     delivery: {
       fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
@@ -2219,6 +2220,10 @@ export async function updateMarketing(
       stores:
         current.promo.code === promoCode && current.promo.pct === promoPctValue
           ? (current.promo.stores ?? [])
+          : [],
+      declined:
+        current.promo.code === promoCode && current.promo.pct === promoPctValue
+          ? (current.promo.declined ?? [])
           : [],
     },
   };
@@ -2256,10 +2261,18 @@ export async function setMarketplaceOptIn(
 
   const { getMarketingSettings } = await import("@/lib/api");
   const current = await getMarketingSettings();
+  // Leaving or saying "no thanks" both record a decline, so the shop's
+  // dashboard stops inviting it — until the deal itself changes.
   const list = new Set(current[kind].stores ?? []);
-  if (join) list.add(store);
-  else list.delete(store);
-  const next = { ...current[kind], stores: [...list] };
+  const declined = new Set(current[kind].declined ?? []);
+  if (join) {
+    list.add(store);
+    declined.delete(store);
+  } else {
+    list.delete(store);
+    declined.add(store);
+  }
+  const next = { ...current[kind], stores: [...list], declined: [...declined] };
 
   if (useSupabaseMutations()) {
     if (!(await updateMarketingInSupabase({ ...current, [kind]: next }))) {
@@ -2267,7 +2280,7 @@ export async function setMarketplaceOptIn(
     }
   }
   await mutateDB((db) => {
-    db.marketing = { ...db.marketing, [kind]: { ...db.marketing[kind], stores: [...list] } };
+    db.marketing = { ...db.marketing, [kind]: { ...db.marketing[kind], stores: [...list], declined: [...declined] } };
   });
 
   const label = kind === "promo" ? `promo code ${current.promo.code}` : `"${current.campaign.name}"`;
@@ -2275,7 +2288,9 @@ export async function setMarketplaceOptIn(
   refresh();
   return {
     ok: true,
-    message: join ? `You're in — ${current[kind].pct}% off your items through the ${label}.` : `You've left the ${label}.`,
+    message: join
+      ? `You're in — ${current[kind].pct}% off your items through the ${label}.`
+      : `No problem — you're not in the ${label}. You can join any time from Promotions.`,
   };
 }
 

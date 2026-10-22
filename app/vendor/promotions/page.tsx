@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { deleteOffer, deletePromotion, includeSaleItemsInOffer, toggleOffer, togglePromotion } from "@/app/actions";
 import MarketplaceOptIn from "@/components/dashboard/MarketplaceOptIn";
-import OfferBuilder from "@/components/dashboard/OfferBuilder";
+import OfferStudio from "@/components/dashboard/OfferStudio";
+import { suggestOffers } from "@/lib/offer-suggestions";
 import PromotionForm from "@/components/dashboard/PromotionForm";
 import {
   getAllProductsByStore,
@@ -100,7 +101,11 @@ export default async function VendorPromotionsPage() {
           Offers work out in the customer&apos;s cart, at checkout and at your counter. One offer
           per item — when two could apply, the customer automatically gets the better one.
         </p>
-        <OfferBuilder products={pricedProducts} categories={categories} />
+        <OfferStudio
+          products={pricedProducts}
+          categories={categories}
+          suggestions={suggestOffers({ products: pricedProducts, orders, offers })}
+        />
       </div>
 
       {offers.length > 0 && (
@@ -195,7 +200,13 @@ export default async function VendorPromotionsPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/vendor/promotions/offers/${offer.id}`}
+                    className="rounded-full bg-ocean-50 px-4 py-1.5 text-xs font-bold text-ocean-800 ring-1 ring-ocean-200 transition hover:bg-ocean-100"
+                  >
+                    Results →
+                  </Link>
                   <form action={toggleOffer.bind(null, offer.id)}>
                     <button
                       className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import type { OfferSuggestion } from "@/lib/offer-suggestions";
 import { createOffer, type SaveState } from "@/app/actions";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { money } from "@/lib/format";
@@ -189,10 +190,13 @@ function exampleBasket(offer: Offer, products: Product[]): { product: Product; q
 export default function OfferBuilder({
   products,
   categories,
+  preset,
 }: {
   /** The shop's products with today's prices (sale prices applied). */
   products: Product[];
   categories: Category[];
+  /** A suggestion to load ("Use this"); `nonce` changes on every click. */
+  preset?: OfferSuggestion & { nonce: number };
 }) {
   const t = useT();
   const [state, formAction] = useActionState(createOffer, INITIAL);
@@ -205,6 +209,20 @@ export default function OfferBuilder({
   const [scope, setScope] = useState<"store" | "products">("store");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+
+  // Load a suggestion into the form — the seller still sees the preview
+  // and decides; nothing goes live until they press Launch.
+  useEffect(() => {
+    if (!preset) return;
+    setKind(preset.draft.kind);
+    setDraft(preset.draft);
+    setName(preset.name ?? "");
+    setNameTouched(Boolean(preset.name));
+    setScope(preset.productIds?.length ? "products" : "store");
+    setStartsAt(preset.startsAt ?? "");
+    setEndsAt(preset.endsAt ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset?.nonce]);
 
   const offer: Offer = { ...draft, id: "draft", store: products[0]?.store ?? "", name: name || "Offer", active: true, startsAt: startsAt || undefined, endsAt: endsAt || undefined };
   const headline = kind ? offerHeadline(offer, t, money) : "";
@@ -292,10 +310,11 @@ export default function OfferBuilder({
               bundleIds: draft.bundle?.map((b) => b.productId),
               giftId: draft.gift?.productId,
               name: shownName,
-              // The browser knows the seller's time zone; the server doesn't.
-              // Send the exact moment, or "9:00" would start at 9:00 UTC.
-              startsAt: startsAt ? new Date(startsAt).toISOString() : "",
-              endsAt: endsAt ? new Date(endsAt).toISOString() : "",
+              // Sent as typed: the server reads these as Mogadishu time
+              // (lib/shop-time.ts) — the marketplace's clock, whatever time
+              // zone the seller's phone happens to be set to.
+              startsAt,
+              endsAt,
             })}
           />
 
@@ -464,7 +483,12 @@ export default function OfferBuilder({
             </div>
             {scope === "products" && (
               <div className="mt-3">
-                <ProductPicker products={products} categories={categories} />
+                <ProductPicker
+                  key={preset?.nonce ?? 0}
+                  products={products}
+                  categories={categories}
+                  initial={preset?.productIds ?? []}
+                />
               </div>
             )}
           </div>
@@ -509,11 +533,11 @@ export default function OfferBuilder({
               />
             </div>
             <div>
-              <label htmlFor="offer-start" className="label">Starts (optional)</label>
+              <label htmlFor="offer-start" className="label">Starts (optional, Mogadishu time)</label>
               <input id="offer-start" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="input" />
             </div>
             <div>
-              <label htmlFor="offer-end" className="label">Ends (optional)</label>
+              <label htmlFor="offer-end" className="label">Ends (optional, Mogadishu time)</label>
               <input id="offer-end" type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="input" />
             </div>
           </div>

@@ -744,7 +744,14 @@ export interface MarketingSettings {
    * Site-wide sale. `stores` are the shops that accepted it — the discount
    * is theirs to give, so it applies to their products only.
    */
-  campaign: { active: boolean; name: string; pct: number; stores?: string[] };
+  campaign: {
+    active: boolean;
+    name: string;
+    pct: number;
+    stores?: string[];
+    /** Shops that said "no thanks" to this campaign — not asked again. */
+    declined?: string[];
+  };
   /**
    * Checkout rules the admin controls, instead of constants buried in the
    * cart page. `freeThreshold` of 0 means delivery is always charged.
@@ -769,6 +776,8 @@ export interface MarketingSettings {
     pct: number;
     /** Shops that accepted the code. It discounts their items only. */
     stores?: string[];
+    /** Shops that said "no thanks". */
+    declined?: string[];
   };
   /**
    * What the marketplace keeps from each sale.
