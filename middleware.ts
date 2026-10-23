@@ -78,7 +78,9 @@ export async function middleware(request: NextRequest) {
   // Seller dashboard — sellers (own store) and admins.
   if (pathname.startsWith("/vendor")) {
     if (!session) return redirectTo(request, "/login");
-    if (session.role === "customer") return redirectTo(request, "/sell");
+    // An applicant's account page says where their application stands
+    // (StoreApplicationStatus); the application form again would not.
+    if (session.role === "customer") return redirectTo(request, session.appliedStore ? "/account" : "/sell");
     return proceed();
   }
 

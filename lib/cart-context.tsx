@@ -55,8 +55,9 @@ interface CartContextValue {
   count: number;
   subtotal: number;
   addToCart: (item: CartItem) => void;
-  updateQty: (productId: string, qty: number) => void;
-  removeFromCart: (productId: string) => void;
+  /** `key` is the line's cartLineKey(), not its product id. */
+  updateQty: (key: string, qty: number) => void;
+  removeFromCart: (key: string) => void;
   clearCart: () => void;
   wishlist: string[];
   toggleWishlist: (productId: string, product?: Pick<Product, "name" | "icon" | "images">) => void;
@@ -84,6 +85,20 @@ const CartContext = createContext<CartContextValue | null>(null);
  * activity and re-learn the same basket on every page view.
  */
 export const CART_KEY = "bm-cart";
+
+/**
+ * What makes two cart items the same line: the product AND the exact
+ * colour/size (or variant) chosen.
+ *
+ * Lines used to be matched on the product id alone, so a blazer added in
+ * size S and then again in size M became one line, "M × 2" — the S was
+ * silently overwritten and the customer received two of the wrong size.
+ */
+export function cartLineKey(item: Pick<CartItem, "productId" | "variantId" | "color" | "size">): string {
+  return item.variantId
+    ? `${item.productId}#${item.variantId}`
+    : `${item.productId}|${item.color ?? ""}|${item.size ?? ""}`;
+}
 export const WISHLIST_KEY = "bm-wishlist";
 
 function readStorage<T>(key: string, fallback: T): T {
@@ -255,31 +270,26 @@ export function CartProvider({
           icon: item.snapshot?.icon,
         });
         setItems((prev) => {
-          const existing = prev.find((i) => i.productId === item.productId);
+          const key = cartLineKey(item);
+          const existing = prev.find((i) => cartLineKey(i) === key);
           if (existing) {
             return prev.map((i) =>
-              i.productId === item.productId
-                ? {
-                    ...i,
-                    qty: i.qty + item.qty,
-                    color: item.color,
-                    size: item.size,
-                    snapshot: item.snapshot ?? i.snapshot,
-                  }
+              cartLineKey(i) === key
+                ? { ...i, qty: i.qty + item.qty, snapshot: item.snapshot ?? i.snapshot }
                 : i,
             );
           }
           return [...prev, item];
         });
       },
-      updateQty: (productId, qty) =>
+      updateQty: (key, qty) =>
         setItems((prev) =>
           qty <= 0
-            ? prev.filter((i) => i.productId !== productId)
-            : prev.map((i) => (i.productId === productId ? { ...i, qty } : i)),
+            ? prev.filter((i) => cartLineKey(i) !== key)
+            : prev.map((i) => (cartLineKey(i) === key ? { ...i, qty } : i)),
         ),
-      removeFromCart: (productId) =>
-        setItems((prev) => prev.filter((i) => i.productId !== productId)),
+      removeFromCart: (key) =>
+        setItems((prev) => prev.filter((i) => cartLineKey(i) !== key)),
       clearCart: () => setItems([]),
       wishlist,
       toggleWishlist: (productId, product) => {

@@ -564,6 +564,8 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
       heroTitleTop: data.hero_title_top,
       heroTitleHighlight: data.hero_title_highlight,
       heroSubtitle: data.hero_subtitle,
+      // supabase/migration-marketing-translations.sql; absent before it.
+      translations: data.translations ?? undefined,
       sections: data.sections || [],
       banners: data.banners || [],
       promoTiles: data.promo_tiles || [],

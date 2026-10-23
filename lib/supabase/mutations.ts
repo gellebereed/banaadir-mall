@@ -316,6 +316,7 @@ export async function updateProductFields(
     if (fields.description !== undefined) row.description = fields.description;
     if (fields.hidden !== undefined) row.hidden = fields.hidden;
     if (fields.featured !== undefined) row.featured = fields.featured;
+    if (fields.sold !== undefined) row.sold = fields.sold;
     if (fields.images !== undefined) row.images = fields.images;
     if (fields.variants !== undefined) row.variants = fields.variants ?? [];
     // Keep the legacy boolean in sync so old readers still behave.
@@ -1074,6 +1075,15 @@ export async function updateMarketingInSupabase(
       delivery: settings.delivery,
       promo: settings.promo,
     };
+
+    // Somali copy needs supabase/migration-marketing-translations.sql. Tried
+    // first, and dropped on its own if the column isn't there yet, so a
+    // missing migration never costs the announcement styling below.
+    const { error: translatedErr } = await supabase.from("marketing_settings").upsert(
+      { ...fullPayload, translations: settings.translations ?? null },
+      { onConflict: "id" }
+    );
+    if (!translatedErr) return true;
 
     const { error } = await supabase.from("marketing_settings").upsert(
       fullPayload,

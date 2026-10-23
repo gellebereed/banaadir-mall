@@ -8,6 +8,7 @@
  */
 
 import { parseCsv } from "./csv.ts";
+import { expandVariantValues } from "./variant-values.ts";
 import { readXlsx, type Sheet } from "./xlsx.ts";
 
 export interface SheetTable {
@@ -18,6 +19,13 @@ export interface SheetTable {
   rows: string[][];
   /** Which spreadsheet row the header was found on (1-based, for messages). */
   headerRow: number;
+  /**
+   * The spreadsheet row each entry of `rows` came from (1-based). Not simply
+   * headerRow + 1 + index: blank rows are dropped, and an Odoo export folds
+   * several rows into one variant, so counting would point a seller at the
+   * wrong line of their own file.
+   */
+  rowNumbers: number[];
 }
 
 const NUMERIC = /^-?[\d\s.,]+%?$/;
@@ -76,17 +84,18 @@ function toTable(sheet: Sheet): SheetTable {
   const rawHeaders = sheet.rows[headerRow] ?? [];
   const headers = labelColumns(rawHeaders);
 
-  const rows = sheet.rows
-    .slice(headerRow + 1)
-    .map((row) => {
-      const padded = headers.map((_, i) => (row[i] ?? "").trim());
-      return padded;
-    })
+  const rows: string[][] = [];
+  const rowNumbers: number[] = [];
+  sheet.rows.slice(headerRow + 1).forEach((row, index) => {
+    const padded = headers.map((_, i) => (row[i] ?? "").trim());
     // A trailing run of empty rows is normal in a hand-edited sheet and
     // would otherwise import as hundreds of blank products.
-    .filter((row) => row.some((cell) => cell !== ""));
+    if (!padded.some((cell) => cell !== "")) return;
+    rows.push(padded);
+    rowNumbers.push(headerRow + 2 + index);
+  });
 
-  return { name: sheet.name, headers, rows, headerRow: headerRow + 1 };
+  return expandVariantValues({ name: sheet.name, headers, rows, rowNumbers, headerRow: headerRow + 1 });
 }
 
 /** True for names this reader handles. */

@@ -115,6 +115,12 @@ async function employeePermissionsPending() {
   return !probe.ok;
 }
 
+/** Does marketing_settings.translations exist yet? */
+async function marketingTranslationsPending() {
+  const probe = await api("marketing_settings?select=id,translations&limit=1");
+  return !probe.ok;
+}
+
 /** Does products.updated_at exist yet? */
 async function productUpdatedAtPending() {
   const probe = await api("products?select=id,updated_at&limit=1");
@@ -146,6 +152,14 @@ const MIGRATIONS = [
       "Team members can be added, but invitation links and custom " +
       "permissions have nowhere to be stored — everyone falls back to their role.",
     pending: employeePermissionsPending,
+  },
+  {
+    file: "migration-marketing-translations.sql",
+    title: "Somali wording for the announcement bar and home page hero",
+    consequence:
+      "The Somali fields in Admin → Marketing are not saved — Somali shoppers " +
+      "see the built-in Somali while the English is unchanged, English otherwise.",
+    pending: marketingTranslationsPending,
   },
 ];
 

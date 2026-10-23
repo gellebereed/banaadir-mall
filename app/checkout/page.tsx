@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import CheckoutClient from "@/components/checkout/CheckoutClient";
 import { getMarketingSettings, getOrders, getStores } from "@/lib/api";
 import { getSession } from "@/lib/session";
+import { orderBelongsTo } from "@/lib/order-utils";
+import { splitPhone } from "@/lib/data/locations";
 
 export const metadata: Metadata = { title: "Checkout" };
 
@@ -36,39 +38,37 @@ export default async function CheckoutPage() {
    * A signed-in customer typing their own name and phone number into a
    * checkout form is the shop admitting it wasn't paying attention — and
    * every extra field is somewhere an order gets abandoned. The account
-   * gives us the name and email; their last order gives the phone and the
-   * city, which are the fields nobody enjoys typing on a phone.
+   * gives us the name, email and the phone they registered with; their last
+   * order gives the phone and the city, which are the fields nobody enjoys
+   * typing on a phone.
    *
    * The most recent order wins over older ones: people move.
    */
+  // The country code is its own field, so only the local part goes in the box.
+  const registered = session?.phone ? splitPhone(session.phone) : undefined;
   let defaults: CheckoutDefaults = {
     name: session?.name ?? "",
     email: session?.email ?? "",
-    phone: "",
-    countryCode: "SO",
+    phone: registered?.local ?? "",
+    countryCode: registered?.countryCode ?? "SO",
     city: "",
     district: "",
   };
 
   if (session) {
     const orders = await getOrders();
-    const email = session.email.trim().toLowerCase();
-    const name = session.name.trim().toLowerCase();
-
+    // Their orders by email only — matching on the name filled this form
+    // with a stranger's phone and address whenever two people shared one.
     const latest = orders
-      .filter((order) =>
-        order.email
-          ? order.email.trim().toLowerCase() === email
-          : order.customer?.trim().toLowerCase() === name,
-      )
+      .filter((order) => orderBelongsTo(order, session))
       .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))[0];
 
-    if (latest) {
+    if (latest?.phone) {
+      const fromOrder = splitPhone(latest.phone);
       defaults = {
         ...defaults,
-        // Stored as "+252 61 …" — the country code is picked separately, so
-        // only the local part goes back into the field.
-        phone: (latest.phone ?? "").replace(/^\+\d{1,4}\s*/, "").trim(),
+        phone: fromOrder.local,
+        countryCode: fromOrder.countryCode,
         city: latest.city ?? "",
         // "Hodan, Mogadishu, Somalia" — the first part is the district.
         district: (latest.address ?? "").split(",")[0]?.trim() ?? "",

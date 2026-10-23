@@ -283,7 +283,7 @@ function TrackContent() {
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    <StatusBadge status={o.status} />
+                    <StatusBadge status={o.status} t={t} />
                     <span className="text-sm font-semibold text-ocean-700">Track →</span>
                   </span>
                 </button>
@@ -313,7 +313,7 @@ function TrackContent() {
                 {money(order.total)}
               </p>
             </div>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} t={t} />
           </div>
 
           {/* The whole order in one line, then help and sharing. */}

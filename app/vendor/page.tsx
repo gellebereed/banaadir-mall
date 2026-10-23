@@ -142,7 +142,7 @@ export default async function VendorDashboardPage({
 
   const attention: AttentionItem[] = [
     { icon: "🆕", label: "New orders not yet opened", count: unseenOrders, href: "/vendor/orders", tone: "urgent" },
-    { icon: "⏳", label: "Orders awaiting action", count: awaitingAction, href: "/vendor/orders", tone: "urgent" },
+    { icon: "⏳", label: "Orders awaiting action (any date)", count: awaitingAction, href: "/vendor/orders", tone: "urgent" },
     { icon: "🚫", label: "Products out of stock", count: health.outOfStock, href: "/vendor/products", tone: "warn" },
     { icon: "📉", label: `Low stock (≤${LOW_STOCK_THRESHOLD})`, count: health.lowStock, href: "/vendor/products", tone: "warn" },
     { icon: "📸", label: "Products with no photo", count: health.missingPhotos, href: "/vendor/photos", tone: "info" },
@@ -230,6 +230,21 @@ export default async function VendorDashboardPage({
             },
           ]}
         />
+      )}
+
+      {/*
+        The tiles below count the chosen period; "awaiting action" above
+        counts every date. "2 awaiting action" beside "0 orders" read as the
+        dashboard losing orders — say where the two come from.
+      */}
+      {!period.unbounded && sales.orders === 0 && awaitingAction > 0 && (
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          No new orders in the last {period.label} — but {awaitingAction} older order
+          {awaitingAction === 1 ? " still needs" : "s still need"} packing or sending.{" "}
+          <Link href="/vendor/orders" className="font-bold underline underline-offset-2">
+            Open orders →
+          </Link>
+        </p>
       )}
 
       {/* ── Headline numbers ─────────────────────────────────────── */}

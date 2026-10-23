@@ -5,6 +5,7 @@ import { PrefsProvider } from "@/components/prefs/PrefsProvider";
 import WhatsAppHelp from "@/components/layout/WhatsAppHelp";
 import InstallPrompt from "@/components/layout/InstallPrompt";
 import { getLang, getLite } from "@/lib/prefs-server";
+import { localizeMarketing } from "@/lib/marketing-copy";
 import { RecoProvider } from "@/components/reco/RecoProvider";
 import PromptHost from "@/components/reco/PromptHost";
 import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
@@ -78,7 +79,7 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   // The announcement bar text is controlled from /admin/marketing.
   // The session drives which dashboard links the header and footer show.
-  const [marketing, session, categories, lang, lite] = await Promise.all([
+  const [rawMarketing, session, categories, lang, lite] = await Promise.all([
     getMarketingSettings(),
     getSession(),
     getCategories(),
@@ -86,6 +87,8 @@ export default async function RootLayout({
     getLite(),
   ]);
   const store = session?.store ? await getStore(session.store) : undefined;
+  // The announcement bar in the shopper's language — lib/marketing-copy.ts.
+  const marketing = localizeMarketing(rawMarketing, lang);
 
   /*
    * ── Whose shopfront is this? ─────────────────────────────────────────

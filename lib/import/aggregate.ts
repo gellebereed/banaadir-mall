@@ -136,7 +136,7 @@ interface SourceRow {
   values: Partial<Record<FieldKey, string>>;
 }
 
-function readRows(rows: string[][], mapping: ColumnMapping, firstRowNumber: number): SourceRow[] {
+function readRows(rows: string[][], mapping: ColumnMapping, rowNumbers: number | number[]): SourceRow[] {
   const entries = Object.entries(mapping) as [FieldKey, number][];
   return rows.map((cells, index) => {
     const values: Partial<Record<FieldKey, string>> = {};
@@ -144,7 +144,8 @@ function readRows(rows: string[][], mapping: ColumnMapping, firstRowNumber: numb
       const value = cleanText(cells[column]);
       if (value) values[key] = value;
     }
-    return { row: firstRowNumber + index, values };
+    const row = typeof rowNumbers === "number" ? rowNumbers + index : rowNumbers[index];
+    return { row, values };
   });
 }
 
@@ -184,10 +185,11 @@ export function aggregate(
   rows: string[][],
   mapping: ColumnMapping,
   options: AggregateOptions,
-  firstRowNumber = 2,
+  /** The spreadsheet row of each entry, or the first one's when they run on. */
+  rowNumbers: number | number[] = 2,
 ): AggregateResult {
   const issues: ImportIssue[] = [];
-  const source = readRows(rows, mapping, firstRowNumber);
+  const source = readRows(rows, mapping, rowNumbers);
   /** False when the item codes below are barcodes standing in for one. */
   const hasItemCodeColumn = mapping.itemCode !== undefined;
 
@@ -215,7 +217,17 @@ export function aggregate(
      */
     const sku =
       normalizeReference(values.variantCode) ||
-      composeVariantCode({ itemCode, colorCode, size, drop }) ||
+      // An Odoo export names the colour ("BLACK") but has no colour code.
+      // Composing from style + size alone gave BLACK/52 and GRAY/52 the same
+      // code, so the two colours were added together into one variant and
+      // the second barcode reported as a conflict — 1,233 of them in one
+      // file. The name distinguishes them just as well as a code would.
+      composeVariantCode({
+        itemCode,
+        colorCode: colorCode || normalizeReference(values.colorName),
+        size,
+        drop,
+      }) ||
       barcode;
 
     // Nothing identifies this row, so nothing downstream could match or

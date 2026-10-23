@@ -1,11 +1,12 @@
 "use client";
 
+import { useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import OrderProgress, { LiveIndicator } from "@/components/track/OrderProgress";
 import { money } from "@/lib/format";
 import { useLiveOrder } from "@/lib/use-live-order";
-import { SUPPORT_WHATSAPP, whatsappLink } from "@/lib/whatsapp";
+import { SUPPORT_WHATSAPP_CONFIGURED, whatsappLink } from "@/lib/whatsapp";
 import type { OrderStatus } from "@/lib/types";
 
 export interface VendorLine {
@@ -48,6 +49,7 @@ export default function OrderVendorSections({
   fallbackStatus: OrderStatus;
   storeLabel: (slug: string, items: VendorLine[]) => string;
 }) {
+  const t = useT();
   const { parcels, justChanged, lastCheckedAt, live, refresh } = useLiveOrder(orderId);
 
   const byStore = new Map(parcels.map((parcel) => [parcel.order.store, parcel]));
@@ -69,8 +71,9 @@ export default function OrderVendorSections({
           `\n\nTotal: ${money(vendorTotal)}\n\nCould you tell me the delivery status? Thank you.`;
 
         // A shop that saved its own number is reached directly; otherwise
-        // the message goes to support, who relay it.
-        const target = parcel?.storeWhatsapp || SUPPORT_WHATSAPP;
+        // the message goes to support, who relay it — if a support number
+        // is configured; never the placeholder (see SUPPORT_WHATSAPP_CONFIGURED).
+        const target = parcel?.storeWhatsapp || SUPPORT_WHATSAPP_CONFIGURED;
 
         return (
           <div key={storeSlug} className="pt-3 first:pt-0">
@@ -105,15 +108,17 @@ export default function OrderVendorSections({
               </div>
 
               <div className="flex items-center gap-2">
-                <StatusBadge status={status} />
-                <a
-                  href={whatsappLink(target, message)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100"
-                >
-                  💬 Contact Vendor
-                </a>
+                <StatusBadge status={status} t={t} />
+                {target && (
+                  <a
+                    href={whatsappLink(target, message)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    💬 Contact Vendor
+                  </a>
+                )}
               </div>
             </div>
 

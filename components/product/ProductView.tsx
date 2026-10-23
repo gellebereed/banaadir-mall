@@ -10,7 +10,8 @@ import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
 import { offerHeadline, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
-import { useCart } from "@/lib/cart-context";
+import { cartLineKey, useCart } from "@/lib/cart-context";
+import { useRouter } from "next/navigation";
 import { compact, discountPct, money } from "@/lib/format";
 import {
   colorOptions,
@@ -46,7 +47,8 @@ export default function ProductView({
   delivery?: MarketingSettings["delivery"];
   children?: ReactNode;
 }) {
-  const { addToCart, toggleWishlist, isWishlisted } = useCart();
+  const { addToCart, toggleWishlist, isWishlisted, lines } = useCart();
+  const router = useRouter();
   const t = useT();
 
   const withVariants = hasVariants(product);
@@ -172,6 +174,19 @@ export default function ProductView({
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);
+  }
+
+  /*
+   * Buy Now goes to checkout. It used to open the cart — Add to Cart plus an
+   * extra tap — which is not what anyone pressing "Buy Now" expects. A line
+   * already in the basket (same size and colour) is not added a second time:
+   * pressing Buy Now after Add to Cart must not quietly order two.
+   */
+  function handleBuyNow() {
+    if (soldOut) return;
+    const key = cartLineKey({ productId: product.id, variantId: variant?.id, color, size });
+    if (!lines.some((l) => cartLineKey(l) === key)) handleAdd();
+    router.push("/checkout");
   }
 
   /*
@@ -473,13 +488,14 @@ export default function ProductView({
             >
               {added ? t("product.added") : soldOut ? t("product.soldOut") : t("product.addToCart")}
             </button>
-            <Link
-              href="/cart"
-              onClick={handleAdd}
-              className={`btn-secondary whitespace-nowrap ${soldOut ? "pointer-events-none opacity-50" : ""}`}
+            <button
+              type="button"
+              onClick={handleBuyNow}
+              disabled={soldOut}
+              className="btn-secondary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("product.buyNow")}
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -579,7 +595,7 @@ function ZoomableImage({
   const [origin, setOrigin] = useState("50% 50%");
   const [zooming, setZooming] = useState(false);
   // Light data mode: screen width at normal quality (the zoom gets softer).
-  const { lite } = usePrefs();
+  const { lite, t } = usePrefs();
   const [lightbox, setLightbox] = useState(false);
   const touchStartX = useRef<number | null>(null);
 
@@ -686,8 +702,10 @@ function ZoomableImage({
           </>
         )}
 
-        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
-          🔍 Hover to zoom · click to expand
+        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 pointer-coarse:opacity-100">
+          {/* Phones can't hover — they were told to. */}
+          <span className="pointer-coarse:hidden">{t("product.zoomHint")}</span>
+          <span className="hidden pointer-coarse:inline">{t("product.zoomHintTouch")}</span>
         </span>
       </div>
 

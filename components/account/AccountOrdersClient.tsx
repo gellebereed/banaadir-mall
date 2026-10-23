@@ -93,7 +93,7 @@ export default function AccountOrdersClient({
 }) {
   const t = useT();
   const router = useRouter();
-  const { scope, addToCart } = useCart();
+  const { scope, addToCart, ready } = useCart();
   const [orders, setOrders] = useState<LocalOrderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -106,16 +106,28 @@ export default function AccountOrdersClient({
   const user = useMemo(() => ({ name: userName, email: userEmail }), [userName, userEmail]);
 
   useEffect(() => {
+    /*
+     * Wait for the cart provider to finish reading this device's storage.
+     * On the first visit after signing up, that is when it moves the guest's
+     * order copies into the new account (adoptGuestData) — and this child's
+     * effect runs BEFORE the provider's, so reading now found nothing and the
+     * order a shopper had just placed was missing from "My orders".
+     */
+    if (!ready) return;
     async function loadMergedOrders() {
       setLoading(true);
       const merged = new Map<string, LocalOrderEntry>();
 
-      // 1. This device's copies, saved at checkout (only this user's).
+      // 1. This device's copies, saved at checkout. This account's own
+      // bucket on this phone, so an email-less copy is one the shopper
+      // placed here as a guest before signing up (adoptGuestData) — theirs.
       try {
         const local: LocalOrderEntry[] = JSON.parse(
           localStorage.getItem(scopedKey("banaadir_user_orders", scope)) || "[]",
         );
-        local.filter((o) => orderBelongsTo(o, user)).forEach((o) => o.id && merged.set(o.id.toLowerCase(), o));
+        local
+          .filter((o) => !o.email?.trim() || orderBelongsTo(o, user))
+          .forEach((o) => o.id && merged.set(o.id.toLowerCase(), o));
       } catch {
         // A malformed local copy is not worth failing the page over.
       }
@@ -150,7 +162,7 @@ export default function AccountOrdersClient({
       setLoading(false);
     }
     void loadMergedOrders();
-  }, [user, serverOrders, scope]);
+  }, [user, serverOrders, scope, ready]);
 
   // The status row at the top of the account page links here with a hash
   // (#orders-active …) — pick the matching tab.
@@ -313,7 +325,7 @@ export default function AccountOrdersClient({
                       </p>
                       <p className="font-mono text-sm font-bold text-ocean-950">{t("orders.order", { id: order.id })}</p>
                     </div>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} t={t} />
                   </div>
 
                   {/* What's in it — the photos say more than a list. */}

@@ -118,6 +118,12 @@ export function DiscountRows({
   const t = useT();
   const shops = pricing ? Object.values(pricing.stores) : [];
   const accepting = promo?.valid ? shops.filter((s) => promo.stores.includes(s.store)).length : 0;
+  /*
+   * A real code that none of these shops honour saves nothing. It used to
+   * show in green as "Promo BANAADIR10 (10%) −$0" — applied, as far as the
+   * shopper could tell — with the explanation in small print beneath.
+   */
+  const savesNothing = Boolean(pricing && promo?.valid && accepting === 0 && promo.shopOffers.length === 0);
   return (
     <>
       {pricing && pricing.offerDiscount > 0 && (
@@ -127,10 +133,10 @@ export function DiscountRows({
         </div>
       )}
       {code && (
-        <div className="text-emerald-700">
+        <div className={savesNothing ? "text-amber-700" : "text-emerald-700"}>
           <div className="flex justify-between">
             <dt className="flex items-center gap-2">
-              {promo?.valid ? t("cart.discount", { code, pct }) : t("offer.codeLine", { code })}
+              {promo?.valid && !savesNothing ? t("cart.discount", { code, pct }) : t("offer.codeLine", { code })}
               <button
                 type="button"
                 onClick={onRemove}
@@ -139,7 +145,7 @@ export function DiscountRows({
                 {t("cart.remove")}
               </button>
             </dt>
-            {(!pricing || promo?.valid) && (
+            {(!pricing || promo?.valid) && !savesNothing && (
               <dd className="font-semibold tabular-nums">
                 {pricing ? `−${money(pricing.promoDiscount)}` : "…"}
               </dd>
@@ -152,7 +158,7 @@ export function DiscountRows({
             </p>
           ))}
           {/* The marketplace code is the shops' to honour — say plainly where it doesn't. */}
-          {pricing && promo?.valid && accepting === 0 && promo.shopOffers.length === 0 && (
+          {savesNothing && (
             <p className="mt-1 text-xs font-medium text-amber-700">{t("offer.promoNotHere", { code })}</p>
           )}
           {pricing && promo?.valid && accepting > 0 && accepting < shops.length && (

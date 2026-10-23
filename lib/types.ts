@@ -730,6 +730,9 @@ export interface FlashRequest {
 }
 
 /** Storefront content the admin controls from /admin/marketing. */
+/** Storefront copy the admin writes, and can also write in Somali. */
+export type MarketingCopyField = "announcement" | "heroBadge" | "heroTitleTop" | "heroTitleHighlight" | "heroSubtitle";
+
 export interface MarketingSettings {
   /** Text in the bar above the header. */
   announcement: string;
@@ -745,6 +748,11 @@ export interface MarketingSettings {
   heroTitleTop: string;
   heroTitleHighlight: string;
   heroSubtitle: string;
+  /**
+   * The admin's own wording of the copy above in other languages — see
+   * lib/marketing-copy.ts. Only Somali so far.
+   */
+  translations?: { so?: Partial<Record<MarketingCopyField, string>> };
   /** Ordered home-page sections with their visibility. */
   sections: HomeSection[];
   banners: Banner[];

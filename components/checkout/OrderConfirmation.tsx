@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import OrderSlipShare from "@/components/checkout/OrderSlipShare";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
 import RecoStack from "@/components/reco/RecoStack";
 import { money } from "@/lib/format";
 import type { CartLineRef } from "@/lib/reco/types";
@@ -12,7 +13,7 @@ import {
   buildVendorOrderMessage,
   formatWhatsAppNumber,
   isValidWhatsAppNumber,
-  SUPPORT_WHATSAPP,
+  SUPPORT_WHATSAPP_CONFIGURED,
   whatsappLink,
 } from "@/lib/whatsapp";
 
@@ -47,6 +48,8 @@ export interface PlacedOrder {
   address: string;
   city: string;
   paymentLabel: string;
+  /** The payment option's id ("cod", "evc"…) — picks the translated wording. */
+  paymentMethod?: string;
   subtotal: number;
   /** Saved through shop offers and the promo code, as the server priced it. */
   discount?: number;
@@ -71,17 +74,38 @@ export default function OrderConfirmation({
   order,
   deliveryEstimate,
   purchased = [],
+  signUpHref,
 }: {
   order: PlacedOrder;
   deliveryEstimate?: string;
   /** What was just bought — seeds the "goes with your order" shelf. */
   purchased?: CartLineRef[];
+  /**
+   * Set for a guest: the sign-up page with their details filled in. Their
+   * copy of this order is kept on this phone and moves into the account
+   * they create here (adoptGuestData), so it is waiting under "My orders".
+   */
+  signUpHref?: string;
 }) {
+  const { t } = usePrefs();
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState(false);
 
   const placedAt = new Date(order.placedAt);
   const split = order.parcels.length > 1;
+  const firstName = order.customerName.split(" ")[0];
+  const cash = order.paymentMethod === "cod";
+  const paymentName = cash ? t("checkout.pay.codName") : order.paymentLabel;
+
+  /*
+   * Where each parcel's WhatsApp message would go: the store's own number,
+   * else support — but only a support number that is really configured.
+   * The code's fallback is a placeholder, and sending a stranger this
+   * customer's name, phone and address is worse than offering no button.
+   */
+  const chatTarget = (parcel: PlacedParcel) =>
+    isValidWhatsAppNumber(parcel.whatsapp) ? parcel.whatsapp! : SUPPORT_WHATSAPP_CONFIGURED;
+  const canChat = order.parcels.some((p) => chatTarget(p));
 
   // The slip link has to be absolute — it travels into WhatsApp, where a
   // relative path means nothing. Empty during SSR, which is fine: the
@@ -127,46 +151,72 @@ export default function OrderConfirmation({
           🎉
         </span>
         <h1 className="mt-5 font-display text-3xl font-extrabold text-ocean-950">
-          Order confirmed
+          {t("conf.title")}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Thank you, {order.customerName.split(" ")[0]}. We&apos;ve sent your
-          order to {split ? `${order.parcels.length} stores` : "the store"}.
+          {split
+            ? t("conf.thanksSplit", { name: firstName, n: order.parcels.length })
+            : t("conf.thanks", { name: firstName })}
         </p>
         <p className="mt-3 inline-block rounded-xl bg-sand-100 px-3 py-2 font-mono text-lg font-bold tracking-wide text-ocean-900">
           {order.baseId}
         </p>
       </div>
 
-      {/* ── Summary ─────────────────────────────────────────────── */}
+      {/*
+        What happens now, in three plain steps. A first-time online shopper
+        reading "Order confirmed" has no idea whether to wait, call or pay —
+        this is the part of the screen they actually need.
+      */}
       <div className="card mt-8 p-6">
+        <h2 className="font-display text-base font-extrabold text-ocean-950">{t("conf.nextTitle")}</h2>
+        <ol className="mt-3 space-y-3 text-sm text-slate-700">
+          {[
+            t("conf.next1"),
+            t("conf.next2", { phone: order.customerPhone }),
+            cash
+              ? t("conf.next3Cash", { total: money(order.total) })
+              : t("conf.next3", { total: money(order.total), method: paymentName }),
+          ].map((step, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ocean-100 text-xs font-bold text-ocean-800">
+                {i + 1}
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {/* ── Summary ─────────────────────────────────────────────── */}
+      <div className="card mt-6 p-6">
         <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400">
-          Order summary
+          {t("conf.summary")}
         </h2>
 
         <dl className="mt-4 space-y-2 text-sm">
           <div className="flex justify-between">
-            <dt className="text-slate-500">Items</dt>
+            <dt className="text-slate-500">{t("conf.items")}</dt>
             <dd className="font-semibold text-slate-800">{money(order.subtotal)}</dd>
           </div>
           {(order.discount ?? 0) > 0 && (
             <div className="flex justify-between text-emerald-600">
-              <dt>🎁 You saved</dt>
+              <dt>{t("conf.saved")}</dt>
               <dd className="font-semibold">−{money(order.discount ?? 0)}</dd>
             </div>
           )}
           <div className="flex justify-between">
-            <dt className="text-slate-500">Delivery</dt>
+            <dt className="text-slate-500">{t("conf.delivery")}</dt>
             <dd className="font-semibold text-slate-800">
               {order.delivery === 0 ? (
-                <span className="text-emerald-600">Free</span>
+                <span className="text-emerald-600">{t("conf.free")}</span>
               ) : (
                 money(order.delivery)
               )}
             </dd>
           </div>
           <div className="flex justify-between border-t border-sand-200 pt-2">
-            <dt className="font-display font-bold text-ocean-950">Total</dt>
+            <dt className="font-display font-bold text-ocean-950">{t("conf.total")}</dt>
             <dd className="font-display text-lg font-extrabold text-ocean-950">
               {money(order.total)}
             </dd>
@@ -176,7 +226,7 @@ export default function OrderConfirmation({
         <div className="mt-5 grid gap-4 border-t border-sand-200 pt-5 text-sm sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Delivering to
+              {t("conf.to")}
             </p>
             <p className="mt-1 font-semibold text-slate-800">{order.customerName}</p>
             <p className="text-slate-500">{order.address}</p>
@@ -184,13 +234,13 @@ export default function OrderConfirmation({
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              Payment
+              {t("conf.payment")}
             </p>
-            <p className="mt-1 font-semibold text-slate-800">{order.paymentLabel}</p>
+            <p className="mt-1 font-semibold text-slate-800">{paymentName}</p>
             {deliveryEstimate && (
               <>
                 <p className="mt-3 text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Estimated delivery
+                  {t("conf.eta")}
                 </p>
                 <p className="mt-1 text-slate-500">{deliveryEstimate}</p>
               </>
@@ -202,28 +252,22 @@ export default function OrderConfirmation({
       {/* ── Vendor notification ─────────────────────────────────── */}
       <div className="mt-6 rounded-3xl border-2 border-emerald-300 bg-emerald-50/60 p-5 sm:p-6">
         <p className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-          ⚡ Notify {split ? "your stores" : "the store"}
+          {t("conf.parcels")}
         </p>
+        {/* The shop is told in its dashboard (bell, live alert) — WhatsApp
+            is an extra for the impatient, not a job the buyer must do. */}
         <p className="mt-1.5 text-sm text-emerald-800">
-          {split ? (
-            <>
-              Your order is split across{" "}
-              <strong>{order.parcels.length} stores</strong>. Each one packs
-              and ships its own parcel — send each store its order so they can
-              start straight away.
-            </>
-          ) : (
-            <>
-              Send the store your order details on WhatsApp so they can
-              confirm and start packing straight away.
-            </>
-          )}
+          {!canChat
+            ? t("conf.parcelsBodyNoChat")
+            : split
+              ? t("conf.parcelsBodySplit", { n: order.parcels.length })
+              : t("conf.parcelsBody")}
         </p>
 
         <div className="mt-4 space-y-3">
           {order.parcels.map((parcel) => {
             const hasOwnNumber = isValidWhatsAppNumber(parcel.whatsapp);
-            const target = hasOwnNumber ? parcel.whatsapp! : SUPPORT_WHATSAPP;
+            const target = chatTarget(parcel);
 
             const message = buildVendorOrderMessage({
               orderId: parcel.orderId,
@@ -267,7 +311,7 @@ export default function OrderConfirmation({
                         {parcel.storeName}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {units} item{units === 1 ? "" : "s"} · {money(parcel.subtotal)}
+                        {units === 1 ? t("conf.unit") : t("conf.units", { n: units })} · {money(parcel.subtotal)}
                       </p>
                     </div>
                   </div>
@@ -296,6 +340,7 @@ export default function OrderConfirmation({
                   ))}
                 </ul>
 
+                {target && (
                 <a
                   href={whatsappLink(target, message)}
                   target="_blank"
@@ -309,8 +354,9 @@ export default function OrderConfirmation({
                       : "bg-emerald-600 text-white hover:bg-emerald-700"
                   }`}
                 >
-                  {sent ? "✓ Sent — tap to send again" : `💬 Notify ${parcel.storeName}`}
+                  {sent ? t("conf.sent") : t("conf.notify", { store: parcel.storeName })}
                 </a>
+                )}
 
                 {/* The same parcel as a picture, for shops that would rather
                     look at a slip than read a message. */}
@@ -320,18 +366,15 @@ export default function OrderConfirmation({
                   className="mt-2"
                 />
 
-                <p className="mt-2 text-center text-[11px] text-slate-400">
-                  {hasOwnNumber ? (
-                    <>Goes to {formatWhatsAppNumber(parcel.whatsapp)}</>
-                  ) : (
-                    // Being explicit stops this reading as a direct line to
-                    // the store when it is actually the support desk relaying.
-                    <>
-                      This store hasn&apos;t added a WhatsApp number — your
-                      message goes to Banaadir Mall support, who will pass it on.
-                    </>
-                  )}
-                </p>
+                {target && (
+                  <p className="mt-2 text-center text-[11px] text-slate-400">
+                    {hasOwnNumber
+                      ? t("conf.goesTo", { number: formatWhatsAppNumber(parcel.whatsapp) })
+                      : // Being explicit stops this reading as a direct line to
+                        // the store when it is actually the support desk relaying.
+                        t("conf.relay")}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -341,12 +384,9 @@ export default function OrderConfirmation({
       {/* ── Customer's own copy ─────────────────────────────────── */}
       <div className="mt-6 rounded-2xl border border-sand-200 bg-sand-50/60 p-5">
         <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-          🧾 Keep a copy
+          {t("conf.copyTitle")}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
-          Save your receipt or forward it to whoever is paying or receiving
-          the delivery.
-        </p>
+        <p className="mt-1 text-xs text-slate-500">{t("conf.copyBody")}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <a
             href={`https://wa.me/?text=${encodeURIComponent(receipt)}`}
@@ -354,25 +394,35 @@ export default function OrderConfirmation({
             rel="noopener noreferrer"
             className="rounded-xl border border-sand-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:border-emerald-400 hover:text-emerald-700"
           >
-            💬 Share receipt
+            {t("conf.share")}
           </a>
           <button
             type="button"
             onClick={copyReceipt}
             className="rounded-xl border border-sand-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:border-ocean-400 hover:text-ocean-700"
           >
-            {copied ? "✓ Copied" : "📋 Copy receipt"}
+            {copied ? t("conf.copied") : t("conf.copy")}
           </button>
         </div>
       </div>
 
+      {signUpHref && (
+        <div className="mt-6 rounded-2xl border border-ocean-100 bg-ocean-50/60 p-5">
+          <p className="font-display font-bold text-ocean-950">{t("conf.saveTitle")}</p>
+          <p className="mt-1 text-xs text-slate-600">{t("conf.saveBody")}</p>
+          <Link href={signUpHref} className="btn-primary mt-3 inline-block !py-2 text-sm">
+            {t("conf.saveCta")}
+          </Link>
+        </div>
+      )}
+
       {/* ── Next steps ──────────────────────────────────────────── */}
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Link href={`/track?id=${order.baseId}`} className="btn-primary !py-2.5 text-sm">
-          📦 Track order
+          {t("conf.track")}
         </Link>
         <Link href="/products" className="btn-secondary !py-2.5 text-sm">
-          Keep shopping
+          {t("conf.keepShopping")}
         </Link>
       </div>
     </div>

@@ -550,10 +550,10 @@ function cartSpecs(ctx: RecoContext): ShelfSpec[] {
       layout: "rail",
       limit: 6,
       minimum: 1,
-      when: (c) => c.taste.wished.size > 0,
-      reasonFrom: "saved",
+      when: (c) => [...c.taste.wished].some((id) => !c.cartIds.includes(id)),
+      reasonFrom: "wished",
       slot: "late",
-      weights: { continue: 0.4, saved: 1 },
+      weights: { wished: 1 },
     },
   ];
 }

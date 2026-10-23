@@ -113,6 +113,7 @@ export async function signUpCustomer(
           name,
           email,
           role: "customer",
+          phone: phone || undefined,
         };
         await setSessionCookie(session);
         redirect(safeNext(formData.get("next")) ?? "/account");
@@ -130,6 +131,7 @@ export async function signUpCustomer(
     name,
     email,
     role: "customer",
+    phone: phone || undefined,
   };
   await setSessionCookie(session);
   redirect(safeNext(formData.get("next")) ?? "/account");
@@ -293,6 +295,27 @@ export async function signUpSeller(
     success: true,
     message: "🎉 Your store application has been submitted! It is currently awaiting admin review.",
   };
+}
+
+/**
+ * "Open my store dashboard" — for an applicant whose store has just been
+ * approved while they were signed in as a shopper.
+ *
+ * Their cookie still says customer; without this they had to sign out and
+ * in again, which nothing told them to do. Who they are is re-read from
+ * their account on the server (resolveSession), never taken from the cookie.
+ */
+export async function openApprovedStore(): Promise<void> {
+  const { getSession } = await import("@/lib/session");
+  const session = await getSession();
+  if (!session?.appliedStore) redirect("/account");
+
+  const { accountsEnabled, findAuthUser, resolveSession } = await import("@/lib/accounts");
+  if (!accountsEnabled()) redirect("/login?next=/vendor");
+  const result = await resolveSession(session.email, await findAuthUser(session.email));
+  if ("error" in result || result.session.role !== "seller") redirect("/account");
+  await setSessionCookie(result.session);
+  redirect("/vendor");
 }
 
 /**

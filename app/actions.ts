@@ -50,6 +50,7 @@ import {
   saveEmployeeChange,
 } from "@/lib/employees";
 import { getSession, requireVendor } from "@/lib/session";
+import { MARKETING_COPY_FIELDS } from "@/lib/marketing-copy";
 import type {
   FlashDeal,
   FlashRequest,
@@ -2202,6 +2203,11 @@ export async function updateMarketing(
     heroTitleTop: String(formData.get("heroTitleTop")),
     heroTitleHighlight: String(formData.get("heroTitleHighlight")),
     heroSubtitle: String(formData.get("heroSubtitle")),
+    translations: {
+      so: Object.fromEntries(
+        MARKETING_COPY_FIELDS.map((field) => [field, String(formData.get(`${field}So`) ?? "").trim()]),
+      ),
+    },
     campaign: {
       active: formData.get("campaignActive") === "on",
       name: String(formData.get("campaignName")).trim() || "Site-wide Sale",
@@ -2592,8 +2598,51 @@ export async function submitOrderAction(payload: {
    * message addressed to "*Store:*" with nothing after it.
    */
   parcels: ResolvedParcel[];
+  /** Set when the order was refused because the shelf can't cover it. */
+  shortages?: import("@/lib/stock-write").StockShortage[];
 }> {
-  const { id, customerName, customerPhone, customerEmail, address, city } = payload;
+  const { customerName, customerPhone, address, city } = payload;
+
+  /*
+   * The number is the browser's suggestion, not a fact: a number already on
+   * an order would file two customers' parcels under one id. Issue a fresh
+   * one instead; the confirmation screen uses whatever comes back.
+   */
+  const { baseOrderId, newOrderId } = await import("@/lib/order-utils");
+  const { getOrders } = await import("@/lib/api");
+  const taken = new Set((await getOrders()).map((o) => baseOrderId(o.id).toLowerCase()));
+  let id = payload.id.trim();
+  while (!/^BM-\d{4,}$/.test(id) || taken.has(id.toLowerCase())) id = newOrderId();
+
+  /*
+   * A signed-in shopper's order is filed under THEIR account's email,
+   * whatever the optional email box said. Orders are matched to accounts
+   * by email alone (lib/order-utils.ts), so one placed with the box
+   * cleared would otherwise never appear under "My orders".
+   */
+  const session = await getSession();
+  const customerEmail = session?.role === "customer" ? session.email : payload.customerEmail;
+
+  // Refuse before anything is written — see findShortages.
+  const { findShortages } = await import("@/lib/stock-write");
+  const shortages = await findShortages(
+    payload.items.map((i) => ({
+      productId: i.productId,
+      qty: i.qty,
+      selectedColor: i.selectedColor,
+      selectedSize: i.selectedSize,
+    })),
+  );
+  if (shortages.length > 0) {
+    return {
+      ok: false,
+      message: shortages.map((s) => `${s.name}: only ${s.available} left`).join(" · "),
+      orderId: id,
+      discount: 0,
+      parcels: [],
+      shortages,
+    };
+  }
 
   /**
    * Resolve every line's store from the CATALOGUE, not from what the

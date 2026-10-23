@@ -274,7 +274,7 @@ export function analyse(
         ),
       ],
     },
-    table.headerRow + 1,
+    table.rowNumbers,
   );
 
   const plan = buildPlan(aggregated.products, catalogue, {
