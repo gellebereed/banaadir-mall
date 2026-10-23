@@ -120,6 +120,7 @@ export function composeShelves(
    * a pin is comparable to the shelf's own headline signal; at 100 it
    * leads; at 10 it is a tiebreaker.
    */
+  const pushedIds = new Set(ctx.pins.map((pin) => pin.productId));
   const strength = options.settings?.pinStrength ?? 55;
   const pinWeight = (strength / 100) * 1.8;
 
@@ -154,7 +155,12 @@ export function composeShelves(
       maxPerCategory: spec.maxPerCategory,
     });
 
-    if (items.length < spec.minimum) continue;
+    // A push can't be the reason a row exists: the row needs enough of its
+    // own products to stand without it. Otherwise a new shopper got a row
+    // titled "Cheaper than when you looked" holding one pushed product they
+    // had never looked at.
+    const own = items.filter((item) => !pushedIds.has(item.product.id)).length;
+    if (items.length < spec.minimum || own < spec.minimum) continue;
     for (const item of items) used.add(item.product.id);
 
     shelves.push({

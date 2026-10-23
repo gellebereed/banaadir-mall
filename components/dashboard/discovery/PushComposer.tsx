@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { totalStock } from "@/lib/product-utils";
 import type { ShelfInfo } from "@/lib/reco/catalogue";
 import type { Product, RecoPin, Store } from "@/lib/types";
+import { autoCard, PositionPicker, ReasonChips } from "./push-parts";
 
 /**
  * Push composer — choose products, say where and for how long, see the
@@ -46,8 +47,6 @@ const WHY_NOT: Record<Exclude<Availability, "ok" | "pushed">, string> = {
   hidden: "Hidden from the shop — publish it first (it needs a photo).",
   blocked: "On the Never recommend list below — remove it there first.",
 };
-
-const REASONS = ["New arrival", "Back in stock", "Staff pick", "Limited stock", "Best seller"];
 
 const DURATIONS: { key: string; label: string; days?: number }[] = [
   { key: "none", label: "No end" },
@@ -152,6 +151,7 @@ export default function PushComposer({
   const [placement, setPlacement] = useState<"auto" | "shelf">("auto");
   const [shelf, setShelf] = useState(pinnable[0]?.id ?? "");
   const [note, setNote] = useState("");
+  const [position, setPosition] = useState<number | undefined>(undefined);
   const [startMode, setStartMode] = useState<"now" | "later">("now");
   const [startsAt, setStartsAt] = useState("");
   const [duration, setDuration] = useState("none");
@@ -195,6 +195,7 @@ export default function PushComposer({
           productIds: selected.map((p) => p.id),
           shelf: placement === "shelf" && shelf ? shelf : "auto",
           note: note.trim(),
+          position: position ?? null,
           startsAt: start,
           endsAt: end,
         }),
@@ -212,6 +213,7 @@ export default function PushComposer({
       });
       setSelected([]);
       setNote("");
+      setPosition(undefined);
       onPushed(result.pins ?? []);
       startRefresh(() => router.refresh());
     } catch {
@@ -222,7 +224,7 @@ export default function PushComposer({
   }
 
   const visible = results.slice(0, shown);
-  const firstCard = Math.round((1 - pinStrength / 100) * 3) + 1;
+  const firstCard = autoCard(pinStrength);
   const preview = selected[0];
 
   return (
@@ -439,7 +441,7 @@ export default function PushComposer({
                   >
                     <span className="block font-bold text-slate-800">{key === "auto" ? "Anywhere" : "One shelf"}</span>
                     <span className="block text-slate-500">
-                      {key === "auto" ? "First shelf each shopper sees — recommended" : "Only on the row you pick"}
+                      {key === "auto" ? "First general row each shopper sees — recommended" : "Only on the row you pick"}
                     </span>
                   </button>
                 ))}
@@ -455,6 +457,17 @@ export default function PushComposer({
               )}
             </fieldset>
 
+            {/* Position */}
+            <div className="mt-4">
+              <span className="label">Position on the row</span>
+              <PositionPicker value={position} onChange={setPosition} strength={pinStrength} />
+              {position !== undefined && selected.length > 1 && (
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  Several products take card {position} and the cards after it, in the order chosen.
+                </p>
+              )}
+            </div>
+
             {/* Reason */}
             <div className="mt-4">
               <label className="label" htmlFor="push-note">
@@ -468,20 +481,7 @@ export default function PushComposer({
                 placeholder="Picked by Banaadir Mall"
                 className="input"
               />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {REASONS.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setNote(r)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 transition ${
-                      note === r ? "bg-ocean-900 text-white ring-ocean-900" : "bg-white text-slate-600 ring-sand-200 hover:ring-ocean-300"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
+              <ReasonChips value={note} onChange={setNote} />
             </div>
 
             {/* When */}

@@ -1077,6 +1077,11 @@ export interface RecoPin {
   shelf: string;
   /** Replaces the reason line on the card. Say something true. */
   note?: string;
+  /**
+   * The card it takes on the shelf, 1 = first. Unset follows the push
+   * strength dial (card 2 at the default) — see pinPlacement.
+   */
+  position?: number;
   /** ISO datetime bounds — lets a push expire on its own. */
   startsAt?: string;
   endsAt?: string;

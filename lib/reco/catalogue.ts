@@ -27,6 +27,18 @@ export interface ShelfInfo {
   blurb: string;
   /** False for the shelves that must never carry a merchandised push. */
   pinnable: boolean;
+  /**
+   * Whether an "Anywhere" push may land here. Only rows whose heading stays
+   * true for any product: "Cheaper than when you looked" or "Still on your
+   * wishlist" are claims about the shopper's own items, so a push only goes
+   * there when the admin aims it at that row on purpose.
+   */
+  anywhere?: boolean;
+}
+
+/** The rows an "Anywhere" push can appear in. */
+export function anywhereShelves(): ShelfInfo[] {
+  return SHELF_CATALOGUE.filter((shelf) => shelf.pinnable && shelf.anywhere);
 }
 
 export const SHELF_CATALOGUE: ShelfInfo[] = [
@@ -54,6 +66,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "early",
     blurb: "The main personalised grid. Hidden entirely until the engine knows enough to mean it.",
     pinnable: true,
+    anywhere: true,
   },
   {
     id: "basket",
@@ -70,6 +83,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "mid",
     blurb: "Ranked by acceleration in real orders, not all-time sales. Changes on its own.",
     pinnable: true,
+    anywhere: true,
   },
   {
     id: "saved-like",
@@ -94,6 +108,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "mid",
     blurb: "The cold-start shelf: real sales of the last 3 months, adjusted by real reviews, shown to shoppers we don't know yet.",
     pinnable: true,
+    anywhere: true,
   },
   {
     id: "discover",
@@ -120,6 +135,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "mid",
     blurb: "Alternatives to the product being viewed, matched on department, brand and materials.",
     pinnable: true,
+    anywhere: true,
   },
   {
     id: "also-viewed",
@@ -144,6 +160,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "late",
     blurb: "Their own history rather than this product. Needs enough behaviour to be honest.",
     pinnable: true,
+    anywhere: true,
   },
 
   // ── Cart ──────────────────────────────────────────────────────────
@@ -206,6 +223,7 @@ export const SHELF_CATALOGUE: ShelfInfo[] = [
     slot: "late",
     blurb: "Their browsing history, kept for the next visit.",
     pinnable: true,
+    anywhere: true,
   },
 ];
 

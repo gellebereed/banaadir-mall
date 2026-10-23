@@ -38,6 +38,7 @@
  */
 
 import { totalStock } from "../product-utils";
+import { SHELF_CATALOGUE } from "./catalogue";
 import { shelfDistance } from "./similarity";
 import { discover, type Candidate, type RecoContext, type Strategy } from "./strategies";
 import { STRATEGY_BY_KEY } from "./strategies";
@@ -368,16 +369,42 @@ export function createBlender(ctx: RecoContext) {
    */
   function placePinned(picked: Merged[], eligible: Merged[], spec: BlendSpec): Merged[] {
     const { at, max } = spec.guarantee!;
-    const order = new Map(ctx.pins.map((pin, index) => [pin.productId, index]));
+    // This shelf's pushes: aimed at it, or at "anywhere" when the row takes
+    // those (see adminPins). A product pushed both ways takes the specific one.
+    const takesAnywhere = SHELF_CATALOGUE.some((shelf) => shelf.id === ctx.shelfId && shelf.anywhere);
+    const mine = ctx.pins
+      .map((pin, index) => ({ pin, index }))
+      .filter(({ pin }) => pin.shelf === ctx.shelfId || (pin.shelf === "auto" && takesAnywhere))
+      .sort((a, b) => Number(b.pin.shelf !== "auto") - Number(a.pin.shelf !== "auto") || a.index - b.index);
+    const pinOf = new Map<string, { position?: number; index: number }>();
+    for (const { pin, index } of mine) if (!pinOf.has(pin.productId)) pinOf.set(pin.productId, { position: pin.position, index });
+
     const pinned = eligible
-      .filter((entry) => entry.pinned)
-      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+      .filter((entry) => entry.pinned && pinOf.has(entry.id))
+      .sort((a, b) => pinOf.get(a.id)!.index - pinOf.get(b.id)!.index)
       .slice(0, Math.max(0, max));
     if (pinned.length === 0) return picked;
     const pinnedIds = new Set(pinned.map((entry) => entry.id));
-    const rest = picked.filter((entry) => !pinnedIds.has(entry.id));
-    const position = Math.min(Math.max(0, at), rest.length);
-    return [...rest.slice(0, position), ...pinned, ...rest.slice(position)].slice(0, spec.limit);
+    const result = picked.filter((entry) => !pinnedIds.has(entry.id));
+
+    // A push with a fixed card goes there; the rest follow the dial, in list
+    // order. Fixed ones are placed first so "card 1" really is card 1.
+    let next = at;
+    const wanted = pinned.map((entry) => {
+      const fixed = pinOf.get(entry.id)!.position;
+      return { entry, slot: fixed && fixed > 0 ? fixed - 1 : next++, fixed: Boolean(fixed && fixed > 0) };
+    });
+    wanted.sort((a, b) => Number(b.fixed) - Number(a.fixed) || a.slot - b.slot);
+    const placed: { slot: number; entry: Merged }[] = [];
+    for (const { entry, slot } of wanted) {
+      // Two pushes asking for the same card: the second takes the next one.
+      let target = slot;
+      while (placed.some((p) => p.slot === target)) target++;
+      placed.push({ slot: target, entry });
+    }
+    placed.sort((a, b) => a.slot - b.slot);
+    for (const { slot, entry } of placed) result.splice(Math.min(slot, result.length), 0, entry);
+    return result.slice(0, spec.limit);
   }
 
   /**

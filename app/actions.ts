@@ -3700,6 +3700,8 @@ export async function addRecoPin(formData: FormData): Promise<{ error?: string }
   const note = String(formData.get("note") ?? "").trim().slice(0, 90);
   const startsAt = normaliseShopTime(formData.get("startsAt"));
   const endsAt = normaliseShopTime(formData.get("endsAt"));
+  const positionRaw = Number(formData.get("position") ?? "");
+  const position = positionRaw >= 1 && positionRaw <= 6 ? Math.trunc(positionRaw) : undefined;
   if (startsAt && endsAt && parseShopTime(endsAt) <= parseShopTime(startsAt)) {
     return { error: "The end time must be after the start time." };
   }
@@ -3715,10 +3717,12 @@ export async function addRecoPin(formData: FormData): Promise<{ error?: string }
     );
     // Listed in the order chosen, ahead of older pushes.
     settings.pins.unshift(
-      ...productIds.map((productId) => ({
+      ...productIds.map((productId, index) => ({
         id: `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         productId,
         shelf,
+        // Several products asking for one card take it and the cards after.
+        position: position !== undefined ? Math.min(6, position + index) : undefined,
         note: note || undefined,
         startsAt: startsAt || undefined,
         endsAt: endsAt || undefined,
@@ -3733,6 +3737,51 @@ export async function addRecoPin(formData: FormData): Promise<{ error?: string }
     names.length === 1 ? `Pushed ${names[0]}` : `Pushed ${names.length} products: ${names.join(", ")}`,
     "reco",
   );
+}
+
+/**
+ * Change a push in place — where it goes, which card, its reason and its
+ * dates. Called from /api/admin/reco-pins (PATCH), like adding one.
+ */
+export async function updateRecoPin(
+  id: string,
+  changes: { shelf?: string; position?: number | null; note?: string; startsAt?: string; endsAt?: string },
+): Promise<{ error?: string } | void> {
+  await requireAdminSession();
+  const { getRecoSettings } = await import("@/lib/api");
+  const { SHELF_CATALOGUE } = await import("@/lib/reco/catalogue");
+  const current = (await getRecoSettings()).pins.find((pin) => pin.id === id);
+  if (!current) return { error: "That push no longer exists. Refresh the page." };
+
+  const shelf = changes.shelf?.trim() || current.shelf;
+  if (shelf !== "auto" && !SHELF_CATALOGUE.some((s) => s.id === shelf && s.pinnable)) {
+    return { error: "That shelf doesn't take pushes." };
+  }
+  const position =
+    changes.position === undefined ? current.position : changes.position === null ? undefined : Math.trunc(changes.position);
+  if (position !== undefined && !(position >= 1 && position <= 6)) {
+    return { error: "Choose a card from 1 to 6, or Automatic." };
+  }
+  const startsAt = changes.startsAt === undefined ? current.startsAt : normaliseShopTime(changes.startsAt);
+  const endsAt = changes.endsAt === undefined ? current.endsAt : normaliseShopTime(changes.endsAt);
+  if (startsAt && endsAt && parseShopTime(endsAt) <= parseShopTime(startsAt)) {
+    return { error: "The end time must be after the start time." };
+  }
+  if (endsAt && endsAt !== current.endsAt && parseShopTime(endsAt) <= Date.now()) {
+    return { error: "That end time has already passed." };
+  }
+  const note = changes.note === undefined ? current.note : changes.note.trim().slice(0, 90) || undefined;
+
+  await mutateReco((settings) => {
+    const pin = settings.pins.find((entry) => entry.id === id);
+    if (!pin) return;
+    // Moving it to a shelf the same product is already pushed on merges the
+    // two, as adding does — one product, one push per shelf.
+    settings.pins = settings.pins.filter(
+      (entry) => entry.id === id || !(entry.productId === pin.productId && entry.shelf === shelf),
+    );
+    Object.assign(pin, { shelf, position, note, startsAt: startsAt || undefined, endsAt: endsAt || undefined });
+  });
 }
 
 export async function toggleRecoPin(id: string): Promise<void> {

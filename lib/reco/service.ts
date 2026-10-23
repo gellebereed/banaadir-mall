@@ -250,14 +250,14 @@ function livePins(
   settings: RecoSettings,
   byId: Map<string, Product>,
   now: number,
-): { productId: string; shelf: string; note?: string }[] {
+): { productId: string; shelf: string; note?: string; position?: number }[] {
   return settings.pins
     .filter((pin) => isPinLive(pin, now))
     .filter((pin) => {
       const product = byId.get(pin.productId);
       return Boolean(product && !product.hidden);
     })
-    .map((pin) => ({ productId: pin.productId, shelf: pin.shelf, note: pin.note }));
+    .map((pin) => ({ productId: pin.productId, shelf: pin.shelf, note: pin.note, position: pin.position }));
 }
 
 export function isPinLive(pin: RecoPin, now = Date.now()): boolean {

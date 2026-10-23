@@ -13,6 +13,9 @@ import {
 } from "@/app/actions";
 import ProductImage from "@/components/ProductImage";
 import PushComposer from "@/components/dashboard/discovery/PushComposer";
+import PushEditor from "@/components/dashboard/discovery/PushEditor";
+import { autoCard, whereItShows } from "@/components/dashboard/discovery/push-parts";
+import { useRouter } from "next/navigation";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import { money } from "@/lib/format";
@@ -55,21 +58,25 @@ export default function PinManager({
   );
 
   /*
-   * Pushes the composer just saved, shown at once. The page refresh that
-   * follows a save brings them in from the server too, but it has been seen
-   * to stall; until it lands these fill the gap. A just-saved push replaces
-   * the older one for the same product and shelf, as the server does.
+   * Pushes the composer just saved, and pushes just edited, shown at once.
+   * The page refresh that follows a save brings them in from the server
+   * too, but it has been seen to stall; until it lands these fill the gap.
+   * A just-saved push replaces the older one for the same product and
+   * shelf, as the server does.
    */
-  const [justPushed, setJustPushed] = useState<RecoPin[]>([]);
+  const [local, setLocal] = useState<RecoPin[]>([]);
   // Fresh server data includes them, and is the truth from then on — so a
   // just-pushed row that is then removed does not come back.
-  useEffect(() => setJustPushed([]), [settings.pins]);
+  useEffect(() => setLocal([]), [settings.pins]);
   const pins = useMemo(() => {
-    const fresh = justPushed.filter((pin) => !settings.pins.some((p) => p.id === pin.id));
+    const byIdLocal = new Map(local.map((pin) => [pin.id, pin]));
+    const fresh = local.filter((pin) => !settings.pins.some((p) => p.id === pin.id));
     const replaced = (p: RecoPin) =>
       fresh.some((pin) => pin.productId === p.productId && pin.shelf === p.shelf);
-    return [...fresh, ...settings.pins.filter((p) => !replaced(p))];
-  }, [justPushed, settings.pins]);
+    return [...fresh, ...settings.pins.filter((p) => !replaced(p)).map((p) => byIdLocal.get(p.id) ?? p)];
+  }, [local, settings.pins]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const router = useRouter();
 
   const now = Date.now();
   const rows = pins.map((pin) => {
@@ -98,7 +105,7 @@ export default function PinManager({
         blocked={blocked}
         pushedIds={pushedIds}
         pinStrength={settings.pinStrength}
-        onPushed={(saved) => setJustPushed((current) => [...saved, ...current])}
+        onPushed={(saved) => setLocal((current) => [...saved, ...current])}
       />
 
       {/* ── Pushes ─────────────────────────────────────────────────── */}
@@ -136,9 +143,38 @@ export default function PinManager({
           </p>
         ) : (
           <>
-            <p className="mt-3 text-xs text-slate-400">
-              Order matters: when several pushes fit one shelf, the higher one takes the earlier card.
-            </p>
+            <details className="group mt-3 rounded-2xl bg-sand-50 px-4 py-3 text-xs text-slate-600">
+              <summary className="cursor-pointer list-none font-bold text-slate-700">
+                <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
+                How a push appears to shoppers
+              </summary>
+              <ul className="mt-2 list-disc space-y-1 pl-5 leading-relaxed">
+                <li>
+                  Each page — home, product pages, basket, wishlist, order confirmation — builds its own rows of
+                  recommendations. <strong>Anywhere</strong> puts the product in the first general row showing for
+                  that shopper:{" "}
+                  {shelves.filter((s) => s.pinnable && s.anywhere).map((s) => `“${s.title}”`).join(", ")}.{" "}
+                  <strong>One shelf</strong> keeps it to the row you pick — use that for rows about the shopper&apos;s
+                  own items, like “Cheaper than when you looked”.
+                </li>
+                <li>
+                  A push never creates a row: the row has to have enough of its own products to show anyway.
+                </li>
+                <li>
+                  It takes the card you set (or the automatic one, card {autoCard(settings.pinStrength)}), and
+                  shows your reason above the name — “Picked by Banaadir Mall” if you leave it empty.
+                </li>
+                <li>
+                  It appears once per page, not in every row. When several pushes fit one row, the higher one
+                  in this list goes first; a row never holds more than a third pushes.
+                </li>
+                <li>
+                  It still has to be in stock and visible, and a shopper who tapped “not interested” won&apos;t
+                  see it. Some rows only show for shoppers with history (like “Chosen for you”) — check in a
+                  private window to see what a new visitor gets.
+                </li>
+              </ul>
+            </details>
             <ul className="mt-3 space-y-2.5">
               {rows.map(({ pin, product, shelf, status }, index) => (
                 <li
@@ -194,10 +230,13 @@ export default function PinManager({
                       </p>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {shelf ? `${shelf.title} · ${shelf.surface}` : "Anywhere"}
-                      {product ? ` · ${storeNames.get(product.store) ?? product.store}` : ""}
-                      {pin.note ? ` · “${pin.note}”` : ""}
+                      {product ? storeNames.get(product.store) ?? product.store : ""}
+                      {pin.note ? ` · “${pin.note}”` : " · “Picked by Banaadir Mall”"}
                       {pin.startsAt || pin.endsAt ? ` · ${shortWindow(pin.startsAt, pin.endsAt)}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      <span className="font-semibold">Shows on:</span>{" "}
+                      {whereItShows(shelf, pin.position, settings.pinStrength, shelves)}
                     </p>
                     {status.detail && (
                       <p
@@ -219,6 +258,18 @@ export default function PinManager({
                         View
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setEditing(editing === pin.id ? null : pin.id)}
+                      aria-expanded={editing === pin.id}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                        editing === pin.id
+                          ? "border-ocean-500 bg-ocean-50 text-ocean-800"
+                          : "border-sand-200 text-slate-600 hover:border-ocean-400 hover:text-ocean-700"
+                      }`}
+                    >
+                      Edit
+                    </button>
                     {status.state !== "ended" && (
                       <form action={toggleRecoPin.bind(null, pin.id)}>
                         <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-ocean-400 hover:text-ocean-700">
@@ -232,6 +283,21 @@ export default function PinManager({
                       </PendingButton>
                     </form>
                   </div>
+
+                  {editing === pin.id && (
+                    <PushEditor
+                      pin={pin}
+                      shelves={shelves}
+                      hiddenShelves={hiddenShelves}
+                      strength={settings.pinStrength}
+                      onCancel={() => setEditing(null)}
+                      onSaved={(saved) => {
+                        setLocal((current) => [...current.filter((p) => p.id !== saved.id), saved]);
+                        setEditing(null);
+                        router.refresh();
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

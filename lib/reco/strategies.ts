@@ -22,6 +22,7 @@
 import type { Category, Product, Store } from "../types";
 import { totalStock } from "../product-utils";
 import type { AffinityGraph } from "./affinity";
+import { SHELF_CATALOGUE } from "./catalogue";
 import type { CoviewGraph } from "./coview";
 import { partnersOf, partnersOfSet } from "./affinity";
 import type { MomentumIndex } from "./momentum";
@@ -38,6 +39,8 @@ export interface ActivePin {
   /** Shelf id to force it into, or "auto". */
   shelf: string;
   note?: string;
+  /** Fixed card, 1-based; unset = where the strength dial puts it. */
+  position?: number;
 }
 
 export interface RecoContext {
@@ -822,9 +825,13 @@ export const adminPins: Strategy = {
   run: (ctx) => {
     if (ctx.pins.length === 0) return [];
 
+    // An "Anywhere" push only joins rows whose heading holds for any product
+    // (ShelfInfo.anywhere); a row about the shopper's own items takes a push
+    // only when it was aimed there.
+    const takesAnywhere = SHELF_CATALOGUE.some((shelf) => shelf.id === ctx.shelfId && shelf.anywhere);
     const candidates: Candidate[] = [];
     ctx.pins.forEach((pin, index) => {
-      if (pin.shelf !== "auto" && pin.shelf !== ctx.shelfId) return;
+      if (pin.shelf === "auto" ? !takesAnywhere : pin.shelf !== ctx.shelfId) return;
       const product = ctx.byId.get(pin.productId);
       if (!product) return;
 
