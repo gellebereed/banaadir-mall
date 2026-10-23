@@ -1,10 +1,9 @@
 "use client";
 
 import PendingButton from "@/components/dashboard/PendingButton";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  addRecoPin,
   blockFromReco,
   clearEndedRecoPins,
   deleteRecoPin,
@@ -13,6 +12,7 @@ import {
   unblockFromReco,
 } from "@/app/actions";
 import ProductImage from "@/components/ProductImage";
+import PushComposer from "@/components/dashboard/discovery/PushComposer";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SubmitButton from "@/components/dashboard/SubmitButton";
 import { money } from "@/lib/format";
@@ -43,7 +43,6 @@ export default function PinManager({
 }) {
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const storeNames = useMemo(() => new Map(stores.map((s) => [s.slug, s.name])), [stores]);
-  const pinnable = shelves.filter((shelf) => shelf.pinnable);
   const blocked = useMemo(() => new Set(settings.blocked), [settings.blocked]);
 
   /** Shelves the admin has switched off on the Engine tab. */
@@ -55,8 +54,25 @@ export default function PinManager({
     [settings.shelves],
   );
 
+  /*
+   * Pushes the composer just saved, shown at once. The page refresh that
+   * follows a save brings them in from the server too, but it has been seen
+   * to stall; until it lands these fill the gap. A just-saved push replaces
+   * the older one for the same product and shelf, as the server does.
+   */
+  const [justPushed, setJustPushed] = useState<RecoPin[]>([]);
+  // Fresh server data includes them, and is the truth from then on — so a
+  // just-pushed row that is then removed does not come back.
+  useEffect(() => setJustPushed([]), [settings.pins]);
+  const pins = useMemo(() => {
+    const fresh = justPushed.filter((pin) => !settings.pins.some((p) => p.id === pin.id));
+    const replaced = (p: RecoPin) =>
+      fresh.some((pin) => pin.productId === p.productId && pin.shelf === p.shelf);
+    return [...fresh, ...settings.pins.filter((p) => !replaced(p))];
+  }, [justPushed, settings.pins]);
+
   const now = Date.now();
-  const rows = settings.pins.map((pin) => {
+  const rows = pins.map((pin) => {
     const product = byId.get(pin.productId);
     const shelf = shelves.find((entry) => entry.id === pin.shelf);
     return { pin, product, shelf, status: pinStatus(pin, product, shelf, hiddenShelves, now) };
@@ -66,93 +82,31 @@ export default function PinManager({
     { live: 0, scheduled: 0, paused: 0, ended: 0, blocked: 0 },
   );
 
-  // Where the dial puts a push — mirrors pinPlacement in lib/reco/shelves.ts.
-  const firstCard = Math.round((1 - settings.pinStrength / 100) * 3) + 1;
-  // The form remounts (and so clears) whenever the list of pushes changes,
-  // i.e. after a successful save.
-  const formKey = settings.pins.map((pin) => pin.id).join(",");
+  /** Products with a push that is running or about to — flagged in the composer. */
+  const pushedIds = useMemo(
+    () => new Set(pins.filter((pin) => pin.active).map((pin) => pin.productId)),
+    [pins],
+  );
 
   return (
     <div className="space-y-5">
-      {/* ── New push ───────────────────────────────────────────────── */}
-      <section className="card p-5 sm:p-6">
-        <h2 className="font-display font-bold text-ocean-950">📌 Push a product</h2>
-        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
-          A push gets a guaranteed place on the recommendation shelves it
-          is allowed on — from card {firstCard} of the row, and never more
-          than a third of a row. It still has to be in stock, and a shopper
-          who dismissed it won&apos;t see it.{" "}
-          {settings.pinStrength > 0 ? (
-            <Link href="/admin/discovery?tab=engine" className="font-semibold text-ocean-700 underline">
-              Push strength: {settings.pinStrength}
-            </Link>
-          ) : (
-            <Link href="/admin/discovery?tab=engine" className="font-semibold text-coral-600 underline">
-              Push strength is 0 — pushes are off
-            </Link>
-          )}
-        </p>
-
-        <SafeForm key={formKey} action={addRecoPin} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <span className="label">Product</span>
-            <ProductPicker products={products} storeNames={storeNames} blocked={blocked} />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="pin-shelf">
-              Where
-            </label>
-            <select id="pin-shelf" name="shelf" defaultValue="auto" className="input">
-              <option value="auto">Anywhere — the first shelf each shopper sees</option>
-              {pinnable.map((shelf) => (
-                <option key={shelf.id} value={shelf.id} disabled={hiddenShelves.has(shelf.id)}>
-                  {shelf.title} · {shelf.surface}
-                  {hiddenShelves.has(shelf.id) ? " (switched off)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="label" htmlFor="pin-note">
-              Reason shown on the card
-            </label>
-            <input
-              id="pin-note"
-              name="note"
-              maxLength={90}
-              placeholder="e.g. New from Karaca this week"
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="pin-start">
-              Starts (optional, Mogadishu time)
-            </label>
-            <input id="pin-start" type="datetime-local" name="startsAt" className="input" />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="pin-end">
-              Ends (optional)
-            </label>
-            <input id="pin-end" type="datetime-local" name="endsAt" className="input" />
-          </div>
-
-          <div className="sm:col-span-2">
-            <SubmitButton>Add push</SubmitButton>
-          </div>
-        </SafeForm>
-      </section>
+      <PushComposer
+        products={products}
+        stores={stores}
+        shelves={shelves}
+        hiddenShelves={hiddenShelves}
+        blocked={blocked}
+        pushedIds={pushedIds}
+        pinStrength={settings.pinStrength}
+        onPushed={(saved) => setJustPushed((current) => [...saved, ...current])}
+      />
 
       {/* ── Pushes ─────────────────────────────────────────────────── */}
       <section className="card p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display font-bold text-ocean-950">
             Pushes{" "}
-            <span className="text-sm font-semibold text-slate-400">({settings.pins.length})</span>
+            <span className="text-sm font-semibold text-slate-400">({pins.length})</span>
           </h2>
           {counts.ended > 0 && (
             <form action={clearEndedRecoPins}>
@@ -163,7 +117,7 @@ export default function PinManager({
           )}
         </div>
 
-        {settings.pins.length > 0 && (
+        {pins.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
             {(Object.keys(STATE_STYLE) as PinState[])
               .filter((state) => counts[state] > 0)
@@ -175,7 +129,7 @@ export default function PinManager({
           </div>
         )}
 
-        {settings.pins.length === 0 ? (
+        {pins.length === 0 ? (
           <p className="mt-3 rounded-2xl bg-sand-50 p-4 text-sm text-slate-500">
             Nothing pushed. The engine is ranking purely on shopper behaviour
             and your order history.
@@ -401,21 +355,19 @@ function ProductPicker({
 
   const index = useMemo(
     () =>
-      products
-        .filter((product) => !product.hidden)
-        .map((product) => ({
-          product,
-          haystack: [
-            product.name,
-            storeNames.get(product.store) ?? product.store,
-            product.internalReference,
-            product.barcode,
-            ...(product.variants ?? []).map((v) => v.barcode),
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase(),
-        })),
+      products.map((product) => ({
+        product,
+        haystack: [
+          product.name,
+          storeNames.get(product.store) ?? product.store,
+          product.internalReference,
+          product.barcode,
+          ...(product.variants ?? []).map((v) => v.barcode),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase(),
+      })),
     [products, storeNames],
   );
 
@@ -468,7 +420,7 @@ function ProductPicker({
         role="combobox"
         aria-expanded={open && matches.length > 0}
         aria-controls={`${id}-list`}
-        aria-label="Search products"
+        aria-label="Search products to keep out of recommendations"
         placeholder="Search by name, shop, code or barcode…"
         value={query}
         onChange={(event) => {

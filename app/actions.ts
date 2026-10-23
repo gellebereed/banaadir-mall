@@ -3676,16 +3676,24 @@ export async function updateAutoTune(formData: FormData): Promise<void> {
  */
 export async function addRecoPin(formData: FormData): Promise<{ error?: string } | void> {
   await requireAdminSession();
-  const productId = String(formData.get("productId") ?? "").trim();
-  if (!productId) return { error: "Choose a product from the list first." };
+  // One or several products — the composer pushes a selection at once.
+  const productIds = [
+    ...new Set(formData.getAll("productId").map((v) => String(v).trim()).filter(Boolean)),
+  ].slice(0, 10);
+  if (productIds.length === 0) return { error: "Choose a product from the list first." };
 
   const { getRecoSettings } = await import("@/lib/api");
   const [products, current] = await Promise.all([getBaseProducts(), getRecoSettings()]);
-  const product = products.find((p) => p.id === productId);
-  if (!product) return { error: "That product no longer exists." };
-  if (product.hidden) return { error: `“${product.name}” is hidden from the storefront, so a push could not show it.` };
-  if (current.blocked.includes(productId)) {
-    return { error: `“${product.name}” is on the Never recommend list. Remove it there first.` };
+  const byId = new Map(products.map((p) => [p.id, p]));
+  // All or nothing: a half-saved selection is harder to reason about than
+  // a clear "these two can't be pushed".
+  for (const id of productIds) {
+    const product = byId.get(id);
+    if (!product) return { error: "One of the chosen products no longer exists. Refresh and choose again." };
+    if (product.hidden) return { error: `“${product.name}” is hidden from the storefront, so a push could not show it.` };
+    if (current.blocked.includes(id)) {
+      return { error: `“${product.name}” is on the Never recommend list. Remove it there first.` };
+    }
   }
 
   const shelf = String(formData.get("shelf") ?? "auto").trim() || "auto";
@@ -3703,19 +3711,28 @@ export async function addRecoPin(formData: FormData): Promise<{ error?: string }
     // Re-pinning a product replaces the old push rather than stacking a
     // second one the merchandiser would then have to find and delete.
     settings.pins = settings.pins.filter(
-      (pin) => !(pin.productId === productId && pin.shelf === shelf),
+      (pin) => !(productIds.includes(pin.productId) && pin.shelf === shelf),
     );
-    settings.pins.unshift({
-      id: `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      productId,
-      shelf,
-      note: note || undefined,
-      startsAt: startsAt || undefined,
-      endsAt: endsAt || undefined,
-      active: true,
-    });
+    // Listed in the order chosen, ahead of older pushes.
+    settings.pins.unshift(
+      ...productIds.map((productId) => ({
+        id: `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        productId,
+        shelf,
+        note: note || undefined,
+        startsAt: startsAt || undefined,
+        endsAt: endsAt || undefined,
+        active: true,
+      })),
+    );
   });
-  await logActivity("platform", "reco.push", `Pushed “${product.name}”`, "reco");
+  const names = productIds.map((id) => `“${byId.get(id)!.name}”`);
+  await logActivity(
+    "platform",
+    "reco.push",
+    names.length === 1 ? `Pushed ${names[0]}` : `Pushed ${names.length} products: ${names.join(", ")}`,
+    "reco",
+  );
 }
 
 export async function toggleRecoPin(id: string): Promise<void> {
