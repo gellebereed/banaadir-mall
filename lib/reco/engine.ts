@@ -117,6 +117,21 @@ export interface BlendSpec {
    * shelf with a headline strategy would read as a broken control.
    */
   keepFrom?: string;
+  /**
+   * Guaranteed slots for the `keepFrom` strategy's products (admin pushes).
+   *
+   * Without this a push was only extra score, and the variety rules that
+   * run after scoring — one store or category per few cards, "different
+   * from its neighbours", the exploration slot — kept knocking it back
+   * off the shelf. The merchandiser saved a push, saw it listed as
+   * active, and never found it on the storefront.
+   *
+   * `at` is the first slot a push takes (0 = the first card), `max` how
+   * many of a shelf's cards pushes may hold so a shelf never becomes all
+   * ads. Pushes still have to pass isShowable: in stock, not hidden, not
+   * dismissed by this shopper.
+   */
+  guarantee?: { at: number; max: number };
 }
 
 interface Merged {
@@ -246,23 +261,25 @@ export function createBlender(ctx: RecoContext) {
       if (!entry.pinned && spec.demote?.has(entry.id)) entry.score *= REPEAT_PENALTY;
     }
 
-    const eligible = [...merged.values()]
+    const showable = [...merged.values()]
       // A shelf only holds what its defining strategy nominated — see
       // BlendSpec.reasonFrom. Admin pushes are the documented exception.
       .filter((entry) => !spec.reasonFrom || entry.preferredReason || entry.pinned)
       .filter((entry) => isShowable(entry.id, spec))
-      .sort((a, b) => b.score - a.score)
-      // MMR is O(candidates × picked); there is no point walking a tail
-      // that could never be chosen.
-      .slice(0, Math.max(spec.limit * 6, 48));
+      .sort((a, b) => b.score - a.score);
+    // MMR is O(candidates × picked); there is no point walking a tail
+    // that could never be chosen. (Guaranteed pushes are placed from the
+    // untrimmed list — a weak-scoring push is still a push.)
+    const eligible = showable.slice(0, Math.max(spec.limit * 6, 48));
 
     const picked = select(eligible, spec);
 
     // Exploration is applied last so it displaces the weakest exploit pick
     // rather than competing with the strongest.
     const withExploration = spec.explore ? injectExploration(picked, spec) : picked;
+    const final = spec.guarantee ? placePinned(withExploration, showable, spec) : withExploration;
 
-    return withExploration.map((entry) => {
+    return final.map((entry) => {
       const product = ctx.byId.get(entry.id)!;
       return {
         product,
@@ -343,6 +360,24 @@ export function createBlender(ctx: RecoContext) {
     }
 
     return picked;
+  }
+
+  /**
+   * Put the pushes where they were promised, in the order the admin listed
+   * them (their pin score), then fill the rest with the engine's own picks.
+   */
+  function placePinned(picked: Merged[], eligible: Merged[], spec: BlendSpec): Merged[] {
+    const { at, max } = spec.guarantee!;
+    const order = new Map(ctx.pins.map((pin, index) => [pin.productId, index]));
+    const pinned = eligible
+      .filter((entry) => entry.pinned)
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+      .slice(0, Math.max(0, max));
+    if (pinned.length === 0) return picked;
+    const pinnedIds = new Set(pinned.map((entry) => entry.id));
+    const rest = picked.filter((entry) => !pinnedIds.has(entry.id));
+    const position = Math.min(Math.max(0, at), rest.length);
+    return [...rest.slice(0, position), ...pinned, ...rest.slice(position)].slice(0, spec.limit);
   }
 
   /**

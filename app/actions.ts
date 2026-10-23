@@ -3666,15 +3666,38 @@ export async function updateAutoTune(formData: FormData): Promise<void> {
   await logActivity("platform", "reco.auto-tune", `Turned auto-tuning ${on ? "on" : "off"}`, "reco");
 }
 
-/** Push a product. See RecoPin — a pin is an opinion, not an override. */
-export async function addRecoPin(formData: FormData): Promise<void> {
+/**
+ * Push a product. See RecoPin.
+ *
+ * Every refusal comes back as a sentence. This used to return quietly when
+ * no product was chosen — typing a name without picking it from the list
+ * left the hidden id empty — so "Add push" looked like it worked and saved
+ * nothing.
+ */
+export async function addRecoPin(formData: FormData): Promise<{ error?: string } | void> {
+  await requireAdminSession();
   const productId = String(formData.get("productId") ?? "").trim();
-  if (!productId) return;
+  if (!productId) return { error: "Choose a product from the list first." };
+
+  const { getRecoSettings } = await import("@/lib/api");
+  const [products, current] = await Promise.all([getBaseProducts(), getRecoSettings()]);
+  const product = products.find((p) => p.id === productId);
+  if (!product) return { error: "That product no longer exists." };
+  if (product.hidden) return { error: `“${product.name}” is hidden from the storefront, so a push could not show it.` };
+  if (current.blocked.includes(productId)) {
+    return { error: `“${product.name}” is on the Never recommend list. Remove it there first.` };
+  }
 
   const shelf = String(formData.get("shelf") ?? "auto").trim() || "auto";
   const note = String(formData.get("note") ?? "").trim().slice(0, 90);
   const startsAt = normaliseShopTime(formData.get("startsAt"));
   const endsAt = normaliseShopTime(formData.get("endsAt"));
+  if (startsAt && endsAt && parseShopTime(endsAt) <= parseShopTime(startsAt)) {
+    return { error: "The end time must be after the start time." };
+  }
+  if (endsAt && parseShopTime(endsAt) <= Date.now()) {
+    return { error: "That end time has already passed." };
+  }
 
   await mutateReco((settings) => {
     // Re-pinning a product replaces the old push rather than stacking a
@@ -3692,6 +3715,7 @@ export async function addRecoPin(formData: FormData): Promise<void> {
       active: true,
     });
   });
+  await logActivity("platform", "reco.push", `Pushed “${product.name}”`, "reco");
 }
 
 export async function toggleRecoPin(id: string): Promise<void> {
@@ -3707,10 +3731,32 @@ export async function deleteRecoPin(id: string): Promise<void> {
   });
 }
 
+/**
+ * Move a push up or down the list. The order is the order pushes take
+ * their guaranteed slots on a shelf (lib/reco/engine.ts placePinned).
+ */
+export async function moveRecoPin(id: string, direction: "up" | "down"): Promise<void> {
+  await mutateReco((settings) => {
+    const index = settings.pins.findIndex((pin) => pin.id === id);
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= settings.pins.length) return;
+    const [pin] = settings.pins.splice(index, 1);
+    settings.pins.splice(target, 0, pin);
+  });
+}
+
+/** Drop every push whose end time has passed. */
+export async function clearEndedRecoPins(): Promise<void> {
+  const now = Date.now();
+  await mutateReco((settings) => {
+    settings.pins = settings.pins.filter((pin) => !pin.endsAt || parseShopTime(pin.endsAt) > now);
+  });
+}
+
 /** Keep a product out of every recommendation, for everyone. */
-export async function blockFromReco(formData: FormData): Promise<void> {
+export async function blockFromReco(formData: FormData): Promise<{ error?: string } | void> {
   const productId = String(formData.get("productId") ?? "").trim();
-  if (!productId) return;
+  if (!productId) return { error: "Choose a product from the list first." };
   await mutateReco((settings) => {
     if (!settings.blocked.includes(productId)) settings.blocked.push(productId);
     // A blocked product cannot also be pushed — leaving a dead pin behind

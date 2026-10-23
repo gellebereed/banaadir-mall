@@ -82,6 +82,16 @@ interface ShelfSpec {
   when?: (ctx: RecoContext) => boolean;
 }
 
+/**
+ * Where pushes sit on a shelf, from the 1–100 strength dial: at 100 they
+ * lead the row; at the shipped 55 they start at the second card; low
+ * strengths put them further along. Never more than a third of the row.
+ */
+function pinPlacement(strength: number, limit: number): { at: number; max: number } {
+  const at = Math.round((1 - Math.min(100, Math.max(0, strength)) / 100) * 3);
+  return { at, max: Math.max(1, Math.floor(limit / 3)) };
+}
+
 /** Enough history for a shelf to be allowed to say "you". */
 const PERSONAL_FLOOR = 0.15;
 
@@ -110,7 +120,8 @@ export function composeShelves(
    * a pin is comparable to the shelf's own headline signal; at 100 it
    * leads; at 10 it is a tiebreaker.
    */
-  const pinWeight = ((options.settings?.pinStrength ?? 55) / 100) * 1.8;
+  const strength = options.settings?.pinStrength ?? 55;
+  const pinWeight = (strength / 100) * 1.8;
 
   for (const spec of specs) {
     const override = overrides.get(spec.id);
@@ -137,6 +148,7 @@ export function composeShelves(
       // page and the control would look broken.
       reasonFrom: spec.reasonFrom,
       keepFrom: weights.pins ? "pins" : undefined,
+      guarantee: weights.pins ? pinPlacement(strength, spec.limit) : undefined,
       explore: spec.explore,
       maxPerStore: spec.maxPerStore,
       maxPerCategory: spec.maxPerCategory,

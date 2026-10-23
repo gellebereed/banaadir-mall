@@ -134,6 +134,7 @@ export default async function AdminDiscoveryPage({
             settings={settings}
             products={products}
             shelves={SHELF_CATALOGUE}
+            stores={stores}
           />
         )}
 
