@@ -802,7 +802,7 @@ export default function CheckoutClient({
         )}
       </div>
 
-      <form onSubmit={placeOrder} noValidate className="grid gap-6 lg:grid-cols-[1fr_400px]">
+      <form onSubmit={placeOrder} noValidate className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
         <div className="min-w-0 space-y-6 self-start">
           {hasErrors && (
             <p className="rounded-2xl border border-coral-100 bg-coral-100/60 px-4 py-3 text-sm font-semibold text-coral-700" role="alert">
