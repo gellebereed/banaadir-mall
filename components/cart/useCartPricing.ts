@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PromoStatus } from "@/lib/cart-pricing";
 import { priceCart, type CartPricing, type PricingLine } from "@/lib/offers";
+import { lineDeal, type LineDeal } from "@/lib/product-utils";
 import type { MarketingSettings, Offer } from "@/lib/types";
 
 /** What the hook needs from a cart line (lib/cart-context CartLine fits). */
@@ -11,7 +12,7 @@ export interface PricedLineLike {
   qty: number;
   color?: string;
   size?: string;
-  product: { price: number; store: string; compareAt?: number };
+  product: { price: number; store: string; compareAt?: number; flashSale?: { until?: string } };
 }
 
 /** The offers the page was rendered with — see app/cart/page.tsx. */
@@ -60,7 +61,12 @@ export function useCartPricing(lines: PricedLineLike[], promoCode: string | null
     .map((l) => `${l.productId}|${l.qty}|${l.color ?? ""}|${l.size ?? ""}|${l.product.price}`)
     .join(",")}#${code}`;
 
-  const [server, setServer] = useState<{ key: string; pricing: CartPricing; promo: PromoStatus | null } | null>(null);
+  const [server, setServer] = useState<{
+    key: string;
+    pricing: CartPricing;
+    promo: PromoStatus | null;
+    deals?: LineDeal[];
+  } | null>(null);
   /** Coupon offers the server confirmed for a code — priced locally from then on. */
   const [unlocked, setUnlocked] = useState<{ code: string; offers: Offer[] } | null>(null);
 
@@ -108,9 +114,9 @@ export function useCartPricing(lines: PricedLineLike[], promoCode: string | null
         }),
       })
         .then((response) => (response.ok ? response.json() : null))
-        .then((result: { pricing: CartPricing; promo: PromoStatus | null } | null) => {
+        .then((result: { pricing: CartPricing; promo: PromoStatus | null; deals?: LineDeal[] } | null) => {
           if (!result?.pricing) return;
-          setServer({ key, pricing: result.pricing, promo: result.promo });
+          setServer({ key, pricing: result.pricing, promo: result.promo, deals: result.deals });
           if (code && result.promo?.unlocked?.length) setUnlocked({ code, offers: result.promo.unlocked });
         })
         .catch(() => {
@@ -126,9 +132,33 @@ export function useCartPricing(lines: PricedLineLike[], promoCode: string | null
   }, [key]);
 
   const confirmed = server !== null && server.key === key;
+  const pricing = confirmed ? server.pricing : (local?.pricing ?? null);
+
+  /*
+   * Each line's markdown — "was $79", "⚡ flash". From the cart's own copy
+   * at once; the server's from today's catalogue once it answers, so a
+   * flash deal that ended while the item sat in the basket stops being
+   * claimed.
+   */
+  const deals: LineDeal[] =
+    confirmed && server.deals
+      ? server.deals
+      : lines.map((l) => lineDeal(l.product, l.product.price));
+  /** Saved by sale and flash prices — before any shop offer or code. */
+  const saleDiscount =
+    Math.round(
+      lines.reduce((total, l, i) => {
+        const was = deals[i]?.was;
+        const today = pricing?.lines[String(i)]?.units[0]?.listPrice ?? l.product.price;
+        return was && was > today ? total + (was - today) * l.qty : total;
+      }, 0) * 100,
+    ) / 100;
+
   return {
-    pricing: confirmed ? server.pricing : (local?.pricing ?? null),
+    pricing,
     promo: confirmed ? server.promo : (local?.promo ?? null),
+    deals,
+    saleDiscount,
     /** False while the server has yet to confirm what is on screen. */
     confirmed,
   };

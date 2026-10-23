@@ -456,6 +456,8 @@ const M = {
   "offerPage.backToCart": { en: "Back to your basket", so: "Ku noqo dambiishaada" },
   "offerPage.none": { en: "Nothing in this offer is in stock right now.", so: "Hadda ma jiro shay dalabkan ka mid ah oo bakhaarka yaal." },
   "offer.hint.pick": { en: "See what qualifies", so: "Eeg waxa u qalma" },
+  "cart.flashPrice": { en: "Flash price", so: "Qiimaha degdegga" },
+  "cart.saleSavings": { en: "🏷️ Sale & flash prices", so: "🏷️ Qiimo-dhimis iyo degdeg" },
   "offer.savedTotal": { en: "You saved", so: "Waad badbaadisay" },
   // ── My orders & tracking ──────────────────────────────────────────────
   "orders.title": { en: "My orders", so: "Dalabyadayda" },

@@ -402,7 +402,14 @@ export async function getAllProducts(): Promise<Product[]> {
     const flashEndsAt = flash.get(p.id)?.endsAt;
     // The chip only means something when the flash price is the one shown.
     const flashWins = flashEndsAt && pct === (flash.get(p.id)?.pct ?? 0);
-    const withFlash = flashWins ? { ...priced, flashEndsAt } : priced;
+    const flashPrice = flash.get(p.id);
+    // The flash price is the one being charged — not beaten by a bigger promotion.
+    const isFlashPrice = pct > 0 && pct === (flashPrice?.pct ?? 0);
+    const withFlash = {
+      ...priced,
+      ...(flashWins ? { flashEndsAt } : {}),
+      ...(isFlashPrice ? { flashSale: { until: flashPrice?.until } } : {}),
+    };
     return offer ? { ...withFlash, offer } : withFlash;
   });
 }

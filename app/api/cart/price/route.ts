@@ -26,8 +26,11 @@ export async function POST(request: NextRequest) {
       selectedColor: item.selectedColor ? String(item.selectedColor) : undefined,
       selectedSize: item.selectedSize ? String(item.selectedSize) : undefined,
     }));
-    const { pricing, promo } = await priceItems(items, body.promoCode ? String(body.promoCode).slice(0, 30) : undefined);
-    return NextResponse.json({ pricing, promo }, { headers: { "Cache-Control": "no-store" } });
+    const { pricing, promo, deals } = await priceItems(
+      items,
+      body.promoCode ? String(body.promoCode).slice(0, 30) : undefined,
+    );
+    return NextResponse.json({ pricing, promo, deals }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "Could not price the basket." }, { status: 400 });
   }

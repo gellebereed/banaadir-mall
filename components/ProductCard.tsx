@@ -337,6 +337,7 @@ export default function ProductCard({
                     store: product.store,
                     image: mainImage,
                     compareAt: product.compareAt,
+                    flashSale: product.flashSale,
                   },
                 }, {
                   offer: product.offer && !product.offer.code ? offerHint(product.offer, price, t, money) : undefined,

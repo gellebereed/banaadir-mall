@@ -53,6 +53,8 @@ export interface PlacedOrder {
   subtotal: number;
   /** Saved through shop offers and the promo code, as the server priced it. */
   discount?: number;
+  /** Saved by sale and flash prices, before any offer — as the basket showed it. */
+  saleDiscount?: number;
   delivery: number;
   total: number;
   parcels: PlacedParcel[];
@@ -197,8 +199,15 @@ export default function OrderConfirmation({
         <dl className="mt-4 space-y-2 text-sm">
           <div className="flex justify-between">
             <dt className="text-slate-500">{t("conf.items")}</dt>
-            <dd className="font-semibold text-slate-800">{money(order.subtotal)}</dd>
+            {/* At the prices before any markdown, as the basket showed them. */}
+            <dd className="font-semibold text-slate-800">{money(order.subtotal + (order.saleDiscount ?? 0))}</dd>
           </div>
+          {(order.saleDiscount ?? 0) > 0 && (
+            <div className="flex justify-between text-emerald-600">
+              <dt>{t("cart.saleSavings")}</dt>
+              <dd className="font-semibold">−{money(order.saleDiscount ?? 0)}</dd>
+            </div>
+          )}
           {(order.discount ?? 0) > 0 && (
             <div className="flex justify-between text-emerald-600">
               <dt>{t("conf.saved")}</dt>

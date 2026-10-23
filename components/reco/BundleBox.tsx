@@ -77,6 +77,7 @@ export default function BundleBox({ seedId }: { seedId: string }) {
           store: product.store,
           image: primaryImage(product),
           compareAt: product.compareAt,
+          flashSale: product.flashSale,
         },
       });
     }

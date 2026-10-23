@@ -1,40 +1,63 @@
 "use client";
 
 import { useMemo } from "react";
+import FlashEndsChip from "@/components/FlashEndsChip";
 import OfferPicks, { nudgeProgress, useOfferPicks } from "@/components/cart/OfferPicks";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { useCart } from "@/lib/cart-context";
 import type { PromoStatus } from "@/lib/cart-pricing";
 import { money } from "@/lib/format";
 import { nudgeText, offerHeadline, type CartPricing, type LinePricing, type PricingLine, type StorePricing } from "@/lib/offers";
+import type { LineDeal } from "@/lib/product-utils";
 import type { Offer } from "@/lib/types";
 
-/** A line's total — crossed-out list price and the offer's name when it saved something. */
+/**
+ * A line's total — and everything that brought it down: the "was" price of
+ * a sale or flash item with its percentage, and the shop offer's name.
+ *
+ * Sale and flash prices ARE the product's price, so only offers used to be
+ * crossed out here: an item bought for its "$79 → $49, save 38%" showed as
+ * a plain "$49" from the basket onwards.
+ */
 export function LinePrice({
   line,
   fallbackTotal,
   unitPrice,
   qty,
+  deal,
   size = "lg",
 }: {
   line?: LinePricing;
   fallbackTotal: number;
   unitPrice: number;
   qty: number;
+  /** The line's markdown — useCartPricing's `deals`. */
+  deal?: LineDeal;
   size?: "lg" | "sm";
 }) {
   const t = useT();
-  const saved = line && line.discount > 0;
-  const names = saved ? [...new Set(line.units.map((u) => u.offerName).filter(Boolean))] : [];
+  const total = line?.total ?? fallbackTotal;
+  const wasTotal = deal?.was ? deal.was * qty : 0;
+  const struck = Math.max(wasTotal, line?.listTotal ?? 0);
+  const saved = struck > total + 0.005;
+  // Against the crossed-out price beside it: "$19 → $1" is −95%, not the
+  // flash's −20% that only took it to $15.20 before the offer.
+  const pct = saved && struck > 0 ? Math.round((1 - total / struck) * 100) : 0;
+  const names = line && line.discount > 0 ? [...new Set(line.units.map((u) => u.offerName).filter(Boolean))] : [];
   return (
     <div className="shrink-0 text-right">
-      {saved && <p className="text-[11px] text-slate-400 line-through tabular-nums">{money(line.listTotal)}</p>}
+      {saved && (
+        <p className="flex items-center justify-end gap-1 text-[11px] tabular-nums">
+          {pct > 0 && <span className="rounded bg-coral-500 px-1 text-[10px] font-bold text-white">−{pct}%</span>}
+          <span className="text-slate-400 line-through">{money(struck)}</span>
+        </p>
+      )}
       <p
         className={`font-display font-bold tabular-nums ${saved ? "text-emerald-700" : "text-ocean-950"} ${
           size === "lg" ? "text-base sm:text-lg" : "text-sm"
         }`}
       >
-        {money(line?.total ?? fallbackTotal)}
+        {money(total)}
       </p>
       {!saved && qty > 1 && size === "lg" && (
         <p className="text-[11px] text-slate-400">{t("cart.each", { price: money(line?.units[0]?.listPrice ?? unitPrice) })}</p>
@@ -45,6 +68,22 @@ export function LinePrice({
         </p>
       ))}
     </div>
+  );
+}
+
+/**
+ * "⚡ Flash price ends in 2d 3h" under a basket line at its flash price —
+ * the countdown that sold it, still visible where the decision is made.
+ */
+export function FlashTag({ deal }: { deal?: LineDeal }) {
+  const t = useT();
+  if (!deal?.flash) return null;
+  return deal.flash.until ? (
+    <FlashEndsChip endsAt={deal.flash.until} className="mt-1 inline-block !px-2 !py-0.5 !text-[10px]" />
+  ) : (
+    <span className="mt-1 inline-block rounded-full bg-coral-600/95 px-2 py-0.5 text-[10px] font-bold text-white">
+      ⚡ {t("cart.flashPrice")}
+    </span>
   );
 }
 

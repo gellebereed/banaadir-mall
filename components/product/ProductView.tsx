@@ -19,6 +19,7 @@ import {
   defaultVariant,
   findVariant,
   hasVariants,
+  lineDeal,
   sizeOptions,
   variantImages,
   variantPrice,
@@ -170,7 +171,9 @@ export default function ProductView({
         store: product.store,
         // The photo for the variant they actually chose.
         image: images[0],
-        compareAt: product.compareAt,
+        // Per unit of the variant chosen, which can cost more or less than the product.
+        compareAt: lineDeal(product, price).was,
+        flashSale: product.flashSale,
       },
     }, {
       // Coupon offers are private to whoever has the code — no hint.

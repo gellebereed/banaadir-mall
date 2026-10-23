@@ -25,6 +25,7 @@ export interface OfferPick {
   /** Today's price, after any price promotion — what the cart would charge. */
   price: number;
   compareAt?: number;
+  flashSale?: { until?: string };
   image?: string;
   icon: string;
   store: string;
@@ -49,6 +50,7 @@ export function toPick(product: Product): OfferPick {
     name: product.name,
     price: product.price,
     compareAt: product.compareAt,
+    flashSale: product.flashSale,
     image: primaryImage(product),
     icon: product.icon,
     store: product.store,

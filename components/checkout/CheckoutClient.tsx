@@ -19,7 +19,7 @@ import OrderConfirmation, {
 } from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
 import { CartSkeleton } from "@/components/cart/CartClient";
-import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { DiscountRows, FlashTag, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
 import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
 import { cartLineKey, useCart } from "@/lib/cart-context";
@@ -330,11 +330,14 @@ export default function CheckoutClient({
    * added, so a changed price is pointed out rather than discovered later.
    */
   const pricingContext = useMemo(() => ({ offers, promo }), [offers, promo]);
-  const { pricing, promo: promoStatus } = useCartPricing(lines, appliedPromo, pricingContext);
+  const { pricing, promo: promoStatus, deals, saleDiscount } = useCartPricing(lines, appliedPromo, pricingContext);
   // The basket as the pricing engine reads it — the offer picks price against it.
   const basket = useMemo(() => toPricingLines(lines), [lines]);
   const lineIndex = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
   const pricedLine = (key: string) => pricing?.lines[lineIndex.get(key) ?? ""];
+  const dealOf = (key: string) => deals[Number(lineIndex.get(key) ?? -1)];
+  /** Everything the shopper saves: sale and flash prices, shop offers, the code. */
+  const totalSaved = saleDiscount + (pricing ? pricing.offerDiscount + pricing.promoDiscount : 0);
   const priceOf = (line: (typeof lines)[number]) =>
     pricedLine(cartLineKey(line))?.units[0]?.listPrice ?? line.product.price;
   const subtotal = pricing?.listTotal ?? lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
@@ -580,6 +583,7 @@ export default function CheckoutClient({
       paymentMethod: payment,
       subtotal: Math.round((placedItems + savedOnServer) * 100) / 100,
       discount: savedOnServer,
+      saleDiscount,
       delivery,
       total: Math.round((placedItems + delivery) * 100) / 100,
       // Fall back to the local split only when the server call failed —
@@ -731,8 +735,10 @@ export default function CheckoutClient({
                         {[line.color, line.size].filter(Boolean).join(" · ")}
                       </span>
                     )}
+                    <FlashTag deal={dealOf(cartLineKey(line))} />
                   </span>
                   <LinePrice
+                    deal={dealOf(cartLineKey(line))}
                     line={pricedLine(cartLineKey(line))}
                     fallbackTotal={priceOf(line) * line.qty}
                     unitPrice={priceOf(line)}
@@ -805,8 +811,15 @@ export default function CheckoutClient({
           <dt className="text-slate-500">
             {t("cart.subtotal")} · {units === 1 ? t("cart.itemsOne") : t("cart.itemsMany", { n: units })}
           </dt>
-          <dd className="font-semibold tabular-nums">{money(subtotal)}</dd>
+          {/* Before any markdown, so the savings rows below add up to the total. */}
+          <dd className="font-semibold tabular-nums">{money(subtotal + saleDiscount)}</dd>
         </div>
+        {saleDiscount > 0 && (
+          <div className="flex justify-between text-emerald-700">
+            <dt>{t("cart.saleSavings")}</dt>
+            <dd className="font-semibold tabular-nums">−{money(saleDiscount)}</dd>
+          </div>
+        )}
         <DiscountRows
           pricing={pricing}
           promo={promoStatus}
@@ -835,6 +848,11 @@ export default function CheckoutClient({
           <dd className="font-display text-2xl font-extrabold tabular-nums text-ocean-950">{money(total)}</dd>
         </div>
       </dl>
+      {totalSaved > 0 && (
+        <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-center text-sm font-bold text-emerald-700">
+          🎉 {t("offer.saved", { amount: money(totalSaved) })}
+        </p>
+      )}
     </>
   );
 

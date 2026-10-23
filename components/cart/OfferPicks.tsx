@@ -201,6 +201,7 @@ export default function OfferPicks({
         store: pick.store,
         image: pick.image,
         compareAt: pick.compareAt,
+        flashSale: pick.flashSale,
       },
     });
     setAdded(pick.id);

@@ -36,6 +36,8 @@ export interface FlashPrice {
   pct: number;
   /** The shop's own end, when it comes before the campaign's. */
   endsAt?: string;
+  /** When this price actually stops: the shop's own end, else the campaign's. */
+  until?: string;
 }
 
 /**
@@ -51,7 +53,7 @@ export function flashDiscounts(flash: FlashDeal, requests: FlashRequest[], now =
     if (r.status !== "approved" || !inCampaign.has(r.productId) || requestEnded(r, now)) continue;
     if ((out.get(r.productId)?.pct ?? 0) >= r.pct) continue;
     const ownEnd = r.endsAt && parseShopTime(r.endsAt) < campaignEnd ? r.endsAt : undefined;
-    out.set(r.productId, { pct: r.pct, endsAt: ownEnd });
+    out.set(r.productId, { pct: r.pct, endsAt: ownEnd, until: ownEnd ?? (flash.endsAt || undefined) });
   }
   return out;
 }

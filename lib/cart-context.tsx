@@ -240,6 +240,7 @@ export function CartProvider({
         // snapshot is the only source of a photo for the cart and checkout.
         images: item.snapshot.image ? [item.snapshot.image] : base.images,
         compareAt: item.snapshot.compareAt ?? base.compareAt,
+        flashSale: item.snapshot.flashSale ?? base.flashSale,
         // A synthesized product must not carry variants, or the cart would
         // try to resolve a variant photo that isn't there.
         variants: undefined,

@@ -8,7 +8,7 @@ import DeliveryCity from "@/components/layout/DeliveryCity";
 import { useT } from "@/components/prefs/PrefsProvider";
 import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
-import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { DiscountRows, FlashTag, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
 import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { cartLineKey, useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
@@ -55,11 +55,14 @@ export default function CartClient({
   // Priced by the server: today's prices, shop offers, the promo code for
   // the shops that accepted it. Until it answers, the cart's own prices.
   const pricingContext = useMemo(() => ({ offers, promo }), [offers, promo]);
-  const { pricing, promo: promoStatus } = useCartPricing(lines, applied, pricingContext);
+  const { pricing, promo: promoStatus, deals, saleDiscount } = useCartPricing(lines, applied, pricingContext);
   // The basket as the pricing engine reads it — the offer picks price against it.
   const basket = useMemo(() => toPricingLines(lines), [lines]);
   const positionOf = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
   const pricedLine = (key: string) => pricing?.lines[positionOf.get(key) ?? ""];
+  const dealOf = (key: string) => deals[Number(positionOf.get(key) ?? -1)];
+  /** Everything the shopper saves: sale and flash prices, shop offers, the code. */
+  const totalSaved = saleDiscount + (pricing ? pricing.offerDiscount + pricing.promoDiscount : 0);
   const listTotal = pricing?.listTotal ?? subtotal;
   const itemsTotal = pricing?.total ?? subtotal;
   const qualifiesFree = freeThreshold > 0 && itemsTotal >= freeThreshold;
@@ -203,8 +206,10 @@ export default function CartClient({
                                   {[line.color, line.size].filter(Boolean).join(" · ")}
                                 </p>
                               )}
+                              <FlashTag deal={dealOf(cartLineKey(line))} />
                             </div>
                             <LinePrice
+                              deal={dealOf(cartLineKey(line))}
                               line={pricedLine(cartLineKey(line))}
                               fallbackTotal={line.product.price * line.qty}
                               unitPrice={line.product.price}
@@ -297,8 +302,15 @@ export default function CartClient({
                   <dt className="text-slate-500">
                     {t("cart.subtotal")} · {itemCount}
                   </dt>
-                  <dd className="font-semibold tabular-nums">{money(listTotal)}</dd>
+                  {/* Before any markdown, so the savings rows below add up to the total. */}
+                  <dd className="font-semibold tabular-nums">{money(listTotal + saleDiscount)}</dd>
                 </div>
+                {saleDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <dt>{t("cart.saleSavings")}</dt>
+                    <dd className="font-semibold tabular-nums">−{money(saleDiscount)}</dd>
+                  </div>
+                )}
                 <DiscountRows pricing={pricing} promo={promoStatus} code={applied} pct={promo.pct} onRemove={clearPromo} />
                 <div className="flex justify-between">
                   <dt className="text-slate-500">{t("cart.delivery")}</dt>
@@ -356,9 +368,9 @@ export default function CartClient({
                   )}
                 </div>
               )}
-              {pricing && pricing.offerDiscount + pricing.promoDiscount > 0 && (
+              {totalSaved > 0 && (
                 <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-center text-sm font-bold text-emerald-700">
-                  🎉 {t("offer.saved", { amount: money(pricing.offerDiscount + pricing.promoDiscount) })}
+                  🎉 {t("offer.saved", { amount: money(totalSaved) })}
                 </p>
               )}
 

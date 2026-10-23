@@ -452,3 +452,32 @@ export function colorSwatch(name?: string, hexOverride?: string): string {
   const hue = Math.abs(hash) % 360;
   return `hsl(${hue}, 65%, 55%)`;
 }
+
+/** What a basket line is getting before any shop offer: a "was" price, a flash deal. */
+export interface LineDeal {
+  /** The price per unit before the markdown — only when it is higher. */
+  was?: number;
+  /** The line is at its flash price; `until` is when that stops, if known. */
+  flash?: { until?: string };
+}
+
+/**
+ * The markdown on one unit, for the basket. A sale or flash price IS the
+ * product's price, so the cart and checkout used to show "$49" and nothing
+ * else — the "$79, save 38%" the shopper chose it for vanished at the
+ * basket. `unitPrice` is the line's own price (a variant can differ from
+ * the product's); the "was" price scales with it.
+ */
+export function lineDeal(
+  product: Pick<Product, "price" | "compareAt" | "flashSale">,
+  unitPrice: number,
+): LineDeal {
+  const deal: LineDeal = {};
+  const compareAt = product.compareAt ?? 0;
+  if (compareAt > product.price && product.price > 0) {
+    const was = Math.round(((unitPrice * compareAt) / product.price) * 100) / 100;
+    if (was > unitPrice) deal.was = was;
+  }
+  if (product.flashSale) deal.flash = { until: product.flashSale.until };
+  return deal;
+}

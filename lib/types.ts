@@ -217,6 +217,12 @@ compareAt?: number;
    */
   flashEndsAt?: string;
   /**
+   * Set while this product's price IS the flash price — the basket marks
+   * the line "⚡ Flash deal" with when it ends (`until`, when known), so a
+   * shopper sees the deal carried into their cart.
+   */
+  flashSale?: { until?: string };
+  /**
    * Odoo `standard_price` — what the goods cost to buy, per unit.
    *
    * NEVER shown to a customer. It exists because the selling price of an
@@ -483,8 +489,11 @@ export interface CartItem {
      * The "was" price, when it was on sale. Offers marked "full price only"
      * skip sale items, and the cart prices offers itself (useCartPricing) —
      * without this it would discount an item the server then wouldn't.
+     * Also the "was" price the basket shows (lib/product-utils#lineDeal).
      */
     compareAt?: number;
+    /** It was added at its flash price — the basket says so. */
+    flashSale?: { until?: string };
   };
   /** Variant id when the product has variants. */
   variantId?: string;

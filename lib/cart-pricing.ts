@@ -9,7 +9,7 @@
 
 import { getAllProducts, getMarketingSettings, getOffers, getOrders } from "./api";
 import { isExhausted, isOfferLive, offerUsageFrom, priceCart, type CartPricing, type OfferUsage, type PricingLine } from "./offers";
-import { findVariant, variantPrice } from "./product-utils";
+import { findVariant, lineDeal, variantPrice, type LineDeal } from "./product-utils";
 import type { Offer, Product } from "./types";
 
 export interface PricingRequestItem {
@@ -45,6 +45,8 @@ export interface ServerPricing {
   lines: PricingLine[];
   products: (Product | undefined)[];
   promo: PromoStatus | null;
+  /** Per line (same order): its "was" price and flash status, from today's catalogue. */
+  deals: LineDeal[];
 }
 
 export async function priceItems(
@@ -83,7 +85,8 @@ export async function priceItems(
     codes: typed ? [typed] : [],
     usage,
   });
-  return { pricing, lines, products, promo };
+  const deals = lines.map((line, index) => (products[index] ? lineDeal(products[index]!, line.price) : {}));
+  return { pricing, lines, products, promo, deals };
 }
 
 /** What a typed code is: the marketplace promo, a shop coupon, or nothing. */
