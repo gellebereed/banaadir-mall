@@ -106,7 +106,8 @@ export default function SuggestDetails({
       )}
       {nothing && (
         <p className="mt-3 text-xs text-slate-500">
-          No confident suggestion — {category ? "add a few words to the description" : "choose the category yourself"}.
+          {result.note ??
+            `No confident suggestion — ${category ? "add a few words to the description" : "choose the category yourself"}.`}
         </p>
       )}
 

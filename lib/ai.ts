@@ -56,23 +56,114 @@ export interface AiQuestion {
   maxTokens?: number;
 }
 
+/** What the provider sent back, before parsing. */
+interface RawAnswer {
+  text: string | undefined;
+  /** "schema" = strict JSON schema; "object" = plain JSON, schema in the prompt. */
+  mode: "schema" | "object";
+  /** The provider's own reason for stopping ("stop", "content_filter", "refusal"…). */
+  finish: string | undefined;
+}
+
 /** The parsed answer, or undefined when the model declined or broke format. */
 export async function aiJson<T>(question: AiQuestion): Promise<T | undefined> {
   const chosen = provider();
   if (!chosen) return undefined;
+  let raw: RawAnswer;
   try {
-    return chosen === "alibaba" ? await askQwen<T>(question) : await askClaude<T>(question);
+    raw = chosen === "alibaba" ? await askQwen(question) : await askClaude(question);
   } catch (err) {
     throw friendlyAiError(err);
+  }
+  const parsed = parse<T>(raw.text);
+  if (parsed === undefined) {
+    // Without this an unusable answer is indistinguishable from "the AI had
+    // no idea" — the seller sees "no confident suggestion" and the server
+    // log says nothing. Netlify → Logs → Functions shows this line.
+    console.warn(
+      `[ai] ${chosen} answer could not be used (mode=${raw.mode}, finish=${raw.finish}):`,
+      (raw.text ?? "<empty>").slice(0, 500),
+    );
+  }
+  return parsed;
+}
+
+export interface AiDiagnosis {
+  provider: Provider | "none";
+  model?: string;
+  endpoint?: string;
+  ok: boolean;
+  mode?: RawAnswer["mode"];
+  finish?: string;
+  /** The model's reply, verbatim. */
+  raw?: string;
+  parsed?: unknown;
+  error?: string;
+  ms?: number;
+}
+
+/**
+ * One tiny question, with the raw reply — so an admin can see what the
+ * configured model actually returns without reading server logs. Used by
+ * /api/admin/ai-check.
+ */
+export async function aiDiagnose(): Promise<AiDiagnosis> {
+  const chosen = provider();
+  if (!chosen) return { provider: "none", ok: false, error: "No AI key is set (DASHSCOPE_API_KEY or ANTHROPIC_API_KEY)." };
+  const info =
+    chosen === "alibaba"
+      ? { model: qwenModel(), endpoint: qwenBase() }
+      : { model: CLAUDE_MODEL, endpoint: "api.anthropic.com" };
+  const question: AiQuestion = {
+    system: "You file products into an online marketplace's categories. Choose the category for the product, and pick its fabric.",
+    text: JSON.stringify({
+      product: { name: "Men's 100% cotton long-sleeve shirt", description: "Classic fit, button-down collar." },
+      categories: [
+        { slug: "mens-shirts", category: "Men's Fashion / Shirts" },
+        { slug: "womens-dresses", category: "Women's Fashion / Dresses" },
+        { slug: "kitchen", category: "Home / Kitchen" },
+      ],
+      fabrics: ["cotton = Cotton", "polyester = Polyester", "wool = Wool"],
+    }),
+    schema: {
+      type: "object",
+      properties: {
+        category_slug: { type: "string", enum: ["mens-shirts", "womens-dresses", "kitchen"] },
+        fabric: { type: "array", items: { type: "string", enum: ["cotton", "polyester", "wool"] } },
+      },
+      required: ["category_slug", "fabric"],
+      additionalProperties: false,
+    },
+    maxTokens: 300,
+  };
+  const started = Date.now();
+  try {
+    const raw = chosen === "alibaba" ? await askQwen(question) : await askClaude(question);
+    const parsed = parse(raw.text);
+    return {
+      provider: chosen,
+      ...info,
+      ok: parsed !== undefined,
+      mode: raw.mode,
+      finish: raw.finish,
+      raw: raw.text,
+      parsed,
+      ms: Date.now() - started,
+    };
+  } catch (err) {
+    return { provider: chosen, ...info, ok: false, error: friendlyAiError(err).message, ms: Date.now() - started };
   }
 }
 
 function parse<T>(text: string | undefined | null): T | undefined {
   if (!text) return undefined;
-  // A model in plain-JSON mode sometimes wraps its answer in a code fence.
-  const bare = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  // A model in plain-JSON mode sometimes wraps its answer in a code fence,
+  // or adds a sentence before it — so take the outermost {...}.
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
   try {
-    return JSON.parse(bare) as T;
+    return JSON.parse(text.slice(start, end + 1)) as T;
   } catch {
     return undefined;
   }
@@ -96,6 +187,14 @@ const QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
  */
 const QWEN_MODEL = "qwen3.7-plus";
 
+function qwenModel(): string {
+  return process.env.QWEN_MODEL?.trim() || QWEN_MODEL;
+}
+
+function qwenBase(): string {
+  return (process.env.QWEN_BASE_URL?.trim() || QWEN_BASE_URL).replace(/\/+$/, "");
+}
+
 class QwenError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -104,7 +203,7 @@ class QwenError extends Error {
   }
 }
 
-async function askQwen<T>(q: AiQuestion): Promise<T | undefined> {
+async function askQwen(q: AiQuestion): Promise<RawAnswer> {
   const deadline = Date.now() + DEADLINE_MS;
   const content = q.image
     ? [
@@ -114,7 +213,7 @@ async function askQwen<T>(q: AiQuestion): Promise<T | undefined> {
     : q.text;
 
   const request = (format: "schema" | "object") => ({
-    model: process.env.QWEN_MODEL?.trim() || QWEN_MODEL,
+    model: qwenModel(),
     max_tokens: q.maxTokens ?? 4000,
     // Choosing among offered options needs no reasoning trace, a seller is
     // waiting, and structured output is refused in thinking mode anyway.
@@ -138,7 +237,7 @@ async function askQwen<T>(q: AiQuestion): Promise<T | undefined> {
   });
 
   try {
-    return await postQwen<T>(request("schema"), deadline);
+    return { ...(await postQwen(request("schema"), deadline)), mode: "schema" };
   } catch (err) {
     /*
      * Strict JSON-schema output is supported by some Qwen models and not
@@ -148,14 +247,14 @@ async function askQwen<T>(q: AiQuestion): Promise<T | undefined> {
      * time — and the callers' own checks do what the schema would have.
      */
     if (err instanceof QwenError && err.status === 400 && /response_format|json_schema|schema/i.test(err.message)) {
-      return postQwen<T>(request("object"), deadline);
+      return { ...(await postQwen(request("object"), deadline)), mode: "object" };
     }
     throw err;
   }
 }
 
-async function postQwen<T>(body: unknown, deadline: number): Promise<T | undefined> {
-  const base = (process.env.QWEN_BASE_URL?.trim() || QWEN_BASE_URL).replace(/\/+$/, "");
+async function postQwen(body: unknown, deadline: number): Promise<Omit<RawAnswer, "mode">> {
+  const base = qwenBase();
   let response: Response;
   try {
     response = await fetch(`${base}/chat/completions`, {
@@ -175,7 +274,10 @@ async function postQwen<T>(body: unknown, deadline: number): Promise<T | undefin
   }
 
   const payload = (await response.json().catch(() => ({}))) as {
-    choices?: { message?: { content?: string | null }; finish_reason?: string }[];
+    choices?: {
+      message?: { content?: string | { type?: string; text?: string }[] | null };
+      finish_reason?: string;
+    }[];
     error?: { message?: string; code?: string };
     message?: string;
   };
@@ -183,18 +285,25 @@ async function postQwen<T>(body: unknown, deadline: number): Promise<T | undefin
     throw new QwenError(response.status, payload.error?.message ?? payload.message ?? response.statusText);
   }
   const choice = payload.choices?.[0];
-  // Alibaba's content moderation ends a reply early instead of refusing.
-  if (choice?.finish_reason === "content_filter") return undefined;
-  return parse<T>(choice?.message?.content);
+  const content = choice?.message?.content;
+  // Multimodal models can answer with a list of parts instead of a string.
+  const text = Array.isArray(content)
+    ? content.map((part) => part?.text ?? "").join("")
+    : (content ?? undefined);
+  // Alibaba's content moderation ends a reply with "content_filter"; the
+  // text is then cut short and fails to parse, which is the right outcome.
+  return { text, finish: choice?.finish_reason };
 }
 
 // ── Anthropic (Claude) ────────────────────────────────────────────────
 
-async function askClaude<T>(q: AiQuestion): Promise<T | undefined> {
+const CLAUDE_MODEL = "claude-opus-5-5";
+
+async function askClaude(q: AiQuestion): Promise<RawAnswer> {
   const client = new Anthropic({ timeout: DEADLINE_MS, maxRetries: 0 });
   const image = claudeImage(q.image);
   const response = await client.beta.messages.create({
-    model: "claude-opus-5-5",
+    model: CLAUDE_MODEL,
     max_tokens: q.maxTokens ?? 4000,
     // A declined request is re-run on Anthropic's recommended fallback
     // model instead of coming back empty.
@@ -206,9 +315,13 @@ async function askClaude<T>(q: AiQuestion): Promise<T | undefined> {
     system: q.system,
     messages: [{ role: "user", content: image ? [image, { type: "text", text: q.text }] : q.text }],
   });
-  if (response.stop_reason === "refusal") return undefined;
   const block = response.content.find((b) => b.type === "text");
-  return block && block.type === "text" ? parse<T>(block.text) : undefined;
+  return {
+    // A refusal's text is an explanation, not the answer.
+    text: response.stop_reason === "refusal" || !block || block.type !== "text" ? undefined : block.text,
+    mode: "schema",
+    finish: response.stop_reason ?? undefined,
+  };
 }
 
 function claudeImage(image?: string): Anthropic.Beta.BetaImageBlockParam | undefined {

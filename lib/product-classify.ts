@@ -42,6 +42,8 @@ export interface ClassifyResult {
   source: "ai" | "words";
   /** Set when the AI was configured but failed; the word suggestions stand. */
   error?: string;
+  /** Why there is nothing to suggest, when the answer is not "unsure". */
+  note?: string;
 }
 
 /** The categories a seller can file into, with what each one means. */
@@ -117,6 +119,10 @@ export async function classifyProduct(input: ClassifyInput, categories: Category
       };
     }
     const attrs = editable(chosen);
+    // A category not yet linked to the standard taxonomy has no attributes,
+    // so there is nothing to ask — and "add a few words to the description"
+    // would send the seller chasing the wrong fix.
+    if (attrs.length === 0) return { attributes: {}, source: "ai", note: unlinkedNote(chosen) };
     return {
       attributes: attrs.length ? await aiAttributes(name, description, image, chosen, attrs) : {},
       source: "ai",
@@ -124,6 +130,12 @@ export async function classifyProduct(input: ClassifyInput, categories: Category
   } catch (err) {
     return { ...words, error: friendlyAiError(err).message };
   }
+}
+
+function unlinkedNote(category: Category): string {
+  return standardNode(category.standardId)
+    ? `“${category.name}” has no attributes to fill beyond colour and size.`
+    : `“${category.name}” is not linked to a standard category yet, so it has no attributes to suggest. An admin can link it under Admin → Categories → Standard categories.`;
 }
 
 /** Colour and size come from variants; the rest is the seller's to fill. */
@@ -265,8 +277,15 @@ async function aiCategory(
       additionalProperties: false,
     },
   );
-  if (!answer || !options.some((c) => c.slug === answer.category_slug)) return undefined;
-  return { slug: answer.category_slug, reason: answer.reason.slice(0, 200) };
+  if (!answer || typeof answer.category_slug !== "string") return undefined;
+  // Without a strict schema the model sometimes names the category
+  // ("Men's Fashion / Shirts") instead of giving its slug.
+  const said = answer.category_slug.trim().toLowerCase();
+  const match = list.find(
+    (c) => c.slug === said || c.category.toLowerCase() === said || c.category.split(" / ").pop()?.toLowerCase() === said,
+  );
+  if (!match) return undefined;
+  return { slug: match.slug, reason: String(answer.reason ?? "").slice(0, 200) };
 }
 
 async function aiAttributes(
@@ -287,7 +306,7 @@ async function aiAttributes(
       items: a.values.length <= ENUM_LIMIT ? { type: "string", enum: a.values.map((v) => v.key) } : { type: "string" },
     };
   }
-  const answer = await ask<Record<string, string[]>>(
+  const answer = await ask<Record<string, unknown>>(
     `You fill in a product's standard attributes for an online marketplace, choosing values only from each attribute's list. Fill an attribute only when the name, description or photo makes it clear; leave its list empty when unsure — a wrong value hides the product from shoppers' filters. Most attributes take one value.`,
     JSON.stringify({
       product: { name, description, category: category.name },
@@ -296,5 +315,37 @@ async function aiAttributes(
     image,
     { type: "object", properties, required: attrs.map((a) => a.handle), additionalProperties: false },
   );
-  return cleanAttributes(answer ?? {}, attrs);
+  return cleanAttributes(toKeys(answer, attrs), attrs);
+}
+
+/**
+ * The model's values, as the keys the attribute lists use.
+ *
+ * The prompt shows each value as "cotton = Cotton", and a model without
+ * strict schema support (Qwen in plain-JSON mode) answers with whichever
+ * part it fancies — "Cotton", or the whole "cotton = Cotton". Both were
+ * dropped as unknown keys, so the seller saw "no confident suggestion"
+ * for an answer that was right.
+ */
+function toKeys(answer: Record<string, unknown> | undefined, attrs: AttributeDef[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  if (!answer || typeof answer !== "object") return out;
+  for (const attr of attrs) {
+    const picked = answer[attr.handle];
+    const list = Array.isArray(picked) ? picked : typeof picked === "string" && picked ? [picked] : [];
+    const byText = new Map<string, string>();
+    for (const v of attr.values) {
+      byText.set(v.key.toLowerCase(), v.key);
+      byText.set(v.name.toLowerCase(), v.key);
+      byText.set(`${v.key} = ${v.name}`.toLowerCase(), v.key);
+    }
+    const keys = list
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => {
+        const text = value.trim().toLowerCase();
+        return byText.get(text) ?? byText.get(text.split(" = ")[0].trim()) ?? value;
+      });
+    if (keys.length) out[attr.handle] = keys;
+  }
+  return out;
 }
