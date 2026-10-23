@@ -112,6 +112,13 @@ function words(text: string, expand = true): string[] {
   // "Non-stick" describes cookware; split, its "stick" matched pogo sticks
   // and stick vacuums ahead of the pan it was written on.
   if (expand) text = text.replace(/\bnon[\s-]?stick\b/gi, "cookware");
+  // Sleeve length describes a shirt; left in, "Short sleeve" filed shirts
+  // under Shorts and "Long sleeve" under Umbrella Sleeves.
+  if (expand) text = text.replace(/\b(short|long|half|full)[\s-]?(sleeves?|sleeved|arms?)\b/gi, " ");
+  // "T-Shirts" split into "T" (too short to keep) and "SHIRT", so T-shirts
+  // and shirts were the same word — and suppliers write "TSHIRT", which
+  // matched nothing at all. One token on both sides keeps them apart.
+  text = text.replace(/\bt[\s-]?shirts?\b/gi, "tshirt");
   for (const raw of text.split(/[^A-Za-z0-9ÇĞİÖŞÜçğıöşü']+/)) {
     const key = categoryKey(raw.replace(/'/g, ""));
     if (key.length < 2 || STOP.has(key)) continue;
@@ -132,6 +139,31 @@ function wordsOf(node: StandardNode) {
     nodeWords.set(node.id, w);
   }
   return w;
+}
+
+/**
+ * Word → the nodes whose path contains it. A node can only score if it
+ * shares a word with the text (see standardCandidates), so this lists the
+ * few hundred worth scoring instead of walking all four thousand — which
+ * is what makes classifying every product in a category affordable.
+ */
+let pathIndex: Map<string, StandardNode[]> | null = null;
+/** File order, so exact ties still sort the way a full walk sorted them. */
+const fileOrder = new Map([...byId.keys()].map((id, index) => [id, index]));
+function nodesSharingWords(list: string[]): StandardNode[] {
+  if (!pathIndex) {
+    pathIndex = new Map();
+    for (const node of byId.values()) {
+      for (const word of wordsOf(node).path) {
+        const bucket = pathIndex.get(word);
+        if (bucket) bucket.push(node);
+        else pathIndex.set(word, [node]);
+      }
+    }
+  }
+  const found = new Set<StandardNode>();
+  for (const word of list) for (const node of pathIndex.get(word) ?? []) found.add(node);
+  return [...found].sort((a, b) => fileOrder.get(a.id)! - fileOrder.get(b.id)!);
 }
 
 export interface StandardCandidate {
@@ -163,7 +195,7 @@ export function standardCandidates(
   const ownKey = categoryKey(name);
 
   const scored: StandardCandidate[] = [];
-  for (const node of byId.values()) {
+  for (const node of nodesSharingWords([...own, ...ctx])) {
     const w = wordsOf(node);
     let s = 0;
     for (const word of own) {

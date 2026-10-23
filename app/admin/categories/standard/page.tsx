@@ -20,8 +20,17 @@ export const dynamic = "force-dynamic";
 export default async function StandardCategoriesPage() {
   const [flat, products] = await Promise.all([getCategoriesFlat(true), getBaseProducts()]);
 
+  // Counted down the whole branch: a department's products all sit in its
+  // subcategories, and its suggestion is made from them (taxonomy-evidence).
+  const parentOf = new Map(flat.map((c) => [c.slug, c.parentSlug]));
   const counts = new Map<string, number>();
-  for (const p of products) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+  for (const p of products) {
+    // Bounded, so a parent loop in hand-edited data can't hang the page.
+    let slug: string | undefined = p.category;
+    for (let depth = 0; slug && depth < 10; depth++, slug = parentOf.get(slug)) {
+      counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    }
+  }
 
   const rows: LinkerRow[] = flat
     .filter((c) => c.slug !== HOLDING_SLUG)

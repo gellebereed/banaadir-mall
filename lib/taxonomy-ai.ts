@@ -28,10 +28,16 @@ export { friendlyAiError };
 export interface AiMatchInput {
   slug: string;
   name: string;
-  /** "Home & Living", or empty for a top-level category. */
-  parent: string;
-  /** A few product names from inside the category. */
+  /** "Men's Fashion / Shirts" — where it sits in our menu. */
+  breadcrumb: string;
+  subcategories: string[];
+  productCount: number;
+  /** A spread of product names from inside it and its subcategories. */
   samples: string[];
+  /** "80% Apparel › Clothing › Clothing Tops" — what the products matched, by share. */
+  productSignals: string[];
+  /** The standard node its parent category is linked to. */
+  parentLink?: string;
   candidates: { id: string; path: string }[];
 }
 
@@ -43,16 +49,20 @@ export interface AiMatch {
   reason: string;
 }
 
-const SYSTEM = `You map an online marketplace's product categories onto a standard product taxonomy (Shopify's).
+const SYSTEM = `You link an online marketplace's product categories to a standard product taxonomy (Shopify's).
 
-For each category you get its name, its parent category in the marketplace's menu, a few product names from inside it, and candidate taxonomy nodes. Choose the candidate that best describes what the category CONTAINS.
+For each category you get: its name and place in the marketplace's menu, its subcategories, a sample of the products inside it (subcategories included), how a word matcher classified those products (share of products per taxonomy node), the taxonomy node its parent category is linked to, and candidate taxonomy nodes.
 
-- Judge by the products when they disagree with the name: a category named "Cups" holding coffee mugs is drinkware, not coffee.
-- Gender and age words in a marketplace name ("Women's Fashion", "Men's Shoes") don't need a matching node: in this taxonomy gender is an attribute, so "Men's Shoes" is simply Shoes.
-- A broad department ("Home & Living") maps to the broad node (Home & Garden), not to one narrow corner of it.
+Decide what the category CONTAINS, then choose the candidate that describes it:
+- The products are the evidence; the name is only a hint. Supplier names are often vague or coded ("Solids", "Uppers", "Big pieces", "5 Pockets") — judge by the products.
+- Choose the MOST SPECIFIC node that covers nearly all of the products. If they are shirts and T-shirts, that is Clothing Tops, not Shirts. If they are all shirts, it is Shirts, not Clothing.
+- The word matcher's shares are a rough guide and can be wrong on individual words ("Boxer" briefs are underwear, not swimwear); correct them using the product names.
+- A child category normally sits inside its parent's linked node. Leave it only when the products clearly belong elsewhere.
+- Gender and age words ("Men's", "Women's") don't need a matching node: in this taxonomy gender is an attribute.
+- A broad department ("Home & Living") maps to the broad node (Home & Garden).
 - If no candidate fits, return an empty standard_id. Never invent an id.
-- confidence is 0-100: 90+ only when you would not expect a human to disagree.
-- reason: one short sentence for the person approving it.`;
+- confidence is 0-100: 90+ only when the products leave no real doubt.
+- reason: one short sentence for the person approving it, naming what the products are.`;
 
 const SCHEMA = {
   type: "object",

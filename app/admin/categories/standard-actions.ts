@@ -2,7 +2,8 @@
 
 /**
  * Linking Banaadir categories to the standard taxonomy (lib/taxonomy.ts):
- * search it, get proposals (AI when configured, word matching otherwise),
+ * search it, get proposals (from each category's products — read by AI
+ * when configured, matched word by word otherwise),
  * and save the links the admin approves.
  */
 
@@ -18,7 +19,8 @@ import {
   upsertCategoryInSupabase,
   useSupabaseMutations,
 } from "@/lib/supabase/mutations";
-import { searchStandard, standardCandidates, standardNode } from "@/lib/taxonomy";
+import { searchStandard, standardNode } from "@/lib/taxonomy";
+import { gatherEvidence } from "@/lib/taxonomy-evidence";
 import { aiMatchCategories, aiMatchingAvailable } from "@/lib/taxonomy-ai";
 
 async function isAdmin(): Promise<boolean> {
@@ -59,43 +61,39 @@ export async function proposeStandard(slugs: string[]): Promise<ProposeResult> {
 
   const [categories, products] = await Promise.all([getCategories(true), getBaseProducts()]);
   const bySlug = new Map(categories.map((c) => [c.slug, c]));
-  const wanted = slugs.map((s) => bySlug.get(s)).filter((c) => c && c.slug !== HOLDING_SLUG);
+  const wanted = slugs
+    .map((s) => bySlug.get(s))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c) && c!.slug !== HOLDING_SLUG);
 
-  const inputs = wanted.map((c) => {
-    const parent = c!.parentSlug ? bySlug.get(c!.parentSlug)?.name ?? "" : "";
-    const samples = products
-      .filter((p) => p.category === c!.slug)
-      .slice(0, 6)
-      .map((p) => p.name);
-    const candidates = standardCandidates(c!.name, [parent, ...samples].filter(Boolean), 12, !c!.parentSlug);
-    return { category: c!, parent, samples, candidates };
-  });
+  // What each category holds — its products, subcategories included,
+  // classified one by one (lib/taxonomy-evidence.ts).
+  const evidence = wanted.map((c) => gatherEvidence(c, categories, products));
 
-  // Word matching: the top candidate, as is.
-  const byWords: StandardProposal[] = inputs.map(({ category, candidates }) => {
-    const top = candidates[0];
-    return {
-      slug: category.slug,
-      standardId: top?.node.id ?? null,
-      path: top?.node.path,
-      confidence: top?.score ?? 0,
-      source: "words",
-      reason: top ? "Closest by name" : "No standard category shares a word with this name",
-    };
-  });
+  const byWords: StandardProposal[] = evidence.map((e) => ({
+    slug: e.slug,
+    standardId: e.proposal.standardId,
+    path: standardNode(e.proposal.standardId)?.path,
+    confidence: e.proposal.confidence,
+    source: "words",
+    reason: e.proposal.reason,
+  }));
 
   if (!aiMatchingAvailable()) return { proposals: byWords };
 
   try {
     const ai = await aiMatchCategories(
-      inputs
-        .filter((i) => i.candidates.length > 0)
-        .map((i) => ({
-          slug: i.category.slug,
-          name: i.category.name,
-          parent: i.parent,
-          samples: i.samples,
-          candidates: i.candidates.map((c) => ({ id: c.node.id, path: c.node.path })),
+      evidence
+        .filter((e) => e.candidates.length > 0)
+        .map((e) => ({
+          slug: e.slug,
+          name: e.name,
+          breadcrumb: e.breadcrumb,
+          subcategories: e.subcategories,
+          productCount: e.productCount,
+          samples: e.samples,
+          productSignals: e.signals.map((s) => `${Math.round(s.share * 100)}% ${s.path}`),
+          parentLink: e.parentLink?.path,
+          candidates: e.candidates,
         })),
     );
     const aiBySlug = new Map(ai.map((a) => [a.slug, a]));
@@ -114,7 +112,7 @@ export async function proposeStandard(slugs: string[]): Promise<ProposeResult> {
       }),
     };
   } catch (err) {
-    // The word matches still stand; say why the AI didn't run.
+    // The product-based matches still stand; say why the AI didn't run.
     return { proposals: byWords, error: (err as Error).message };
   }
 }
