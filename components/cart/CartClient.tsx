@@ -130,7 +130,10 @@ export default function CartClient({
           </Link>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+        {/* grid-cols-1 on phones: the implicit column sizes itself to the
+            widest unbreakable line, which made this page wider than a 320 or
+            360px screen — the checkout bar and the order summary ran off it. */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
           <div className="min-w-0 space-y-4 self-start">
             {parcels.length > 1 && (
               <p className="flex items-center gap-2 rounded-2xl bg-ocean-50 px-4 py-3 text-sm text-ocean-900 ring-1 ring-ocean-100">
@@ -419,7 +422,7 @@ export function CartSkeleton() {
   return (
     <div className="mx-auto min-h-screen max-w-7xl px-4 pt-6 sm:pt-8" aria-busy="true">
       <div className="mb-5 h-8 w-48 animate-pulse rounded-lg bg-sand-100" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4">
           {[0, 1].map((i) => (
             <div key={i} className="h-44 animate-pulse rounded-2xl bg-sand-100" />
