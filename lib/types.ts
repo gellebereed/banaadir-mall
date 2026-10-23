@@ -479,6 +479,12 @@ export interface CartItem {
      * product up in is now Supabase, not the bundled seed data.
      */
     image?: string;
+    /**
+     * The "was" price, when it was on sale. Offers marked "full price only"
+     * skip sale items, and the cart prices offers itself (useCartPricing) —
+     * without this it would discount an item the server then wouldn't.
+     */
+    compareAt?: number;
   };
   /** Variant id when the product has variants. */
   variantId?: string;

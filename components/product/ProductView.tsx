@@ -8,7 +8,7 @@ import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
 import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
-import { offerHeadline, offerTerms } from "@/lib/offers";
+import { offerHeadline, offerHint, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
 import { cartLineKey, useCart } from "@/lib/cart-context";
 import { useRouter } from "next/navigation";
@@ -170,7 +170,11 @@ export default function ProductView({
         store: product.store,
         // The photo for the variant they actually chose.
         image: images[0],
+        compareAt: product.compareAt,
       },
+    }, {
+      // Coupon offers are private to whoever has the code — no hint.
+      offer: product.offer && !product.offer.code ? offerHint(product.offer, price, t, money) : undefined,
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 1800);
@@ -401,8 +405,9 @@ export default function ProductView({
                   {product.offer.gift.name} →
                 </Link>
               ) : (
+                // The items that qualify — not the shop's whole catalogue.
                 <Link
-                  href={`/products?store=${product.store}`}
+                  href={`/offer/${product.offer.id}`}
                   className="mt-1 inline-block text-xs font-bold text-emerald-800 hover:underline"
                 >
                   {t("offer.shopItems")} →

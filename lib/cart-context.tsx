@@ -40,6 +40,12 @@ export interface Toast {
   subtitle?: string;
   image?: string;
   icon?: string;
+  /**
+   * The shop offer this item just started — "Buy 1, get the next for $1"
+   * with a link to the items that complete it. Without it, the deal only
+   * surfaced if the shopper happened to open the basket.
+   */
+  offer?: { text: string; href: string };
 }
 
 interface CartContextValue {
@@ -54,7 +60,7 @@ interface CartContextValue {
   /** Total number of units in the cart (drives the header badge). */
   count: number;
   subtotal: number;
-  addToCart: (item: CartItem) => void;
+  addToCart: (item: CartItem, options?: { offer?: Toast["offer"] }) => void;
   /** `key` is the line's cartLineKey(), not its product id. */
   updateQty: (key: string, qty: number) => void;
   removeFromCart: (key: string) => void;
@@ -112,6 +118,7 @@ function readStorage<T>(key: string, fallback: T): T {
 
 /** How long a confirmation stays on screen. */
 const TOAST_MS = 3200;
+const TOAST_OFFER_MS = 6000;
 
 export function CartProvider({
   children,
@@ -232,6 +239,7 @@ export function CartProvider({
         // The bundled seed catalog no longer holds Supabase products, so the
         // snapshot is the only source of a photo for the cart and checkout.
         images: item.snapshot.image ? [item.snapshot.image] : base.images,
+        compareAt: item.snapshot.compareAt ?? base.compareAt,
         // A synthesized product must not carry variants, or the cart would
         // try to resolve a variant photo that isn't there.
         variants: undefined,
@@ -250,7 +258,8 @@ export function CartProvider({
       const id = Date.now() + Math.random();
       // Keep at most three on screen so a burst of clicks can't cover the page.
       setToasts((prev) => [...prev.slice(-2), { ...toast, id }]);
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), TOAST_MS);
+      // Long enough to read — and tap — the offer line when there is one.
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), toast.offer ? TOAST_OFFER_MS : TOAST_MS);
     };
 
     return {
@@ -261,13 +270,14 @@ export function CartProvider({
       subtotal: lines.reduce((sum, l) => sum + l.qty * l.product.price, 0),
       toasts,
       dismissToast: (id) => setToasts((prev) => prev.filter((t) => t.id !== id)),
-      addToCart: (item) => {
+      addToCart: (item, options) => {
         pushToast({
           kind: "cart",
           title: item.snapshot?.name ?? "Added to your cart",
           subtitle: [item.color, item.size].filter(Boolean).join(" · ") || undefined,
           image: item.snapshot?.image,
           icon: item.snapshot?.icon,
+          offer: options?.offer,
         });
         setItems((prev) => {
           const key = cartLineKey(item);

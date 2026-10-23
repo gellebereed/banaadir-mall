@@ -630,6 +630,20 @@ export function offerHeadline(offer: Offer, t: T, money: Money): string {
   }
 }
 
+/**
+ * The line on the "Added to cart" card when the item belongs to a shop
+ * offer: what the deal is, and a link to the items that complete it. For
+ * "the next one" offers, only items up to this one's price — the cheaper
+ * item is the discounted one, so those are the ones the deal is about.
+ */
+export function offerHint(offer: Offer, price: number, t: T, money: Money): { text: string; href: string } {
+  const next = offer.kind === "next_fixed" || offer.kind === "next_pct";
+  return {
+    text: `${offerHeadline(offer, t, money)} · ${t("offer.hint.pick")}`,
+    href: `/offer/${offer.id}${next ? `?upTo=${price}` : ""}`,
+  };
+}
+
 /** The small print: which items count. */
 export function offerTerms(offer: Offer, t: T): string[] {
   const terms: string[] = [];

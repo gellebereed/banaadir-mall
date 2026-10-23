@@ -10,7 +10,7 @@
 import { getAllProducts, getMarketingSettings, getOffers, getOrders } from "./api";
 import { isExhausted, isOfferLive, offerUsageFrom, priceCart, type CartPricing, type OfferUsage, type PricingLine } from "./offers";
 import { findVariant, variantPrice } from "./product-utils";
-import type { Product } from "./types";
+import type { Offer, Product } from "./types";
 
 export interface PricingRequestItem {
   productId: string;
@@ -31,6 +31,12 @@ export interface PromoStatus {
   stores: string[];
   /** Shop coupons this code unlocks (an offer with this `code`). */
   shopOffers: { store: string; name: string }[];
+  /**
+   * Those coupons' offers in full, so the browser can price them as the
+   * basket changes (useCartPricing) instead of waiting on the server. Only
+   * ever sent to someone who has typed the code.
+   */
+  unlocked: Offer[];
 }
 
 export interface ServerPricing {
@@ -88,15 +94,14 @@ function codeStatus(
   usage: Record<string, OfferUsage>,
 ): PromoStatus {
   const code = marketplace.code.trim().toUpperCase();
-  const shopOffers = offers
-    .filter((o) => o.code === typed && isOfferLive(o) && !isExhausted(o, usage[o.id]))
-    .map((o) => ({ store: o.store, name: o.name }));
+  const unlocked = offers.filter((o) => o.code === typed && isOfferLive(o) && !isExhausted(o, usage[o.id]));
   return {
     code: typed,
     pct: marketplace.pct,
     valid: Boolean(code) && marketplace.pct > 0 && typed === code,
     stores: marketplace.stores ?? [],
-    shopOffers,
+    shopOffers: unlocked.map((o) => ({ store: o.store, name: o.name })),
+    unlocked,
   };
 }
 

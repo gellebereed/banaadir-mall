@@ -8,7 +8,7 @@ import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
 import { LITE_CARD_SIZES, LITE_QUALITY } from "@/lib/lite";
 import type { MessageKey } from "@/lib/i18n";
 import { compact, discountPct, money } from "@/lib/format";
-import { offerHeadline } from "@/lib/offers";
+import { offerHeadline, offerHint } from "@/lib/offers";
 import {
   colorOptions,
   displayPrice,
@@ -336,7 +336,10 @@ export default function ProductCard({
                     // Which shop sells it — see CartItem.snapshot.store.
                     store: product.store,
                     image: mainImage,
+                    compareAt: product.compareAt,
                   },
+                }, {
+                  offer: product.offer && !product.offer.code ? offerHint(product.offer, price, t, money) : undefined,
                 })
               }
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ocean-700 text-lg text-white shadow-md transition hover:bg-mango-500 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"

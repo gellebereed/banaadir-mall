@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import CheckoutClient from "@/components/checkout/CheckoutClient";
-import { getMarketingSettings, getOrders, getStores } from "@/lib/api";
+import { getMarketingSettings, getOrders, getPublicOffers, getStores } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { orderBelongsTo } from "@/lib/order-utils";
 import { splitPhone } from "@/lib/data/locations";
@@ -26,10 +26,12 @@ export default async function CheckoutPage() {
   // vendor by name and message them on their own WhatsApp number. Cart
   // lines carry only a store SLUG, which is neither something to show a
   // customer nor a number to send an order to.
-  const [settings, stores, session] = await Promise.all([
+  const [settings, stores, session, offers] = await Promise.all([
     getMarketingSettings(),
     getStores(),
     getSession(),
+    // Priced in the browser at once — components/cart/useCartPricing.ts.
+    getPublicOffers(),
   ]);
 
   /*
@@ -76,5 +78,5 @@ export default async function CheckoutPage() {
     }
   }
 
-  return <CheckoutClient settings={settings} stores={stores} defaults={defaults} />;
+  return <CheckoutClient settings={settings} stores={stores} defaults={defaults} offers={offers} />;
 }

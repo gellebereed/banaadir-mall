@@ -9,12 +9,12 @@ import { useT } from "@/components/prefs/PrefsProvider";
 import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
-import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
+import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { cartLineKey, useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
 import { groupByStore } from "@/lib/order-utils";
 import { readAppliedPromo, writeAppliedPromo } from "@/lib/promo";
-import type { MarketingSettings, Store } from "@/lib/types";
+import type { MarketingSettings, Offer, Store } from "@/lib/types";
 
 /**
  * The basket.
@@ -30,9 +30,12 @@ import type { MarketingSettings, Store } from "@/lib/types";
 export default function CartClient({
   settings,
   stores,
+  offers,
 }: {
   settings: MarketingSettings;
   stores: Store[];
+  /** Live shop offers, to price the basket here at once. */
+  offers: Offer[];
 }) {
   const { fee, freeThreshold } = settings.delivery;
   const promo = settings.promo;
@@ -51,7 +54,10 @@ export default function CartClient({
 
   // Priced by the server: today's prices, shop offers, the promo code for
   // the shops that accepted it. Until it answers, the cart's own prices.
-  const { pricing, promo: promoStatus } = useCartPricing(lines, applied);
+  const pricingContext = useMemo(() => ({ offers, promo }), [offers, promo]);
+  const { pricing, promo: promoStatus } = useCartPricing(lines, applied, pricingContext);
+  // The basket as the pricing engine reads it — the offer picks price against it.
+  const basket = useMemo(() => toPricingLines(lines), [lines]);
   const positionOf = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
   const pricedLine = (key: string) => pricing?.lines[positionOf.get(key) ?? ""];
   const listTotal = pricing?.listTotal ?? subtotal;
@@ -165,8 +171,6 @@ export default function CartClient({
                     )}
                   </header>
 
-                  <ParcelOffers store={pricing?.stores[slug]} />
-
                   <ul className="divide-y divide-sand-100">
                     {storeLines.map((line) => (
                       <li key={cartLineKey(line)} className="flex gap-3 p-4 sm:gap-4">
@@ -259,6 +263,8 @@ export default function CartClient({
                       </li>
                     ))}
                   </ul>
+                  {/* After the shop's items: what you have first, then how to complete the deal. */}
+                  <ParcelOffers store={pricing?.stores[slug]} basket={basket} offers={offers} />
                 </section>
               );
             })}

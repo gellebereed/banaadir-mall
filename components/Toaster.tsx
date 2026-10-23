@@ -30,7 +30,7 @@ export default function Toaster() {
         return (
           <div
             key={toast.id}
-            className="animate-toast-in pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-2xl border border-sand-200 bg-white p-3 shadow-xl shadow-ocean-950/10"
+            className="animate-toast-in pointer-events-auto flex w-full max-w-sm flex-wrap items-center gap-3 rounded-2xl border border-sand-200 bg-white p-3 shadow-xl shadow-ocean-950/10"
           >
             {/* Product thumbnail, falling back to its emoji */}
             <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sand-100 text-xl">
@@ -81,6 +81,15 @@ export default function Toaster() {
             >
               ✕
             </button>
+            {toast.offer && (
+              <Link
+                href={toast.offer.href}
+                onClick={() => dismissToast(toast.id)}
+                className="basis-full rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                🎁 {toast.offer.text} →
+              </Link>
+            )}
           </div>
         );
       })}

@@ -115,6 +115,7 @@ export default function FreeDeliveryMeter() {
                           slug: product.slug,
                           store: product.store,
                           image: primaryImage(product),
+                          compareAt: product.compareAt,
                         },
                       })
                     }

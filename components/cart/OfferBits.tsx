@@ -1,11 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
+import OfferPicks, { nudgeProgress, useOfferPicks } from "@/components/cart/OfferPicks";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { useCart } from "@/lib/cart-context";
 import type { PromoStatus } from "@/lib/cart-pricing";
 import { money } from "@/lib/format";
-import { nudgeText, offerHeadline, type CartPricing, type LinePricing, type StorePricing } from "@/lib/offers";
+import { nudgeText, offerHeadline, type CartPricing, type LinePricing, type PricingLine, type StorePricing } from "@/lib/offers";
+import type { Offer } from "@/lib/types";
 
 /** A line's total — crossed-out list price and the offer's name when it saved something. */
 export function LinePrice({
@@ -47,56 +49,94 @@ export function LinePrice({
 }
 
 /** Under a shop's header: what its offers saved, and what would unlock more. */
-export function ParcelOffers({ store, compact = false }: { store?: StorePricing; compact?: boolean }) {
+export function ParcelOffers({
+  store,
+  basket,
+  offers,
+  compact = false,
+}: {
+  store?: StorePricing;
+  /** The whole basket as the pricing engine sees it — for the item picks. */
+  basket: PricingLine[];
+  /** The offers the basket is priced with (useCartPricing's context). */
+  offers: Offer[];
+  compact?: boolean;
+}) {
   const t = useT();
   const { addToCart } = useCart();
-  if (!store || (store.applied.length === 0 && store.nudges.length === 0)) return null;
+  const nudges = store?.nudges ?? [];
+  const picks = useOfferPicks(nudges.filter((n) => n.kind !== "giftAdd").map((n) => n.offer.id));
+  // Coupon offers only reach the page through the pricing answer; the
+  // picks must be simulated with them too, or their savings would vanish.
+  const allOffers = useMemo(() => {
+    const byId = new Map(offers.map((o) => [o.id, o]));
+    for (const a of store?.applied ?? []) byId.set(a.offer.id, a.offer);
+    for (const n of nudges) byId.set(n.offer.id, n.offer);
+    return [...byId.values()];
+  }, [offers, store, nudges]);
+
+  if (!store || (store.applied.length === 0 && nudges.length === 0)) return null;
   return (
-    <div className={`space-y-1.5 ${compact ? "mb-2" : "border-b border-sand-100 px-4 py-3"}`}>
+    <div className={`space-y-2 ${compact ? "mb-2" : "border-t border-sand-100 px-4 py-3"}`}>
       {store.applied.map((a) => (
         <p key={a.offer.id} className="flex items-center justify-between gap-3 text-xs font-semibold text-emerald-700">
           <span className="min-w-0 truncate">🎁 {offerHeadline(a.offer, t, money)}</span>
           <span className="shrink-0">{t("offer.saved", { amount: money(a.discount) })}</span>
         </p>
       ))}
-      {store.nudges.map((n) => (
-        <p
-          key={n.offer.id + n.kind}
-          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-mango-500/10 px-3 py-2 text-xs font-semibold text-ocean-900"
-        >
-          <span>{n.kind === "giftAdd" ? "🎀" : "💡"} {nudgeText(n, t, money)}</span>
-          {n.kind === "giftAdd" ? (
-            <button
-              type="button"
-              onClick={() =>
-                addToCart({
-                  productId: n.gift.productId,
-                  qty: 1,
-                  snapshot: {
-                    name: n.gift.name,
-                    price: n.gift.price ?? 0,
-                    icon: n.gift.icon ?? "🎁",
-                    slug: n.gift.slug,
-                    store: n.offer.store,
-                    image: n.gift.image,
-                  },
-                })
-              }
-              className="shrink-0 rounded-full bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-700"
-            >
-              {t("offer.addGift")}
-            </button>
-          ) : !compact && n.kind === "bundle" ? (
-            <Link href={`/product/${n.missing[0].slug}`} className="shrink-0 font-bold text-ocean-700 hover:underline">
-              {t("offer.viewItem")} →
-            </Link>
-          ) : !compact ? (
-            <Link href={`/products?store=${store.store}`} className="shrink-0 font-bold text-ocean-700 hover:underline">
-              {t("offer.shopItems")} →
-            </Link>
-          ) : null}
-        </p>
-      ))}
+      {nudges.map((n) => {
+        const progress = nudgeProgress(n, basket);
+        return (
+          <div key={n.offer.id + n.kind} className="rounded-xl bg-mango-500/10 px-3 py-2">
+            <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-semibold text-ocean-900">
+              <span>
+                {n.kind === "giftAdd" ? "🎀" : "💡"} {nudgeText(n, t, money)}
+              </span>
+              {n.kind === "giftAdd" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    addToCart({
+                      productId: n.gift.productId,
+                      qty: 1,
+                      snapshot: {
+                        name: n.gift.name,
+                        price: n.gift.price ?? 0,
+                        icon: n.gift.icon ?? "🎁",
+                        slug: n.gift.slug,
+                        store: n.offer.store,
+                        image: n.gift.image,
+                      },
+                    })
+                  }
+                  className="shrink-0 rounded-full bg-emerald-600 px-3 py-1 font-bold text-white hover:bg-emerald-700"
+                >
+                  {t("offer.addGift")}
+                </button>
+              )}
+            </p>
+            {/* How close they are — "1 of 2 items", "$38 of $50". */}
+            {progress && progress.of > 0 && (
+              <div className="mt-1.5 flex items-center gap-2" aria-hidden>
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80">
+                  <span
+                    className="block h-full rounded-full bg-mango-500 transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(6, (progress.done / progress.of) * 100))}%` }}
+                  />
+                </span>
+                <span className="shrink-0 text-[10px] font-bold tabular-nums text-slate-500">
+                  {progress.money
+                    ? `${money(progress.done)} / ${money(progress.of)}`
+                    : t("offer.pick.progress", { done: progress.done, of: progress.of })}
+                </span>
+              </div>
+            )}
+            {n.kind !== "giftAdd" && (
+              <OfferPicks nudge={n} picks={picks[n.offer.id]} basket={basket} offers={allOffers} compact={compact} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

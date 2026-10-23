@@ -274,6 +274,14 @@ export async function getOffers(): Promise<Offer[]> {
   return (await getDB()).offers ?? [];
 }
 
+/**
+ * The live offers anyone may see — no coupon-only ones, whose codes must
+ * stay private — for pricing the basket in the browser (useCartPricing).
+ */
+export async function getPublicOffers(): Promise<Offer[]> {
+  return (await getOffers()).filter((o) => isOfferLive(o) && !o.code);
+}
+
 /** One shop's offers, newest first — for its dashboard. */
 export async function getOffersByStore(store: string): Promise<Offer[]> {
   return (await getOffers())

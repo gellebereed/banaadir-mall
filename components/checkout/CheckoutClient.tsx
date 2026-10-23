@@ -20,7 +20,7 @@ import OrderConfirmation, {
 import ProductImage from "@/components/ProductImage";
 import { CartSkeleton } from "@/components/cart/CartClient";
 import { DiscountRows, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
-import { useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
+import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
 import { cartLineKey, useCart } from "@/lib/cart-context";
 import { internationalPhone } from "@/lib/whatsapp";
@@ -41,7 +41,7 @@ import {
 import type { CheckoutDefaults } from "@/app/checkout/page";
 import { groupByStore, newOrderId, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
-import type { MarketingSettings, Store } from "@/lib/types";
+import type { MarketingSettings, Offer, Store } from "@/lib/types";
 import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
 import { detectUserLocation } from "@/lib/detect-location";
 
@@ -60,11 +60,14 @@ export default function CheckoutClient({
   settings,
   stores,
   defaults,
+  offers,
 }: {
   settings: MarketingSettings;
   stores: Store[];
   /** What the marketplace already knows — see app/checkout/page.tsx. */
   defaults?: CheckoutDefaults;
+  /** Live shop offers, to price the basket here at once. */
+  offers: Offer[];
 }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const promo = settings.promo;
@@ -326,7 +329,10 @@ export default function CheckoutClient({
    * will be recorded. The cart remembers what things cost when they were
    * added, so a changed price is pointed out rather than discovered later.
    */
-  const { pricing, promo: promoStatus } = useCartPricing(lines, appliedPromo);
+  const pricingContext = useMemo(() => ({ offers, promo }), [offers, promo]);
+  const { pricing, promo: promoStatus } = useCartPricing(lines, appliedPromo, pricingContext);
+  // The basket as the pricing engine reads it — the offer picks price against it.
+  const basket = useMemo(() => toPricingLines(lines), [lines]);
   const lineIndex = new Map(lines.map((l, i) => [cartLineKey(l), String(i)]));
   const pricedLine = (key: string) => pricing?.lines[lineIndex.get(key) ?? ""];
   const priceOf = (line: (typeof lines)[number]) =>
@@ -703,7 +709,7 @@ export default function CheckoutClient({
                 </span>
               )}
             </p>
-            <ParcelOffers store={pricing?.stores[slug]} compact />
+            <ParcelOffers store={pricing?.stores[slug]} basket={basket} offers={offers} compact />
             <ul className="space-y-3">
               {storeLines.map((line) => (
                 <li key={cartLineKey(line)} className="flex items-center gap-3 text-sm">
