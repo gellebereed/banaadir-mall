@@ -9,22 +9,21 @@
  *      chose one;
  *   2. values for that category's standard attributes (Fabric, Neckline…).
  *
- * With ANTHROPIC_API_KEY, Claude reads all of it, the photo included — a
+ * With an AI key (lib/ai.ts — Qwen or Claude), the model reads all of it, the photo included — a
  * neckline or a pattern is rarely written down but always visible. Without
  * it, word matching does what text alone allows. Either way the seller
  * applies a suggestion or ignores it; nothing is saved by this file.
  *
- * Claude can only CHOOSE: categories from our list, values from the
+ * The model can only CHOOSE: categories from our list, values from the
  * attribute's fixed list (enforced by the response schema and checked
  * again after).
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { HOLDING_SLUG } from "./category-holding";
 import { categoryKey } from "./import/categories";
 import { standardCandidates, standardNode } from "./taxonomy";
-import { aiMatchingAvailable, friendlyAiError } from "./taxonomy-ai";
+import { aiAvailable, aiJson, friendlyAiError } from "./ai";
 import { attributesForStandard, cleanAttributes, FROM_VARIANTS, type AttributeDef } from "./taxonomy-attributes";
 import type { Category } from "./types";
 
@@ -96,7 +95,7 @@ export async function classifyProduct(input: ClassifyInput, categories: Category
     attributes: target ? attributesByWords(name, description, editable(target)) : {},
     source: "words",
   };
-  if (!aiMatchingAvailable()) return words;
+  if (!aiAvailable()) return words;
 
   /*
    * ONE model call per click, with a deadline: serverless functions are cut
@@ -106,10 +105,9 @@ export async function classifyProduct(input: ClassifyInput, categories: Category
    * asks the AI for attributes, photo included.
    */
   try {
-    const client = new Anthropic({ timeout: 9_000, maxRetries: 0 });
-    const image = imageBlock(input.image);
+    const image = photo(input.image);
     if (!chosen) {
-      const picked = await aiCategory(client, name, description, image, options, categories);
+      const picked = await aiCategory(name, description, image, options, categories);
       const category = options.find((c) => c.slug === picked?.slug);
       if (!category) return { ...words, source: "ai" };
       return {
@@ -120,7 +118,7 @@ export async function classifyProduct(input: ClassifyInput, categories: Category
     }
     const attrs = editable(chosen);
     return {
-      attributes: attrs.length ? await aiAttributes(client, name, description, image, chosen, attrs) : {},
+      attributes: attrs.length ? await aiAttributes(name, description, image, chosen, attrs) : {},
       source: "ai",
     };
   } catch (err) {
@@ -221,61 +219,28 @@ function categoryKeyText(text: string): string {
     .join(" ");
 }
 
-// ── Claude ────────────────────────────────────────────────────────────
-
-type ImageBlock = Anthropic.Beta.BetaImageBlockParam;
+// ── AI ────────────────────────────────────────────────────────────────
 
 /** Longest value list sent as a schema enum. */
 const ENUM_LIMIT = 60;
 
-function imageBlock(image?: string): ImageBlock | undefined {
+/** The photo as the provider accepts it, or nothing if it is unusable. */
+function photo(image?: string): string | undefined {
   if (!image) return undefined;
   const data = image.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
-  if (data && data[2].length < 1_500_000) {
-    return {
-      type: "image",
-      source: { type: "base64", media_type: `image/${data[1]}` as "image/jpeg", data: data[2] },
-    };
-  }
-  if (/^https:\/\/[^\s]+$/.test(image)) return { type: "image", source: { type: "url", url: image } };
+  if (data && data[2].length < 1_500_000) return image;
+  if (/^https:\/\/[^\s]+$/.test(image)) return image;
   return undefined;
 }
 
-async function ask<T>(
-  client: Anthropic,
-  system: string,
-  text: string,
-  image: ImageBlock | undefined,
-  schema: Record<string, unknown>,
-): Promise<T | undefined> {
-  const response = await client.beta.messages.create({
-    model: "claude-opus-5-5",
-    max_tokens: 4000,
-    // A declined request is re-run on Anthropic's recommended fallback
-    // model instead of coming back empty.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    // Choosing among offered options: low effort is plenty, and a seller
-    // is waiting on the answer.
-    output_config: { effort: "low", format: { type: "json_schema", schema } },
-    system,
-    messages: [{ role: "user", content: image ? [image, { type: "text", text }] : text }],
-  });
-  if (response.stop_reason === "refusal") return undefined;
-  const block = response.content.find((b) => b.type === "text");
-  if (!block || block.type !== "text") return undefined;
-  try {
-    return JSON.parse(block.text) as T;
-  } catch {
-    return undefined;
-  }
+function ask<T>(system: string, text: string, image: string | undefined, schema: Record<string, unknown>) {
+  return aiJson<T>({ system, text, image, schema });
 }
 
 async function aiCategory(
-  client: Anthropic,
   name: string,
   description: string,
-  image: ImageBlock | undefined,
+  image: string | undefined,
   options: Category[],
   all: Category[],
 ): Promise<{ slug: string; reason: string } | undefined> {
@@ -286,7 +251,6 @@ async function aiCategory(
     means: standardNode(c.standardId)?.path,
   }));
   const answer = await ask<{ category_slug: string; reason: string }>(
-    client,
     `You file products into an online marketplace's categories. Choose the single most specific category this product belongs in, from the list given. Gender matters here: the marketplace keeps men's and women's departments apart. Answer with its slug and one short reason for the seller.`,
     JSON.stringify({ product: { name, description }, categories: list }),
     image,
@@ -306,10 +270,9 @@ async function aiCategory(
 }
 
 async function aiAttributes(
-  client: Anthropic,
   name: string,
   description: string,
-  image: ImageBlock | undefined,
+  image: string | undefined,
   category: Category,
   attrs: AttributeDef[],
 ): Promise<Record<string, string[]>> {
@@ -325,7 +288,6 @@ async function aiAttributes(
     };
   }
   const answer = await ask<Record<string, string[]>>(
-    client,
     `You fill in a product's standard attributes for an online marketplace, choosing values only from each attribute's list. Fill an attribute only when the name, description or photo makes it clear; leave its list empty when unsure — a wrong value hides the product from shoppers' filters. Most attributes take one value.`,
     JSON.stringify({
       product: { name, description, category: category.name },

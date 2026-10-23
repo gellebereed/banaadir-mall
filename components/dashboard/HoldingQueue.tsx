@@ -135,7 +135,7 @@ export default function HoldingQueue({
         )}
         {!ai && (
           <p className="text-xs text-slate-400">
-            Suggestions come from names; with ANTHROPIC_API_KEY set, AI can read the products and photos too.
+            Suggestions come from names; with DASHSCOPE_API_KEY (Alibaba Cloud) set, AI can read the products and photos too.
           </p>
         )}
       </div>

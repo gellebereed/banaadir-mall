@@ -85,7 +85,7 @@ decisions (without it they are asked again on every import).
 The queue suggests a home for each waiting group. When the grouping's name
 matches one of ours it is pre-selected; otherwise its products are matched
 one by one and vote (supplier groupings are often codes like "GRP-COOK-01").
-With `ANTHROPIC_API_KEY` set, **✨ Ask AI** (per group, or for all at once)
+With an AI key set (see *AI provider* below), **✨ Ask AI** (per group, or for all at once)
 reads the products and a photo. Nothing is filed until the admin clicks
 **File** — or **File all chosen** after looking down the list.
 
@@ -105,8 +105,8 @@ automatic categorisation will build on.
 - **New categories** must name their standard category when created.
 - Run **`supabase/migration-category-standard.sql`** once (adds
   `categories.standard_id`).
-- **AI suggestions:** set `ANTHROPIC_API_KEY` in Netlify's environment
-  variables and redeploy. Claude then chooses among the word-matched
+- **AI suggestions:** set an AI key (see *AI provider* below) and
+  redeploy. The model then chooses among the word-matched
   candidates, reading each category's products. Without the key the page
   still works, on word matching alone.
 
@@ -136,12 +136,23 @@ product's name and description (`lib/product-classify.ts`). New products
 get a suggestion by themselves once the name is typed; the seller taps
 **Use** / **Apply** — nothing changes on its own.
 
-- **With `ANTHROPIC_API_KEY`** Claude chooses, reading the cover photo too:
+- **With an AI key** (see *AI provider* below) the model chooses, reading the cover photo too:
   first the category, then — once a category is set — the attributes
   (one AI call per tap, so it stays inside Netlify's ~10s function limit).
   It can only choose from our categories and the fixed value lists.
 - **Without the key**, word matching suggests the same things from the
   text alone ("Women's cotton dress" → Dresses, Fabric: Cotton).
+
+### AI provider
+
+Every AI suggestion goes through `lib/ai.ts`, which asks one of:
+
+| Set in Netlify | Answers | Notes |
+|---|---|---|
+| `DASHSCOPE_API_KEY` | Alibaba Cloud Model Studio, `qwen3.7-plus` | Reads photos. `QWEN_MODEL=qwen3.7-flash` is cheaper and faster. `QWEN_BASE_URL` must be the region the key was made in (default: International, Singapore). |
+| `ANTHROPIC_API_KEY` | Anthropic Claude | Used when there is no Alibaba key, or with `AI_PROVIDER=anthropic`. |
+
+Without either, every suggestion falls back to word matching.
 
 ### Store collections
 

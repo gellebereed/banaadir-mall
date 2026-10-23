@@ -121,9 +121,9 @@ export default function StandardLinker({ rows, aiAvailable }: { rows: LinkerRow[
         <div className="card border-amber-300 bg-amber-50/60 p-4 text-sm text-amber-900">
           <strong>AI suggestions are off.</strong> Suggestions below come from word matching,
           which is good at finding candidates but weaker at choosing between them. Add{" "}
-          <code className="rounded bg-white px-1">ANTHROPIC_API_KEY</code> to the site&apos;s
+          <code className="rounded bg-white px-1">DASHSCOPE_API_KEY</code> (Alibaba Cloud) to the site&apos;s
           environment variables (Netlify → Site configuration → Environment variables) and
-          redeploy to have Claude choose instead. You approve every link either way.
+          redeploy to have AI choose instead. You approve every link either way.
         </div>
       )}
 
@@ -282,7 +282,7 @@ export default function StandardLinker({ rows, aiAvailable }: { rows: LinkerRow[
                           {proposal.confidence}%
                         </span>
                       )}
-                      {proposal.source === "ai" ? "Claude" : "Word match"}
+                      {proposal.source === "ai" ? "AI" : "Word match"}
                       {proposal.reason && ` · ${proposal.reason}`}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
