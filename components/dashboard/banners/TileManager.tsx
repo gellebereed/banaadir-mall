@@ -8,6 +8,7 @@ import SubmitButton from "@/components/dashboard/SubmitButton";
 import { scheduleStatus, STATUS_LABEL, STATUS_TONE } from "@/lib/campaign-utils";
 import { formatShopTime, toShopInput } from "@/lib/shop-time";
 import type { PromoTile } from "@/lib/types";
+import CampaignCard from "@/components/home/CampaignCard";
 import LinkField, { type LinkOption } from "./LinkField";
 
 /**
@@ -26,7 +27,7 @@ export default function TileManager({ tiles, links }: { tiles: PromoTile[]; link
           No tiles of your own. Running campaigns still fill the strip by themselves.
         </p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tiles.map((tile, i) => (
             <TileCard
               key={tile.id}
@@ -52,20 +53,19 @@ export default function TileManager({ tiles, links }: { tiles: PromoTile[]; link
   );
 }
 
+/** The tile exactly as the storefront draws it (components/home/CampaignCard). */
 function TileArt({ tile, image }: { tile: Pick<PromoTile, "label" | "sublabel" | "from" | "to" | "image">; image?: string }) {
   const src = image ?? tile.image;
   return (
-    <div
-      className="relative flex h-28 items-center overflow-hidden rounded-2xl px-5 shadow-sm"
-      style={{ background: `linear-gradient(120deg, ${tile.from}, ${tile.to})` }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- saved URLs and local previews alike */}
-      {src && <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover opacity-90" />}
-      <div className="relative min-w-0">
-        <p className="truncate font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">{tile.label || "50%"}</p>
-        <p className="truncate text-xs font-semibold text-ocean-900/70">{tile.sublabel}</p>
-      </div>
-    </div>
+    <CampaignCard
+      href="#"
+      linkable={false}
+      from={tile.from}
+      to={tile.to}
+      headline={tile.label || "50%"}
+      sub={tile.sublabel}
+      photos={src ? [{ kind: "image", src }] : []}
+    />
   );
 }
 
@@ -241,7 +241,7 @@ function TileEditor({ tile, links, onClose }: { tile?: PromoTile; links: LinkOpt
           </div>
           <div>
             <span className="label">
-              Picture <span className="font-normal text-slate-400">(optional · 800 × 300)</span>
+              Picture <span className="font-normal text-slate-400">(optional · portrait, 600 × 800)</span>
             </span>
             <PhotoPicker
               name="image"
@@ -249,7 +249,7 @@ function TileEditor({ tile, links, onClose }: { tile?: PromoTile; links: LinkOpt
               photos={photos}
               onPhotosChange={setPhotos}
               label={tile?.image ? "Replace picture" : "Upload picture"}
-              hint="Keep the subject on the right — the words sit on the left"
+              hint="A product or lifestyle photo — it sits in a white frame beside your words"
             />
             {tile?.image && photos.length === 0 && (
               <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">

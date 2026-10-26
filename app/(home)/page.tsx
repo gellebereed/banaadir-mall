@@ -275,6 +275,11 @@ export default async function HomePage() {
         subtitle={t("section.campaigns.sub")}
         tiles={activeTiles}
         campaigns={campaignTiles}
+        labels={{
+          until: (date) => t("tiles.until", { date }),
+          endsSoon: t("tiles.endsSoon"),
+          popular: t("tiles.popular"),
+        }}
       />
     ),
     // Pinned under the hero instead (QuickNav / TrustStrip): their switches

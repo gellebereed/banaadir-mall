@@ -314,8 +314,8 @@ export function planHero({
   return [...plan, ...smart.slice(0, Math.max(0, MAX_HERO_SLIDES - plan.length))];
 }
 
-/** "Today's Campaigns" fills to this many tiles — two full rows on a computer. */
-export const MAX_TILES = 8;
+/** "Today's Campaigns" fills to this many cards — two full rows of three on a computer. */
+export const MAX_TILES = 6;
 
 /** The campaigns that get an automatic tile, after the admin's own tiles. */
 export function planTiles(marketing: MarketingSettings, campaigns: Campaign[], manualCount: number): Campaign[] {

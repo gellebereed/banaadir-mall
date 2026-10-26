@@ -1,57 +1,101 @@
-import Image from "next/image";
-import Link from "next/link";
-import ProductImage from "@/components/ProductImage";
 import SectionHeader from "@/components/SectionHeader";
-import StoreAvatar from "@/components/StoreAvatar";
 import { shopDay } from "@/lib/campaign-utils";
 import type { Campaign } from "@/lib/campaigns";
 import { primaryImage } from "@/lib/product-utils";
+import { parseShopTime } from "@/lib/shop-time";
 import type { PromoTile } from "@/lib/types";
+import CampaignCard, { type CardPhoto } from "./CampaignCard";
+
+/** Words the cards need, in the shopper's language. English by default. */
+export interface TileLabels {
+  until: (date: string) => string;
+  endsSoon: string;
+  popular: string;
+}
+
+const ENGLISH: TileLabels = {
+  until: (date) => `Until ${date}`,
+  endsSoon: "⏰ Ends soon",
+  popular: "🔥 Popular campaign",
+};
 
 /**
  * TODAY'S CAMPAIGNS — the strip of offers under the hero.
  *
- * Two kinds of tile share it: the admin's own (artwork and words they
- * chose, /admin/banners) first, then one for each campaign actually
+ * Two kinds of card share it: the admin's own tiles (artwork and words
+ * they chose, /admin/banners) first, then one for each campaign actually
  * running on the marketplace (lib/campaigns.ts), so the strip is never a
  * list of last month's offers and a shop's new sale shows up here the
- * moment it starts. The admin's preview renders this same component, so
- * what they see is what shoppers get.
+ * moment it starts. Every card is a CampaignCard — products, the shop's
+ * logo, its dates, the offer — so the strip reads as one designed thing.
+ *
+ * Three across on a computer; on a phone, one swipeable row with the next
+ * card peeking in, which says "there is more" without a word. The admin's
+ * preview renders this same component, so what they see is what shoppers
+ * get.
  */
 export default function CampaignTiles({
   title,
   subtitle,
   tiles,
   campaigns,
+  labels = ENGLISH,
   bare = false,
+  now = Date.now(),
 }: {
   title: string;
   subtitle?: string;
   tiles: PromoTile[];
   campaigns: Campaign[];
+  labels?: TileLabels;
   /** No section padding or header — for the admin's preview. */
   bare?: boolean;
+  now?: number;
 }) {
   if (tiles.length + campaigns.length === 0) return null;
 
+  // The single strongest running offer gets the "popular" ribbon — one, so
+  // it still means something.
+  const popular = [...campaigns].sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0) || b.products.length - a.products.length)[0]?.id;
+
+  const cards = [
+    ...tiles.map((tile) => (
+      <CampaignCard
+        key={tile.id}
+        href={tile.link}
+        from={tile.from}
+        to={tile.to}
+        headline={tile.label}
+        sub={tile.sublabel}
+        date={tile.endsAt ? labels.until(shopDay(tile.endsAt)) : undefined}
+        photos={tile.image ? [{ kind: "image", src: tile.image }] : []}
+      />
+    )),
+    ...campaigns.map((c) => {
+      const endsSoon = c.endsAt ? parseShopTime(c.endsAt) - now < 48 * 3600_000 : false;
+      return (
+        <CampaignCard
+          key={c.id}
+          href={c.path}
+          from={c.from}
+          to={c.to}
+          brand={c.store ? { logo: c.store.logo, name: c.store.name } : { logo: "/banaadir-bag.png", name: "Banaadir Mall" }}
+          date={dateRange(c, labels)}
+          headline={c.headline}
+          sub={c.store ? c.name : c.kind === "sale" ? `${c.stores.length} shops · ${c.name}` : c.name}
+          photos={photosOf(c)}
+          ribbon={endsSoon ? labels.endsSoon : c.id === popular ? labels.popular : undefined}
+        />
+      );
+    }),
+  ];
+
   const grid = (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-      {tiles.map((tile) => (
-        <Link
-          key={tile.id}
-          href={tile.link}
-          className="group relative flex h-28 items-center gap-3 overflow-hidden rounded-2xl px-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-          style={{ background: `linear-gradient(120deg, ${tile.from}, ${tile.to})` }}
-        >
-          {tile.image && <Image src={tile.image} alt="" fill sizes="300px" className="object-cover opacity-90" />}
-          <div className="relative">
-            <p className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">{tile.label}</p>
-            <p className="text-xs font-semibold text-ocean-900/70">{tile.sublabel}</p>
-          </div>
-        </Link>
-      ))}
-      {campaigns.map((c) => (
-        <CampaignTile key={c.id} campaign={c} />
+    <div className="rail-scroll -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3">
+      {cards.map((card, i) => (
+        <div key={i} className="w-[86%] shrink-0 snap-start sm:w-auto">
+          {card}
+        </div>
       ))}
     </div>
   );
@@ -65,30 +109,17 @@ export default function CampaignTiles({
   );
 }
 
-function CampaignTile({ campaign: c }: { campaign: Campaign }) {
-  const product = c.products.find((p) => primaryImage(p));
-  const sub = [c.store?.name ?? c.name, c.endsAt ? `until ${shopDay(c.endsAt)}` : ""].filter(Boolean).join(" · ");
-  return (
-    <Link
-      href={c.path}
-      className="group relative flex h-28 items-center justify-between gap-2 overflow-hidden rounded-2xl pl-4 pr-3 text-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:pl-5"
-      style={{ background: `linear-gradient(120deg, ${c.from}, ${c.to})` }}
-    >
-      <span aria-hidden className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
-      <div className="relative min-w-0">
-        {c.store && (
-          <StoreAvatar store={c.store} size={20} className="mb-1 h-5 w-5 rounded-md text-[10px] ring-1 ring-white/60" />
-        )}
-        <p className="line-clamp-2 font-display text-lg font-extrabold leading-tight drop-shadow-sm sm:text-2xl">
-          {c.headline}
-        </p>
-        <p className="mt-0.5 truncate text-[11px] font-semibold text-white/85 sm:text-xs">{sub}</p>
-      </div>
-      {product && (
-        <div className="relative hidden h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white shadow-md ring-2 ring-white/70 transition duration-300 group-hover:scale-105 sm:block">
-          <ProductImage product={product} sizes="80px" iconClass="text-3xl" className="h-full w-full" />
-        </div>
-      )}
-    </Link>
-  );
+/** Photos first, then the products' own artwork. */
+function photosOf(c: Campaign): CardPhoto[] {
+  return [...c.products]
+    .sort((a, b) => Number(Boolean(primaryImage(b))) - Number(Boolean(primaryImage(a))))
+    .slice(0, 2)
+    .map((product) => ({ kind: "product", product }));
+}
+
+/** "26 Oct – 31 Oct" when both ends are known, "Until 31 Oct" otherwise. */
+function dateRange(c: Campaign, labels: TileLabels): string | undefined {
+  if (!c.endsAt) return undefined;
+  const end = shopDay(c.endsAt);
+  return c.startsAt ? `${shopDay(c.startsAt)} – ${end}` : labels.until(end);
 }
