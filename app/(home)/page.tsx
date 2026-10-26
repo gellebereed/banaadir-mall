@@ -13,6 +13,7 @@ import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import CampaignTiles from "@/components/home/CampaignTiles";
 import { campaignPath, isScheduledLive, SALE_CAMPAIGN_ID, shopDay } from "@/lib/campaign-utils";
+import { PALETTES } from "@/lib/scenes";
 import { getCampaigns, homeEligible, MAX_TILES, planHero, planTiles, type Campaign } from "@/lib/campaigns";
 import { discountPct, money } from "@/lib/format";
 import { getSession } from "@/lib/session";
@@ -207,8 +208,7 @@ export default async function HomePage() {
             // Sellers have their own band lower down and in the footer; here a
             // second button only competed with shopping for every visitor.
             cta: t("home.startShopping"),
-            from: "#0c2b34",
-            to: "#217987",
+            ...PALETTES.ocean,
             brand: true,
           },
         ];
@@ -242,8 +242,7 @@ export default async function HomePage() {
             title: t("section.new"),
             subtitle: t("section.new.sub"),
             cta: t("hero.new.cta"),
-            from: "#3b2208",
-            to: "#b5761a",
+            ...PALETTES.lagoon,
             visual: <HeroShelf products={newArrivals.slice(0, 4)} />,
           },
         ];
@@ -256,8 +255,7 @@ export default async function HomePage() {
             title: t("section.brands"),
             subtitle: t("section.brands.sub"),
             cta: t("hero.brands.cta"),
-            from: "#161a38",
-            to: "#3b4790",
+            ...PALETTES.indigo,
             visual: <BrandWall brands={officialBrands.slice(0, 4)} />,
           },
         ];

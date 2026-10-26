@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
+import { isLight, sceneBackground } from "@/lib/scenes";
 import type { Product } from "@/lib/types";
 
 /**
@@ -53,7 +54,7 @@ export default function CampaignCard({
   /** False in the admin preview, where a click must not navigate away. */
   linkable?: boolean;
 }) {
-  // The words sit on the right of a 135° gradient — on `to`.
+  // The words sit in the key light, which is `to`.
   const light = isLight(to);
   const ink = light ? "text-ocean-950" : "text-white";
   const shown = photos.slice(0, 2);
@@ -61,8 +62,9 @@ export default function CampaignCard({
   const body = (
     <div
       className="relative flex h-full min-h-[11rem] flex-col overflow-hidden rounded-2xl @min-[24rem]:aspect-[2/1] @min-[24rem]:h-auto @min-[24rem]:min-h-0 @min-[24rem]:flex-row shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
-      style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
+      style={{ background: sceneBackground(from, to) }}
     >
+      <div className="scene-grain pointer-events-none absolute inset-0" />
       {/* Products */}
       {shown.length > 0 && (
         // A wide card sets the photos beside the offer; a narrow one (a
@@ -156,21 +158,4 @@ export default function CampaignCard({
   ) : (
     <div className={frame}>{body}</div>
   );
-}
-
-/**
- * Whether white words would be hard to read on this colour. Admin tiles
- * are often pastel ("#ffe4e6"), shop colours rarely are — and a light-blue
- * card with white text on it is the kind of thing that makes a page look
- * unfinished.
- */
-function isLight(hex: string): boolean {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return false;
-  const n = parseInt(m[1], 16);
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45;
 }

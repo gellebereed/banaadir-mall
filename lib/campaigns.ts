@@ -24,6 +24,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { PALETTES, shopPalette } from "@/lib/scenes";
 import {
   getAllStores,
   getFlashDeal,
@@ -118,8 +119,7 @@ export async function getCampaigns(t: T = translator("en")): Promise<Campaign[]>
       stores: joined,
       products: rank(joined.flatMap((s) => (byStore.get(s.slug) ?? []).filter((p) => (p.compareAt ?? 0) > p.price))),
       path: campaignPath({ id: SALE_CAMPAIGN_ID, kind: "sale" }),
-      from: "#c2410c",
-      to: "#fb8a0e",
+      ...PALETTES.emerald,
     });
   }
 
@@ -143,8 +143,7 @@ export async function getCampaigns(t: T = translator("en")): Promise<Campaign[]>
         .filter((s): s is Store => Boolean(s)),
       products: flashProducts,
       path: campaignPath({ id: FLASH_CAMPAIGN_ID, kind: "flash" }),
-      from: "#5c1a10",
-      to: "#d9542c",
+      ...PALETTES.ember,
     });
   }
 
@@ -195,8 +194,7 @@ function fromPromotion(promo: Promotion, store: Store, storeProducts: Product[])
     stores: [store],
     products: rank(covered),
     path: campaignPath({ id: promo.id, kind: "promotion" }),
-    from: store.art.from,
-    to: store.art.to,
+    ...shopPalette(store.slug),
     image: store.banner,
   };
 }
@@ -215,8 +213,7 @@ function fromOffer(offer: Offer, store: Store, storeProducts: Product[], t: T): 
     stores: [store],
     products: rankPicks(storeProducts.filter((p) => offerReaches(offer, p))),
     path: campaignPath({ id: offer.id, kind: "offer" }),
-    from: "#0f3527",
-    to: "#2a8a57",
+    ...shopPalette(store.slug),
     image: store.banner,
   };
 }

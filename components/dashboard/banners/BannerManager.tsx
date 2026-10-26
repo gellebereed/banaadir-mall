@@ -1,5 +1,6 @@
 "use client";
 
+import { PALETTES, sceneBackground } from "@/lib/scenes";
 import { useEffect, useState, useTransition } from "react";
 import { deleteBanner, moveBanner, saveBanner, toggleBanner } from "@/app/actions";
 import PhotoPicker, { type PendingPhoto } from "@/components/dashboard/PhotoPicker";
@@ -8,6 +9,7 @@ import SubmitButton from "@/components/dashboard/SubmitButton";
 import { scheduleStatus, STATUS_LABEL, STATUS_TONE } from "@/lib/campaign-utils";
 import { formatShopTime, toShopInput } from "@/lib/shop-time";
 import type { Banner } from "@/lib/types";
+import PalettePicker from "./PalettePicker";
 import LinkField, { type LinkOption } from "./LinkField";
 
 /**
@@ -216,7 +218,7 @@ export function BannerArt({
       className={`relative w-full overflow-hidden ${small ? "rounded-xl" : "rounded-2xl shadow-sm ring-1 ring-black/5"} ${
         frame === "phone" ? "aspect-[5/4]" : "aspect-[8/3]"
       }`}
-      style={{ background: `linear-gradient(120deg, ${banner.from}, ${banner.to})` }}
+      style={{ background: sceneBackground(banner.from, banner.to) }}
     >
       {src && (
         // eslint-disable-next-line @next/next/no-img-element -- saved URLs and local blob previews alike
@@ -261,8 +263,8 @@ function BannerEditor({
   const [title, setTitle] = useState(banner?.title ?? "");
   const [subtitle, setSubtitle] = useState(banner?.subtitle ?? "");
   const [cta, setCta] = useState(banner?.cta ?? "");
-  const [from, setFrom] = useState(banner?.from ?? "#1f6270");
-  const [to, setTo] = useState(banner?.to ?? "#fb8a0e");
+  const [from, setFrom] = useState(banner?.from ?? PALETTES.ocean.from);
+  const [to, setTo] = useState(banner?.to ?? PALETTES.ocean.to);
   const [fit, setFit] = useState<"cover" | "contain">(banner?.fit ?? "cover");
   const [desktop, setDesktop] = useState<PendingPhoto[]>([]);
   const [phone, setPhone] = useState<PendingPhoto[]>([]);
@@ -466,6 +468,7 @@ function BannerEditor({
             </div>
 
             {/* Colour */}
+            <PalettePicker from={from} to={to} onPick={(p) => { setFrom(p.from); setTo(p.to); }} />
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-slate-600">
                 Background from
