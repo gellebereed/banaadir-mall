@@ -11,8 +11,10 @@ import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
+import CampaignTiles from "@/components/home/CampaignTiles";
+import { campaignPath, isScheduledLive, SALE_CAMPAIGN_ID, shopDay } from "@/lib/campaign-utils";
+import { getCampaigns, homeEligible, MAX_TILES, planHero, planTiles, type Campaign } from "@/lib/campaigns";
 import { discountPct, money } from "@/lib/format";
-import { offerHeadline } from "@/lib/offers";
 import { getSession } from "@/lib/session";
 import { getLang, getT } from "@/lib/prefs-server";
 import { localizeMarketing } from "@/lib/marketing-copy";
@@ -71,8 +73,14 @@ export default async function HomePage() {
 
   const officialBrands = stores.filter((s) => s.official);
   const localStores = stores.filter((s) => !s.official).slice(0, 4);
-  const activeBanners = marketing.banners.filter((b) => b.active);
-  const activeTiles = marketing.promoTiles.filter((t) => t.active);
+  // The admin's switch AND their schedule: an Eid banner made last week
+  // goes up on Eid by itself, and comes down after.
+  const activeBanners = marketing.banners.filter((b) => isScheduledLive(b));
+  const activeTiles = marketing.promoTiles.filter((t) => isScheduledLive(t)).slice(0, MAX_TILES);
+  // What is running on the marketplace right now (lib/campaigns.ts) — the
+  // hero and "Today's Campaigns" fill themselves from it.
+  const campaigns = homeEligible(await getCampaigns(t), marketing);
+  const campaignTiles = planTiles(marketing, campaigns, activeTiles.length);
 
   // Select 1 real product from each of 4 distinct stores for the Hero section
   const heroProducts: Product[] = [];
@@ -101,151 +109,179 @@ export default async function HomePage() {
    * ── The hero's slides ────────────────────────────────────────────────
    *
    * Slide one is the marketplace's own pitch, built from the copy the
-   * admin writes in /admin/marketing. The rest are their banners. They
-   * share one frame — see the note at the top of HeroCarousel for why the
-   * storefront no longer opens with two heroes in a row.
+   * admin writes in /admin/marketing. Then the admin's banners
+   * (/admin/banners), then the campaigns running today — the flash sale
+   * and when it ends, the site-wide sale, the strongest shop sales, a
+   * shop's offer — each with real products at real prices, so every slide
+   * is something a shopper can act on. Then what just landed and the
+   * official brands, which are what get cut when the frame is full.
    *
-   * The banners only join when the admin has the "banners" section switched
-   * ON, so that toggle still means what it always meant.
+   * The order is decided by planHero() (lib/campaigns.ts), which the
+   * admin's preview of the hero calls too, so the two never disagree.
+   * Nothing here is invented: a slide with no data behind it is simply not
+   * planned. See the note at the top of HeroCarousel for why there is one
+   * frame rather than a hero and a banner carousel.
    */
-  const bannersVisible = marketing.sections.some(
-    (section) => section.key === "banners" && section.visible,
-  );
+  const plan = planHero({
+    marketing,
+    bannerIds: activeBanners.map((b) => b.id),
+    campaigns,
+    hasNewArrivals: newArrivals.length > 0,
+    officialBrandCount: officialBrands.length,
+  });
 
-  const heroSlides: HeroSlide[] = [
-    {
-      id: "__brand__",
-      href: "/products",
-      eyebrow: marketing.heroBadge,
-      // The headline is written as two lines in the admin form; the hero
-      // wraps it itself, so they are joined with a space rather than a
-      // <br> that would break awkwardly on a narrow phone.
-      title: [marketing.heroTitleTop, marketing.heroTitleHighlight]
-        .filter(Boolean)
-        .join(" "),
-      subtitle: marketing.heroSubtitle,
-      // Sellers have their own band lower down and in the footer; here a
-      // second button only competed with shopping for every visitor.
-      cta: t("home.startShopping"),
-      from: "#0c2b34",
-      to: "#217987",
-      brand: true,
-    },
-    ...(bannersVisible
-      ? activeBanners.map((banner) => ({
-          id: banner.id,
-          href: banner.link,
-          title: banner.title,
-          subtitle: banner.subtitle,
-          cta: banner.cta,
-          image: banner.image,
-          mobileImage: banner.mobileImage,
-          from: banner.from,
-          to: banner.to,
-          fit: banner.fit,
-        }))
-      : []),
-  ];
+  const campaignSlide = (c: Campaign): HeroSlide => {
+    const shelf = <HeroShelf products={c.products.slice(0, 4)} />;
+    const shopName = c.store?.name ?? "";
+    switch (c.kind) {
+      case "flash":
+        return {
+          id: "__flash__",
+          href: c.path,
+          eyebrow: t("hero.flash.eyebrow"),
+          title: c.pct ? t("hero.flash.title", { pct: c.pct }) : c.name,
+          subtitle: c.pct ? c.name : undefined,
+          cta: t("hero.flash.cta"),
+          below: c.endsAt ? (
+            <span className="inline-flex rounded-full bg-white/95 px-3 py-1.5 shadow-sm">
+              <CountdownTimer endsAt={c.endsAt} />
+            </span>
+          ) : undefined,
+          from: c.from,
+          to: c.to,
+          visual: shelf,
+        };
+      case "sale":
+        return {
+          id: "__sale__",
+          href: c.path,
+          eyebrow: `🔥 ${c.name}`,
+          title: c.headline,
+          subtitle: t("hero.sale.sub", { n: c.stores.length }),
+          cta: t("hero.sale.cta"),
+          from: c.from,
+          to: c.to,
+          visual: shelf,
+        };
+      case "promotion":
+        return {
+          id: `__promo-${c.id}__`,
+          href: c.path,
+          eyebrow: t("hero.promo.eyebrow", { store: shopName }),
+          title: c.headline,
+          subtitle: c.endsAt ? `${c.name} · ${t("campaign.ends", { date: shopDay(c.endsAt) })}` : c.name,
+          cta: t("hero.offer.cta", { store: shopName }),
+          from: c.from,
+          to: c.to,
+          visual: shelf,
+        };
+      case "offer":
+        return {
+          id: "__offer__",
+          href: c.path,
+          eyebrow: t("hero.offer.eyebrow", { store: shopName }),
+          title: c.headline,
+          subtitle: t("hero.offer.sub"),
+          cta: t("hero.offer.cta", { store: shopName }),
+          from: c.from,
+          to: c.to,
+          visual: shelf,
+        };
+    }
+  };
 
-  /*
-   * ── Smart slides ─────────────────────────────────────────────────────
-   *
-   * A hero that only ever says "welcome" is wasted on everyone who has
-   * already been welcomed. After the admin's banners (paid placements go
-   * first), the frame fills itself from what is actually true on the
-   * marketplace today — the flash sale and when it ends, a shop's live
-   * offer, what just landed, the official brands — each with real
-   * products at real prices, so every slide is something a shopper can
-   * act on. Nothing here is invented: a slide with no data behind it is
-   * simply not built. Each follows its own section's switch in
-   * /admin/marketing, so hiding Flash Deals hides its slide too.
-   */
-  const MAX_SLIDES = 6;
-  const smart: HeroSlide[] = [];
-
-  if (isVisibleSection(marketing, "flash") && flashProducts.length > 0) {
-    const best = Math.max(
-      ...flashProducts.map((p) => (p.compareAt && p.compareAt > p.price ? discountPct(p.price, p.compareAt) : 0)),
-    );
-    smart.push({
-      id: "__flash__",
-      href: "/flash",
-      eyebrow: t("hero.flash.eyebrow"),
-      title: best > 0 ? t("hero.flash.title", { pct: best }) : flash.name,
-      subtitle: best > 0 ? flash.name : undefined,
-      cta: t("hero.flash.cta"),
-      below: flash.endsAt ? (
-        <span className="inline-flex rounded-full bg-white/95 px-3 py-1.5 shadow-sm">
-          <CountdownTimer endsAt={flash.endsAt} />
-        </span>
-      ) : undefined,
-      from: "#5c1a10",
-      to: "#d9542c",
-      visual: <HeroShelf products={flashProducts.slice(0, 4)} />,
-    });
-  }
-
-  // The shop offer with the most products behind it — a public one (coupon
-  // offers never get a badge, so they never reach here).
-  const offerShelves = new Map<string, Product[]>();
-  for (const p of allProducts) {
-    if (!p.offer) continue;
-    offerShelves.set(p.offer.id, [...(offerShelves.get(p.offer.id) ?? []), p]);
-  }
-  const topOffer = [...offerShelves.values()].sort((a, b) => b.length - a.length)[0];
-  if (topOffer) {
-    const offer = topOffer[0].offer!;
-    const shop = stores.find((s) => s.slug === offer.store);
-    const shopName = shop?.name ?? offer.store.replace(/-/g, " ");
-    smart.push({
-      id: "__offer__",
-      href: `/store/${offer.store}`,
-      eyebrow: t("hero.offer.eyebrow", { store: shopName }),
-      title: offerHeadline(offer, t, money),
-      subtitle: t("hero.offer.sub"),
-      cta: t("hero.offer.cta", { store: shopName }),
-      from: "#0f3527",
-      to: "#2a8a57",
-      visual: <HeroShelf products={topOffer.slice(0, 4)} />,
-    });
-  }
-
-  if (isVisibleSection(marketing, "new") && newArrivals.length > 0) {
-    smart.push({
-      id: "__new__",
-      href: "/products?sort=new",
-      eyebrow: t("hero.new.eyebrow"),
-      title: t("section.new"),
-      subtitle: t("section.new.sub"),
-      cta: t("hero.new.cta"),
-      from: "#3b2208",
-      to: "#b5761a",
-      visual: <HeroShelf products={newArrivals.slice(0, 4)} />,
-    });
-  }
-
-  if (isVisibleSection(marketing, "brands") && officialBrands.length >= 2) {
-    smart.push({
-      id: "__brands__",
-      href: "/stores",
-      eyebrow: t("hero.brands.eyebrow"),
-      title: t("section.brands"),
-      subtitle: t("section.brands.sub"),
-      cta: t("hero.brands.cta"),
-      from: "#161a38",
-      to: "#3b4790",
-      visual: <BrandWall brands={officialBrands.slice(0, 4)} />,
-    });
-  }
-
-  heroSlides.push(...smart.slice(0, Math.max(0, MAX_SLIDES - heroSlides.length)));
+  const bannerById = new Map(activeBanners.map((b) => [b.id, b]));
+  const heroSlides: HeroSlide[] = plan.flatMap((item): HeroSlide[] => {
+    switch (item.type) {
+      case "brand":
+        return [
+          {
+            id: "__brand__",
+            href: "/products",
+            eyebrow: marketing.heroBadge,
+            // The headline is written as two lines in the admin form; the hero
+            // wraps it itself, so they are joined with a space rather than a
+            // <br> that would break awkwardly on a narrow phone.
+            title: [marketing.heroTitleTop, marketing.heroTitleHighlight].filter(Boolean).join(" "),
+            subtitle: marketing.heroSubtitle,
+            // Sellers have their own band lower down and in the footer; here a
+            // second button only competed with shopping for every visitor.
+            cta: t("home.startShopping"),
+            from: "#0c2b34",
+            to: "#217987",
+            brand: true,
+          },
+        ];
+      case "banner": {
+        const banner = bannerById.get(item.id);
+        return banner
+          ? [
+              {
+                id: banner.id,
+                href: banner.link,
+                title: banner.title,
+                subtitle: banner.subtitle,
+                cta: banner.cta,
+                image: banner.image,
+                mobileImage: banner.mobileImage,
+                from: banner.from,
+                to: banner.to,
+                fit: banner.fit,
+              },
+            ]
+          : [];
+      }
+      case "campaign":
+        return [campaignSlide(item.campaign)];
+      case "new":
+        return [
+          {
+            id: "__new__",
+            href: "/products?sort=new",
+            eyebrow: t("hero.new.eyebrow"),
+            title: t("section.new"),
+            subtitle: t("section.new.sub"),
+            cta: t("hero.new.cta"),
+            from: "#3b2208",
+            to: "#b5761a",
+            visual: <HeroShelf products={newArrivals.slice(0, 4)} />,
+          },
+        ];
+      case "brands":
+        return [
+          {
+            id: "__brands__",
+            href: "/stores",
+            eyebrow: t("hero.brands.eyebrow"),
+            title: t("section.brands"),
+            subtitle: t("section.brands.sub"),
+            cta: t("hero.brands.cta"),
+            from: "#161a38",
+            to: "#3b4790",
+            visual: <BrandWall brands={officialBrands.slice(0, 4)} />,
+          },
+        ];
+    }
+  });
 
   /** Every section the admin can place, keyed by its section id. */
   const sectionRenderers: Record<SectionKey, () => React.ReactNode> = {
     // Banners are slides in the hero now, so this section renders nothing
     // of its own. Its visibility switch still governs whether they appear.
     banners: () => null,
-    promoTiles: () => (activeTiles.length > 0 ? <PromoTiles tiles={activeTiles} t={t} /> : null),
+    promoTiles: () => (
+      <CampaignTiles
+        title={t("section.campaigns")}
+        subtitle={t("section.campaigns.sub")}
+        tiles={activeTiles}
+        campaigns={campaignTiles}
+        labels={{
+          until: (date) => t("tiles.until", { date }),
+          endsSoon: t("tiles.endsSoon"),
+          popular: t("tiles.popular"),
+        }}
+      />
+    ),
     // Pinned under the hero instead (QuickNav / TrustStrip): their switches
     // still decide whether they show, their position no longer moves them.
     categories: () => null,
@@ -385,19 +421,21 @@ export default async function HomePage() {
 /* ── Site-wide campaign banner (admin-controlled) ─────────────────── */
 
 function CampaignBanner({ campaign }: { campaign: MarketingSettings["campaign"] }) {
+  // Links to the sale's own page (/campaign/sale), where the participating
+  // shops and their discounted products are — the strip used to announce
+  // a sale and give a shopper nowhere to go to find it.
   return (
-    <div className="bg-gradient-to-r from-coral-600 via-coral-500 to-mango-500 px-4 py-2.5 text-center text-sm font-bold text-white">
+    <Link
+      href={campaignPath({ id: SALE_CAMPAIGN_ID, kind: "sale" })}
+      className="block bg-gradient-to-r from-coral-600 via-coral-500 to-mango-500 px-4 py-2.5 text-center text-sm font-bold text-white transition hover:brightness-105"
+    >
       🔥 {campaign.name} — {campaign.pct}% off at participating shops, automatically
-      applied at the till!
-    </div>
+      applied at the till! <span className="underline underline-offset-2">Shop the sale →</span>
+    </Link>
   );
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────── */
-
-function isVisibleSection(marketing: MarketingSettings, key: SectionKey): boolean {
-  return marketing.sections.some((s) => s.key === key && s.visible);
-}
 
 /**
  * A smart slide's products: on a phone, three cards spanning the full width
@@ -540,36 +578,6 @@ function HeroProductCards({ products }: { products: Product[] }) {
       })}
       <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
     </>
-  );
-}
-
-/* ── Campaign tiles (admin-built) ─────────────────────────────────── */
-
-function PromoTiles({ tiles, t }: { tiles: MarketingSettings["promoTiles"]; t: T }) {
-  return (
-    <section className="mx-auto max-w-7xl px-4 pt-10">
-      <SectionHeader title={t("section.campaigns")} subtitle={t("section.campaigns.sub")} />
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {tiles.map((t) => (
-          <Link
-            key={t.id}
-            href={t.link}
-            className="group relative flex h-28 items-center gap-3 overflow-hidden rounded-2xl px-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-            style={{ background: `linear-gradient(120deg, ${t.from}, ${t.to})` }}
-          >
-            {t.image && (
-              <Image src={t.image} alt="" fill sizes="300px" className="object-cover opacity-90" />
-            )}
-            <div className="relative">
-              <p className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">
-                {t.label}
-              </p>
-              <p className="text-xs font-semibold text-ocean-900/70">{t.sublabel}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
   );
 }
 

@@ -41,6 +41,7 @@ export default async function AdminLayout({
     { href: "/admin/analytics", icon: "analytics", label: "Analytics" },
     { href: "/admin/categories", icon: "categories", label: "Categories" },
     { href: "/admin/reviews", icon: "reviews", label: "Reviews", badge: reportedReviews },
+    { href: "/admin/banners", icon: "banners", label: "Home banners" },
     { href: "/admin/marketing", icon: "marketing", label: "Marketing" },
     { href: "/admin/discovery", icon: "discovery", label: "Discovery" },
     { href: "/admin/flash", icon: "flash", label: "Flash deals", badge: pendingFlash },

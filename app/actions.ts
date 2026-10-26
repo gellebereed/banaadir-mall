@@ -62,12 +62,14 @@ import type {
   Employee,
   EmployeeRole,
   HomeSection,
+  MarketingSettings,
   Order,
   OrderStatus,
   ParcelDelivery,
   Permission,
   Product,
   ProductStory,
+  PromoTile,
   RecoSettings,
   ShelfSlot,
   Store,
@@ -107,6 +109,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import { formatShopTime, normaliseShopTime, parseShopTime } from "@/lib/shop-time";
 import { logActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
+import { campaignPath, isUsableLink } from "@/lib/campaign-utils";
 
 /**
  * Invalidate what a mutation actually affected.
@@ -1276,6 +1279,12 @@ export async function bulkImportPhotos(formData: FormData): Promise<BulkPhotoSta
 export interface SaveState {
   ok: boolean;
   message: string;
+  /**
+   * The public page of what was just created, when it has one — the
+   * promotion form shows it straight away so the shop can share it while
+   * it is still on the screen.
+   */
+  link?: string;
 }
 
 /**
@@ -1595,6 +1604,7 @@ export async function createPromotion(
     message: startsAt
       ? `Scheduled — ${pct}% off ${scopeLabel} from the start date.`
       : `Live now — ${pct}% off ${scopeLabel}.`,
+    link: campaignPath({ id: promo.id, kind: "promotion" }),
   };
 }
 
@@ -2216,6 +2226,9 @@ export async function updateMarketing(
       // percentage is a different deal and has to be accepted afresh.
       stores: current.campaign.pct === campaignPctValue ? (current.campaign.stores ?? []) : [],
       declined: current.campaign.pct === campaignPctValue ? (current.campaign.declined ?? []) : [],
+      // The home page's campaign feed switches live on this record too
+      // (/admin/banners); this form doesn't show them, so they are kept.
+      feed: current.campaign.feed,
     },
     delivery: {
       fee: Math.max(0, Number(formData.get("deliveryFee")) || 0),
@@ -2329,182 +2342,218 @@ export async function updateSections(
   return { ok: true, message: "Home page layout saved." };
 }
 
-// ── Banners & promo tiles (the home-page builder) ──────────────────────
+// ── Banners & promo tiles (the home-page builder, /admin/banners) ──────
 
-export async function saveBanner(formData: FormData): Promise<void> {
-  await requireMarketing();
-  const id = String(formData.get("id") ?? "");
-  const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
-  const [mobileImage] = await saveImages(filesFrom(formData, "mobileImage"), "marketing");
-
+/**
+ * Change the marketing record wherever it is stored. Every banner and tile
+ * action used to spell out both paths (Supabase, then the local file) with
+ * the same edit written twice — which is how editing a banner on Supabase
+ * came to switch a paused banner back on: one copy kept `active`, the
+ * other did not. One edit, applied to whichever record is real.
+ */
+async function changeMarketing(edit: (marketing: MarketingSettings) => void): Promise<boolean> {
   if (useSupabaseMutations()) {
     const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const next: Banner = {
-      id: id || "ban-" + Date.now().toString(36),
-      title: String(formData.get("title") ?? "").trim() || undefined,
-      subtitle: String(formData.get("subtitle") ?? "").trim() || undefined,
-      cta: String(formData.get("cta") ?? "").trim() || undefined,
-      link: String(formData.get("link") ?? "/products").trim() || "/products",
-      from: String(formData.get("from") ?? "#1f6270"),
-      to: String(formData.get("to") ?? "#fb8a0e"),
-      fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
-      image,
-      mobileImage,
-      active: true,
-    };
-    const banners = [...current.banners];
-    const existingIndex = banners.findIndex((b) => b.id === id);
-    if (existingIndex >= 0) {
-      banners[existingIndex] = { ...banners[existingIndex], ...next, image: image ?? banners[existingIndex].image, mobileImage: mobileImage ?? banners[existingIndex].mobileImage };
-    } else {
-      banners.push(next);
-    }
-    await updateMarketingInSupabase({ ...current, banners });
-  } else {
-    await mutateDB((db) => {
-      const next: Banner = {
-        id: id || "ban-" + Date.now().toString(36),
-        title: String(formData.get("title") ?? "").trim() || undefined,
-        subtitle: String(formData.get("subtitle") ?? "").trim() || undefined,
-        cta: String(formData.get("cta") ?? "").trim() || undefined,
-        link: String(formData.get("link") ?? "/products").trim() || "/products",
-        from: String(formData.get("from") ?? "#1f6270"),
-        to: String(formData.get("to") ?? "#fb8a0e"),
-        fit: String(formData.get("fit") ?? "cover") === "contain" ? "contain" : "cover",
-        image,
-        mobileImage,
-        active: true,
-      };
-      const existing = db.marketing.banners.find((b) => b.id === id);
-      if (existing) {
-        Object.assign(existing, next, {
-          // Keep the current artwork unless a new file was uploaded.
-          image: image ?? existing.image,
-        mobileImage: mobileImage ?? existing.mobileImage,
-          active: existing.active,
-        });
-      } else {
-        db.marketing.banners.push(next);
-      }
-    });
+    const current = structuredClone(await getMarketingSettings());
+    edit(current);
+    return updateMarketingInSupabase(current);
   }
+  await mutateDB((db) => edit(db.marketing));
+  return true;
+}
+
+const SAVE_FAILED = "Could not save — please try again.";
+
+/** Mogadishu-time schedule from a form, or the sentence explaining why not. */
+function readSchedule(formData: FormData): { startsAt?: string; endsAt?: string } | { error: string } {
+  const startsAt = normaliseShopTime(formData.get("startsAt"));
+  const endsAt = normaliseShopTime(formData.get("endsAt"));
+  if (startsAt && endsAt && parseShopTime(startsAt) >= parseShopTime(endsAt)) {
+    return { error: "The end date must come after the start date." };
+  }
+  return { startsAt, endsAt };
+}
+
+/** Where a banner or tile links to. Blank means the whole catalogue. */
+function readLink(formData: FormData): { link: string } | { error: string } {
+  const link = String(formData.get("link") ?? "").trim() || "/products";
+  if (!isUsableLink(link)) {
+    return { error: "The link must be a page on this site (starting with /) or a full https:// address." };
+  }
+  return { link };
+}
+
+const colour = (value: FormDataEntryValue | null, fallback: string) =>
+  /^#[0-9a-f]{6}$/i.test(String(value ?? "")) ? String(value) : fallback;
+
+/**
+ * Add or edit a hero banner. Returns `{ error }` rather than throwing, so
+ * the editor can show the sentence (thrown messages are hidden in
+ * production). New artwork replaces the old and the old file is removed;
+ * no new file keeps what was there. "removeMobileImage" drops the phone
+ * artwork so the desktop picture is used on phones again.
+ */
+export async function saveBanner(formData: FormData): Promise<{ error?: string }> {
+  await requireMarketing();
+  const id = String(formData.get("id") ?? "");
+  const schedule = readSchedule(formData);
+  if ("error" in schedule) return schedule;
+  const target = readLink(formData);
+  if ("error" in target) return target;
+
+  const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
+  const [mobileImage] = await saveImages(filesFrom(formData, "mobileImage"), "marketing");
+  const removeMobile = formData.get("removeMobileImage") === "on";
+  const text = (name: string) => String(formData.get(name) ?? "").trim().slice(0, 120) || undefined;
+
+  const fields = {
+    title: text("title"),
+    subtitle: text("subtitle"),
+    cta: text("cta"),
+    link: target.link,
+    from: colour(formData.get("from"), "#1f6270"),
+    to: colour(formData.get("to"), "#fb8a0e"),
+    fit: String(formData.get("fit") ?? "cover") === "contain" ? ("contain" as const) : ("cover" as const),
+    startsAt: schedule.startsAt,
+    endsAt: schedule.endsAt,
+  };
+
+  const replaced: string[] = [];
+  const saved = await changeMarketing((m) => {
+    const existing = m.banners.find((b) => b.id === id);
+    if (existing) {
+      if (image && existing.image) replaced.push(existing.image);
+      if ((mobileImage || removeMobile) && existing.mobileImage) replaced.push(existing.mobileImage);
+      Object.assign(existing, fields, {
+        image: image ?? existing.image,
+        mobileImage: mobileImage ?? (removeMobile ? undefined : existing.mobileImage),
+      });
+    } else {
+      m.banners.push({ id: "ban-" + Date.now().toString(36), ...fields, image, mobileImage, active: true });
+    }
+  });
+  if (!saved) return { error: SAVE_FAILED };
+  // Only once the new record is safely stored: deleting first would leave
+  // a banner pointing at nothing if the save failed.
+  for (const url of replaced) void deleteUpload(url);
   refresh();
+  return {};
 }
 
 export async function deleteBanner(id: string): Promise<void> {
   await requireMarketing();
-
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const banner = current.banners.find((b) => b.id === id);
-    if (banner?.image) void deleteUpload(banner.image);
-    await updateMarketingInSupabase({
-      ...current,
-      banners: current.banners.filter((b) => b.id !== id),
-    });
-  } else {
-    await mutateDB((db) => {
-      const banner = db.marketing.banners.find((b) => b.id === id);
-      if (banner?.image) void deleteUpload(banner.image);
-      db.marketing.banners = db.marketing.banners.filter((b) => b.id !== id);
-    });
+  let removed: Banner | undefined;
+  const saved = await changeMarketing((m) => {
+    removed = m.banners.find((b) => b.id === id);
+    m.banners = m.banners.filter((b) => b.id !== id);
+  });
+  if (saved && removed) {
+    if (removed.image) void deleteUpload(removed.image);
+    if (removed.mobileImage) void deleteUpload(removed.mobileImage);
   }
   refresh();
 }
 
 export async function toggleBanner(id: string): Promise<void> {
   await requireMarketing();
-
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const banners = current.banners.map((b) =>
-      b.id === id ? { ...b, active: !b.active } : b
-    );
-    await updateMarketingInSupabase({ ...current, banners });
-  } else {
-    await mutateDB((db) => {
-      const banner = db.marketing.banners.find((b) => b.id === id);
-      if (banner) banner.active = !banner.active;
-    });
-  }
+  await changeMarketing((m) => {
+    const banner = m.banners.find((b) => b.id === id);
+    if (banner) banner.active = !banner.active;
+  });
   refresh();
 }
 
+/** Swap a banner with its neighbour. The hero shows them in this order. */
 export async function moveBanner(id: string, delta: number): Promise<void> {
   await requireMarketing();
-
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const list = [...current.banners];
+  await changeMarketing((m) => {
+    const list = m.banners;
     const i = list.findIndex((b) => b.id === id);
     const target = i + delta;
     if (i < 0 || target < 0 || target >= list.length) return;
     [list[i], list[target]] = [list[target], list[i]];
-    await updateMarketingInSupabase({ ...current, banners: list });
-  } else {
-    await mutateDB((db) => {
-      const list = db.marketing.banners;
-      const i = list.findIndex((b) => b.id === id);
-      const target = i + delta;
-      if (i < 0 || target < 0 || target >= list.length) return;
-      [list[i], list[target]] = [list[target], list[i]];
-    });
-  }
+  });
   refresh();
 }
 
-export async function savePromoTile(formData: FormData): Promise<void> {
+/** Add or edit a "Today's Campaigns" tile. Same contract as saveBanner. */
+export async function savePromoTile(formData: FormData): Promise<{ error?: string }> {
   await requireMarketing();
   const id = String(formData.get("id") ?? "");
+  const label = String(formData.get("label") ?? "").trim().slice(0, 40);
+  if (!label) return { error: "Give the tile its big text, e.g. “50%” or “Free delivery”." };
+  const schedule = readSchedule(formData);
+  if ("error" in schedule) return schedule;
+  const target = readLink(formData);
+  if ("error" in target) return target;
   const [image] = await saveImages(filesFrom(formData, "image"), "marketing");
+  const removeImage = formData.get("removeImage") === "on";
 
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const existingTile = current.promoTiles.find((t) => t.id === id);
-    const tile = {
-      id: id || "tile-" + Date.now().toString(36),
-      label: String(formData.get("label")).trim(),
-      sublabel: String(formData.get("sublabel") ?? "").trim(),
-      link: String(formData.get("link") ?? "/products").trim() || "/products",
-      from: String(formData.get("from") ?? "#ffe4e6"),
-      to: String(formData.get("to") ?? "#fecdd3"),
-      image: image ?? existingTile?.image,
-      active: existingTile?.active ?? true,
-    };
-    const promoTiles = [...current.promoTiles];
-    const idx = promoTiles.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      promoTiles[idx] = tile;
+  const fields = {
+    label,
+    sublabel: String(formData.get("sublabel") ?? "").trim().slice(0, 80),
+    link: target.link,
+    from: colour(formData.get("from"), "#ffe4e6"),
+    to: colour(formData.get("to"), "#fecdd3"),
+    startsAt: schedule.startsAt,
+    endsAt: schedule.endsAt,
+  };
+
+  const replaced: string[] = [];
+  const saved = await changeMarketing((m) => {
+    const existing = m.promoTiles.find((t) => t.id === id);
+    if (existing) {
+      if ((image || removeImage) && existing.image) replaced.push(existing.image);
+      Object.assign(existing, fields, { image: image ?? (removeImage ? undefined : existing.image) });
     } else {
-      promoTiles.push(tile);
+      m.promoTiles.push({ id: "tile-" + Date.now().toString(36), ...fields, image, active: true });
     }
-    await updateMarketingInSupabase({ ...current, promoTiles });
-  } else {
-    await mutateDB((db) => {
-      const existing = db.marketing.promoTiles.find((t) => t.id === id);
-      const tile = {
-        id: id || "tile-" + Date.now().toString(36),
-        label: String(formData.get("label")).trim(),
-        sublabel: String(formData.get("sublabel") ?? "").trim(),
-        link: String(formData.get("link") ?? "/products").trim() || "/products",
-        from: String(formData.get("from") ?? "#ffe4e6"),
-        to: String(formData.get("to") ?? "#fecdd3"),
-        image: image ?? existing?.image,
-        active: existing?.active ?? true,
-      };
-      if (existing) {
-        Object.assign(existing, tile);
-      } else {
-        db.marketing.promoTiles.push(tile);
-      }
-    });
-  }
+  });
+  if (!saved) return { error: SAVE_FAILED };
+  for (const url of replaced) void deleteUpload(url);
   refresh();
+  return {};
+}
+
+export async function moveTile(id: string, delta: number): Promise<void> {
+  await requireMarketing();
+  await changeMarketing((m) => {
+    const list = m.promoTiles;
+    const i = list.findIndex((t) => t.id === id);
+    const target = i + delta;
+    if (i < 0 || target < 0 || target >= list.length) return;
+    [list[i], list[target]] = [list[target], list[i]];
+  });
+  refresh();
+}
+
+/**
+ * The campaign feed's switches: whether running campaigns fill the hero
+ * and the "Today's Campaigns" tiles by themselves. Kept on the campaign
+ * record — see CampaignFeed in lib/types.ts for why.
+ */
+export async function setCampaignFeed(setting: "hero" | "tiles", on: boolean): Promise<SaveState> {
+  await requireMarketing();
+  const saved = await changeMarketing((m) => {
+    m.campaign = { ...m.campaign, feed: { ...m.campaign.feed, [setting]: on } };
+  });
+  if (!saved) return { ok: false, message: SAVE_FAILED };
+  refresh();
+  return { ok: true, message: on ? "Switched on." : "Switched off." };
+}
+
+/** Take one campaign off the home page, or put it back. */
+export async function setCampaignHidden(id: string, hidden: boolean): Promise<SaveState> {
+  await requireMarketing();
+  const saved = await changeMarketing((m) => {
+    const list = new Set(m.campaign.feed?.hidden ?? []);
+    if (hidden) list.add(id);
+    else list.delete(id);
+    m.campaign = { ...m.campaign, feed: { ...m.campaign.feed, hidden: [...list] } };
+  });
+  if (!saved) return { ok: false, message: SAVE_FAILED };
+  refresh();
+  return { ok: true, message: hidden ? "Taken off the home page." : "Back on the home page." };
 }
 
 /** One store's share of an order, resolved server-side at checkout. */
@@ -3135,42 +3184,21 @@ export async function getBrandOrderStatusesAction(orderId: string): Promise<
 
 export async function deletePromoTile(id: string): Promise<void> {
   await requireMarketing();
-
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const tile = current.promoTiles.find((t) => t.id === id);
-    if (tile?.image) void deleteUpload(tile.image);
-    await updateMarketingInSupabase({
-      ...current,
-      promoTiles: current.promoTiles.filter((t) => t.id !== id),
-    });
-  } else {
-    await mutateDB((db) => {
-      const tile = db.marketing.promoTiles.find((t) => t.id === id);
-      if (tile?.image) void deleteUpload(tile.image);
-      db.marketing.promoTiles = db.marketing.promoTiles.filter((t) => t.id !== id);
-    });
-  }
+  let removed: PromoTile | undefined;
+  const saved = await changeMarketing((m) => {
+    removed = m.promoTiles.find((t) => t.id === id);
+    m.promoTiles = m.promoTiles.filter((t) => t.id !== id);
+  });
+  if (saved && removed?.image) void deleteUpload(removed.image);
   refresh();
 }
 
 export async function togglePromoTile(id: string): Promise<void> {
   await requireMarketing();
-
-  if (useSupabaseMutations()) {
-    const { getMarketingSettings } = await import("@/lib/api");
-    const current = await getMarketingSettings();
-    const promoTiles = current.promoTiles.map((t) =>
-      t.id === id ? { ...t, active: !t.active } : t
-    );
-    await updateMarketingInSupabase({ ...current, promoTiles });
-  } else {
-    await mutateDB((db) => {
-      const tile = db.marketing.promoTiles.find((t) => t.id === id);
-      if (tile) tile.active = !tile.active;
-    });
-  }
+  await changeMarketing((m) => {
+    const tile = m.promoTiles.find((t) => t.id === id);
+    if (tile) tile.active = !tile.active;
+  });
   refresh();
 }
 

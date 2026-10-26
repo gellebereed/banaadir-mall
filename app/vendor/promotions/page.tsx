@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { deleteOffer, deletePromotion, includeSaleItemsInOffer, toggleOffer, togglePromotion } from "@/app/actions";
+import CampaignShareButton from "@/components/CampaignShareButton";
 import MarketplaceOptIn from "@/components/dashboard/MarketplaceOptIn";
 import OfferStudio from "@/components/dashboard/OfferStudio";
 import { suggestOffers } from "@/lib/offer-suggestions";
@@ -16,12 +17,15 @@ import {
   getOffersByStore,
   getOrdersByStore,
   getPromotionsByStore,
+  getStore,
   isPromotionLive,
 } from "@/lib/api";
 import { isOfferLive, offerCoverage, offerHeadline, offerTerms, offerUsageFrom } from "@/lib/offers";
 import { getT } from "@/lib/prefs-server";
 import { formatShopTime, parseShopTime } from "@/lib/shop-time";
 import { may } from "@/lib/auth";
+import { campaignCardPath, campaignPath, SALE_CAMPAIGN_ID, shareCaption } from "@/lib/campaign-utils";
+import { getCampaignsForStore, type Campaign } from "@/lib/campaigns";
 import { money } from "@/lib/format";
 import { requireVendor } from "@/lib/session";
 import type { Offer, Promotion } from "@/lib/types";
@@ -49,7 +53,7 @@ export default async function VendorPromotionsPage() {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "promotions.manage")) redirect("/vendor");
 
-  const [promotions, products, categories, discounts, offers, pricedProducts, marketing, orders, t] = await Promise.all([
+  const [promotions, products, categories, discounts, offers, pricedProducts, marketing, orders, t, campaigns, store] = await Promise.all([
     getPromotionsByStore(storeSlug),
     getBaseProductsByStore(storeSlug),
     getCategories(),
@@ -59,6 +63,8 @@ export default async function VendorPromotionsPage() {
     getMarketingSettings(),
     getOrdersByStore(storeSlug),
     getT(),
+    getCampaignsForStore(storeSlug),
+    getStore(storeSlug),
   ]);
 
   // How each offer has done: orders it appeared in, and what it gave away.
@@ -83,6 +89,27 @@ export default async function VendorPromotionsPage() {
   const campaignJoined = (marketing.campaign.stores ?? []).includes(storeSlug);
 
   const productName = (id: string) => products.find((p) => p.id === id)?.name ?? id;
+
+  /*
+   * Every campaign this shop can share: its own sales and public offers,
+   * and the site-wide sale once it has joined (that link opens the sale on
+   * this shop's products). Scheduled ones too — announcing a sale before
+   * it starts is half of what the link is for.
+   */
+  const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+  const storeName = store?.name;
+  const shareable = (c: Campaign | undefined): c is Campaign => Boolean(c && (c.status === "live" || c.status === "scheduled"));
+  const shareProps = (c: Campaign) => {
+    const forShop = c.kind === "sale" ? storeSlug : undefined;
+    return {
+      path: campaignPath(c, forShop),
+      cardPath: campaignCardPath(c, forShop),
+      title: c.name,
+      caption: shareCaption(c, c.store?.name ?? storeName),
+    };
+  };
+  const saleCampaign = campaignById.get(SALE_CAMPAIGN_ID);
+  const toShare = campaigns.filter((c) => shareable(c) && c.kind !== "flash");
   const discountedCount = Object.keys(discounts).length;
   const liveCount = promotions.filter((p) => isPromotionLive(p)).length;
 
@@ -94,6 +121,34 @@ export default async function VendorPromotionsPage() {
         the next for $1&rdquo;, price discounts, and the marketplace&apos;s own
         sales — which only touch your items if you join them.
       </p>
+
+      {/* ── Share what's running ──────────────────────────────────── */}
+      {toShare.length > 0 && (
+        <div className="mt-5 overflow-hidden rounded-3xl bg-gradient-to-r from-ocean-950 via-ocean-800 to-ocean-600 p-5 text-white shadow-md sm:p-6">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-mango-300">📣 Share your campaigns</p>
+          <h2 className="mt-1 font-display text-lg font-extrabold">
+            {toShare.length === 1 ? "1 campaign" : `${toShare.length} campaigns`} ready to post on social media
+          </h2>
+          <p className="mt-1 max-w-xl text-xs text-white/75">
+            Each has its own link with a picture of your offer and products. Customers who tap it land
+            straight on the sale.
+          </p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {toShare.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-white/15">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">{c.headline}</p>
+                  <p className="truncate text-[11px] text-white/70">
+                    {c.name}
+                    {c.status === "scheduled" ? " · scheduled" : ""}
+                  </p>
+                </div>
+                <CampaignShareButton {...shareProps(c)} label="Share" variant="primary" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Shop offers ─────────────────────────────────────────────── */}
       <div className="card mt-5 p-5 sm:p-6">
@@ -202,6 +257,9 @@ export default async function VendorPromotionsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {shareable(campaignById.get(offer.id)) && (
+                    <CampaignShareButton {...shareProps(campaignById.get(offer.id)!)} />
+                  )}
                   <Link
                     href={`/vendor/promotions/offers/${offer.id}`}
                     className="rounded-full bg-ocean-50 px-4 py-1.5 text-xs font-bold text-ocean-800 ring-1 ring-ocean-200 transition hover:bg-ocean-100"
@@ -252,6 +310,7 @@ export default async function VendorPromotionsPage() {
           <MarketplaceOptIn
             kind="campaign"
             joined={campaignJoined}
+            share={saleCampaign ? shareProps(saleCampaign) : undefined}
             available={marketing.campaign.active}
             title={marketing.campaign.name || "Site-wide sale"}
             detail={
@@ -338,7 +397,10 @@ export default async function VendorPromotionsPage() {
                   {promo.endsAt && ` · until ${formatShopTime(promo.endsAt)}`}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {shareable(campaignById.get(promo.id)) && (
+                  <CampaignShareButton {...shareProps(campaignById.get(promo.id)!)} />
+                )}
                 <form action={togglePromotion.bind(null, promo.id)}>
                   <PendingButton
                     className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
