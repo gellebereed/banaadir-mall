@@ -685,6 +685,14 @@ export interface Banner {
    * graphics that must not be cut off).
    */
   fit?: "cover" | "contain";
+  /**
+   * Optional schedule (ISO datetime, see lib/shop-time.ts). A banner for
+   * the Eid sale can be made the week before and left to go up — and come
+   * down — by itself, instead of somebody remembering to flip it at
+   * midnight. `active` stays the manual on/off switch on top of this.
+   */
+  startsAt?: string;
+  endsAt?: string;
 }
 
 /** A small tile in the "shop by discount / campaign" strip. */
@@ -698,6 +706,23 @@ export interface PromoTile {
   from: string;
   to: string;
   active: boolean;
+  /** Optional schedule, as on Banner. */
+  startsAt?: string;
+  endsAt?: string;
+}
+
+/**
+ * How the home page fills itself from the campaigns running on the
+ * marketplace (lib/campaigns.ts). Absent on settings saved before it
+ * existed, which reads as "both on, nothing hidden".
+ */
+export interface CampaignFeed {
+  /** Live campaigns get slides in the hero, after the admin's banners. */
+  hero?: boolean;
+  /** Live campaigns get tiles under "Today's Campaigns". */
+  tiles?: boolean;
+  /** Campaign ids the admin has taken off the home page. */
+  hidden?: string[];
 }
 
 /** Home-page sections, in the order the admin arranges them. */
@@ -784,6 +809,15 @@ export interface MarketingSettings {
     stores?: string[];
     /** Shops that said "no thanks" to this campaign — not asked again. */
     declined?: string[];
+    /**
+     * The home page's campaign feed settings. Stored here, on the existing
+     * `campaign` jsonb column, rather than in a column of its own: a new
+     * column needs a migration somebody has to remember to run, and until
+     * they did every save of these switches would quietly fail in
+     * production. Read it through campaignFeed() (lib/campaigns.ts), so
+     * nothing else has to know where it lives.
+     */
+    feed?: CampaignFeed;
   };
   /**
    * Checkout rules the admin controls, instead of constants buried in the

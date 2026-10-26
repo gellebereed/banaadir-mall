@@ -9,6 +9,9 @@ import { money } from "@/lib/format";
 import { offerReaches, rankPicks } from "@/lib/offer-picks";
 import { isOfferLive, offerHeadline, offerTerms } from "@/lib/offers";
 import { getT } from "@/lib/prefs-server";
+import { campaignCardPath } from "@/lib/campaign-utils";
+import { getCampaign } from "@/lib/campaigns";
+import { metaDescription, openGraph } from "@/lib/seo";
 import type { Offer } from "@/lib/types";
 
 // Offers are switched on and off from the seller's dashboard.
@@ -21,8 +24,23 @@ async function publicOffer(id: string): Promise<Offer | undefined> {
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const offer = await publicOffer((await params).id);
-  return { title: offer?.name ?? "Offer" };
+  const id = (await params).id;
+  const offer = await publicOffer(id);
+  if (!offer) return { title: "Offer" };
+  // Shops share this page from their Promotions screen, so its preview is
+  // the campaign card (app/campaign/[id]/card) — the offer, the shop and
+  // its products — rather than the site's generic one.
+  const campaign = await getCampaign(id);
+  if (!campaign) return { title: offer.name };
+  const title = `${campaign.headline} at ${campaign.store?.name ?? "Banaadir Mall"} — ${offer.name}`;
+  const description = metaDescription(`${title}. Shop it on Banaadir Mall.`);
+  const image = { url: campaignCardPath(campaign), width: 1200, height: 630, alt: title };
+  return {
+    title: offer.name,
+    description,
+    openGraph: openGraph({ title, description, url: `/offer/${id}`, images: [image] }),
+    twitter: { card: "summary_large_image", title, description, images: [image] },
+  };
 }
 
 /**

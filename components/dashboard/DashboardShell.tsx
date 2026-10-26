@@ -19,6 +19,7 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  GalleryHorizontal,
   Megaphone,
   Menu,
   MoreHorizontal,
@@ -79,6 +80,7 @@ export type ShellIcon =
   | "stores"
   | "categories"
   | "marketing"
+  | "banners"
   | "discovery"
   | "commission"
   | "accounts"
@@ -103,6 +105,7 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   stores: Store,
   categories: FolderTree,
   marketing: Megaphone,
+  banners: GalleryHorizontal,
   discovery: Compass,
   commission: Landmark,
   accounts: KeyRound,

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setMarketplaceOptIn } from "@/app/actions";
+import CampaignShareButton from "@/components/CampaignShareButton";
 
 /**
  * Join or leave one marketplace-wide deal (the promo code or the site-wide
@@ -14,6 +15,7 @@ export default function MarketplaceOptIn({
   title,
   detail,
   available,
+  share,
 }: {
   kind: "promo" | "campaign";
   joined: boolean;
@@ -21,6 +23,11 @@ export default function MarketplaceOptIn({
   detail: string;
   /** False when the admin has nothing running to join. */
   available: boolean;
+  /**
+   * The shop's own link to the deal, once it has joined — the site-wide
+   * sale's page opened on this shop's products (lib/campaign-utils.ts).
+   */
+  share?: { path: string; cardPath: string; title: string; caption: string };
 }) {
   const [pending, start] = useTransition();
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -59,6 +66,12 @@ export default function MarketplaceOptIn({
       </div>
       {message && (
         <p className={`mt-2 text-xs font-semibold ${message.ok ? "text-emerald-700" : "text-coral-600"}`}>{message.text}</p>
+      )}
+      {joined && available && share && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/80 px-3 py-2 ring-1 ring-emerald-200">
+          <p className="text-xs text-slate-600">Bring your customers: share your link to this sale.</p>
+          <CampaignShareButton {...share} label="Share my sale link" />
+        </div>
       )}
     </div>
   );

@@ -66,6 +66,13 @@ export default async function AdminDiscoveryPage({
             What the storefront recommends, what you push on top of it, and
             what shoppers get asked. Everything here goes live on save.
           </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Looking for the home page banners or &ldquo;Today&apos;s Campaigns&rdquo;? They&apos;re in{" "}
+            <Link href="/admin/banners" className="font-semibold text-ocean-700 underline">
+              Home banners
+            </Link>
+            .
+          </p>
         </div>
         <Link href="/" className="btn-primary !px-4 !py-2 text-sm">
           View Storefront

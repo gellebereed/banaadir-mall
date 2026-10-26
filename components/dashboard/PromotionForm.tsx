@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createPromotion, type SaveState } from "@/app/actions";
+import CampaignShareButton from "@/components/CampaignShareButton";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import { money } from "@/lib/format";
@@ -141,6 +142,26 @@ export default function PromotionForm({
           </span>
         )}
       </div>
+
+      {/* The moment a shop has launched a sale is the moment it wants to
+          tell people — the link is offered right here, not left to be
+          found in the list below. */}
+      {state.ok && state.link && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-mango-50 px-4 py-3 ring-1 ring-mango-200">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-ocean-950">📣 Your campaign link is ready</p>
+            <p className="text-xs text-slate-600">Post it on WhatsApp, Facebook, TikTok or Instagram — it opens straight on your sale.</p>
+          </div>
+          <CampaignShareButton
+            path={state.link}
+            cardPath={`${state.link}/card`}
+            title="Your new promotion"
+            caption={`🔥 ${pct}% off — our sale is on! Shop now on Banaadir Mall 👇`}
+            label="Share campaign"
+            variant="primary"
+          />
+        </div>
+      )}
     </form>
   );
 }

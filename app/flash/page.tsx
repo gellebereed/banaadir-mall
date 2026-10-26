@@ -3,11 +3,24 @@ import Link from "next/link";
 import CountdownTimer from "@/components/CountdownTimer";
 import ProductCard from "@/components/ProductCard";
 import { getFlashDeal, getFlashProducts } from "@/lib/api";
+import { campaignCardPath, FLASH_CAMPAIGN_ID } from "@/lib/campaign-utils";
+import { getCampaign } from "@/lib/campaigns";
+import { openGraph } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Flash Deals",
-  description: "Limited-time offers across Banaadir Mall.",
-};
+/** Shared as a campaign too, so its preview is the campaign card. */
+export async function generateMetadata(): Promise<Metadata> {
+  const campaign = await getCampaign(FLASH_CAMPAIGN_ID);
+  const description = "Limited-time offers across Banaadir Mall.";
+  if (!campaign) return { title: "Flash Deals", description };
+  const title = `${campaign.headline} — ${campaign.name}`;
+  const image = { url: campaignCardPath(campaign), width: 1200, height: 630, alt: title };
+  return {
+    title: "Flash Deals",
+    description,
+    openGraph: openGraph({ title, description, url: "/flash", images: [image] }),
+    twitter: { card: "summary_large_image", title, description, images: [image] },
+  };
+}
 
 // Reflects campaign edits from /admin/flash immediately.
 export const dynamic = "force-dynamic";
