@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   // The link-preview cards (lib/og.ts) read these at request time; listed
   // so the serverless bundle includes them.
   outputFileTracingIncludes: {
+    "/opengraph-image": ["./public/social/banaadir-mall.jpg"],
     "/product/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
     "/store/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
   },

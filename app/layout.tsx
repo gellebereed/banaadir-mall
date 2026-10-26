@@ -28,7 +28,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 const SITE_DESCRIPTION =
-  "Shop thousands of products from trusted local stores. Electronics, fashion, beauty, home and more — delivered across Somalia. Pay with EVC Plus, Zaad or cash on delivery.";
+  "Discover your next favourite from local Somali stores. Shop fashion, electronics, beauty and home — with EVC Plus, Zaad or cash on delivery.";
 
 /*
  * Link previews. A product link pasted into WhatsApp showed a bare URL:
@@ -41,7 +41,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(await requestOrigin()),
     title: {
-      default: "Banaadir Mall — Somalia's Online Marketplace",
+      default: "Banaadir Mall | Your next favourite, all in one place",
       template: "%s · Banaadir Mall",
     },
     description: SITE_DESCRIPTION,
@@ -52,10 +52,15 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       siteName: "Banaadir Mall",
       locale: "en_US",
-      title: "Banaadir Mall — Somalia's Online Marketplace",
+      title: "Banaadir Mall | Your next favourite, all in one place",
       description: SITE_DESCRIPTION,
     },
-    twitter: { card: "summary_large_image" },
+    twitter: {
+      card: "summary_large_image",
+      title: "Banaadir Mall | Your next favourite, all in one place",
+      description: SITE_DESCRIPTION,
+      images: [{ url: "/social/banaadir-mall.jpg", width: 1200, height: 630, alt: "Banaadir Mall — Your next favourite. All in one place." }],
+    },
   };
 }
 
