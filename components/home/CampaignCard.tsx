@@ -60,26 +60,30 @@ export default function CampaignCard({
 
   const body = (
     <div
-      className="relative flex h-full overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
+      className="relative flex h-full min-h-[11rem] flex-col overflow-hidden rounded-2xl @min-[24rem]:aspect-[2/1] @min-[24rem]:h-auto @min-[24rem]:min-h-0 @min-[24rem]:flex-row shadow-sm ring-1 ring-black/5 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
       style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
     >
       {/* Products */}
       {shown.length > 0 && (
-        <div className="flex shrink-0 gap-2 p-2.5 @min-[23rem]:gap-2.5 @min-[23rem]:p-3">
+        // A wide card sets the photos beside the offer; a narrow one (a
+        // phone — a container query) puts them in a
+        // row under it, so both still show at a useful size.
+        <div className="order-last flex gap-2 px-2.5 pb-2.5 @min-[24rem]:order-none @min-[24rem]:shrink-0 @min-[24rem]:gap-2.5 @min-[24rem]:p-3">
           {shown.map((photo, i) => (
             <div
               key={i}
-              className={`relative aspect-[4/5] h-full overflow-hidden rounded-xl bg-white ring-[3px] ring-white/90 ${
-                // Two photos only where the card is wide enough to keep
-                // the offer readable beside them (a container query: the
-                // card is narrow on phones AND in a three-across row).
-                i === 1 ? "hidden @min-[28rem]:block" : ""
+              className={`relative min-w-0 flex-1 overflow-hidden rounded-xl bg-white ring-[3px] ring-white/90 @min-[24rem]:h-full @min-[24rem]:flex-none ${
+                shown.length === 1
+                  ? "aspect-[2/1] @min-[24rem]:aspect-[4/5]"
+                  : // Two beside the offer: slimmer frames until the card is
+                    // wide enough for the usual shape.
+                    "aspect-[4/3] @min-[24rem]:aspect-[3/5] @min-[30rem]:aspect-[4/5]"
               }`}
             >
               {photo.kind === "product" ? (
                 <ProductImage
                   product={photo.product}
-                  sizes="(max-width: 640px) 30vw, 140px"
+                  sizes="(max-width: 640px) 45vw, 200px"
                   iconClass="text-4xl"
                   className="h-full w-full transition duration-500 group-hover:scale-105"
                 />
@@ -119,7 +123,7 @@ export default function CampaignCard({
 
         <div className="flex flex-1 flex-col items-center justify-center py-3">
           <p
-            className={`line-clamp-3 font-display text-[1.35rem] font-extrabold leading-[1.05] tracking-tight @min-[24rem]:text-[1.7rem] ${
+            className={`line-clamp-3 font-display text-[1.35rem] font-extrabold leading-[1.05] tracking-tight @min-[30rem]:text-[1.7rem] ${
               light ? "" : "drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)]"
             }`}
           >
@@ -141,9 +145,10 @@ export default function CampaignCard({
     </div>
   );
 
-  // About 2 : 1 — a little taller than the reference apps, so a long
-  // offer ("Buy 1, get 40% off the next") and its subtitle never crowd.
-  const frame = "@container group block aspect-[2/1]";
+  // Wide cards are about 2 : 1 — a little taller than the reference apps,
+  // so a long offer ("Buy 1, get 40% off the next") never crowds. Narrow
+  // ones grow to fit their photo row.
+  const frame = "@container group block h-full";
   return linkable ? (
     <Link href={href} className={frame}>
       {body}
