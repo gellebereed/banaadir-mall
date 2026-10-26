@@ -9,6 +9,7 @@ import { scheduleStatus, STATUS_LABEL, STATUS_TONE } from "@/lib/campaign-utils"
 import { formatShopTime, toShopInput } from "@/lib/shop-time";
 import type { PromoTile } from "@/lib/types";
 import CampaignCard from "@/components/home/CampaignCard";
+import PalettePicker from "./PalettePicker";
 import LinkField, { type LinkOption } from "./LinkField";
 
 /**
@@ -229,6 +230,7 @@ function TileEditor({ tile, links, onClose }: { tile?: PromoTile; links: LinkOpt
             </div>
           </div>
           <LinkField id="tile-link" defaultValue={tile?.link ?? ""} options={links} />
+          <PalettePicker from={from} to={to} light onPick={(p) => { setFrom(p.from); setTo(p.to); }} />
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-semibold text-slate-600">
               Background from

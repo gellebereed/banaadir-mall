@@ -1,3 +1,4 @@
+import { sceneBackground } from "@/lib/scenes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import BannerManager, { BannerArt } from "@/components/dashboard/banners/BannerManager";
@@ -241,7 +242,7 @@ function LineupCard({
     art = (
       <div
         className="flex aspect-[8/3] w-full flex-col justify-center rounded-xl px-3 text-white"
-        style={{ background: `linear-gradient(120deg, ${look.from}, ${look.to})` }}
+        style={{ background: sceneBackground(look.from, look.to) }}
       >
         <p className="truncate font-display text-sm font-extrabold">{look.big}</p>
         <p className="truncate text-[10px] text-white/80">{look.small}</p>

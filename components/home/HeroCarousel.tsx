@@ -4,6 +4,7 @@ import { usePrefs } from "@/components/prefs/PrefsProvider";
 import { LITE_QUALITY } from "@/lib/lite";
 import Image, { getImageProps } from "next/image";
 import Link from "next/link";
+import { sceneBackground } from "@/lib/scenes";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
@@ -234,15 +235,16 @@ function HeroSlideView({
       className={`absolute inset-0 transition-opacity duration-700 ease-out ${
         active ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
-      style={{ background: `linear-gradient(125deg, ${slide.from}, ${slide.to})` }}
+      style={{ background: sceneBackground(slide.from, slide.to) }}
     >
+      <div className="scene-grain pointer-events-none absolute inset-0" />
       {/* Artwork. Portrait on phones when the admin supplied one. */}
       {hasArt && loadArt && <SlideArt slide={slide} quality={quality} priority={priority} />}
 
       {/* Brand-slide atmosphere — the soft colour blooms behind the copy. */}
       {slide.brand && (
         <>
-          <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-mango-500/20 blur-3xl" />
+          <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-mango-500/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-ocean-400/25 blur-3xl" />
         </>
       )}

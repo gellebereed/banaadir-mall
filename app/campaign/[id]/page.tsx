@@ -1,3 +1,4 @@
+import { sceneBackground } from "@/lib/scenes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -99,7 +100,7 @@ export default async function CampaignPage({ params, searchParams }: Props) {
       {/* ── The offer ──────────────────────────────────────────────── */}
       <section
         className="relative isolate overflow-hidden rounded-3xl text-white shadow-lg"
-        style={{ background: `linear-gradient(125deg, ${campaign.from}, ${campaign.to})` }}
+        style={{ background: sceneBackground(campaign.from, campaign.to) }}
       >
         <div aria-hidden className="absolute -right-24 -top-32 -z-10 h-[28rem] w-[28rem] rounded-full bg-white/10" />
         <div aria-hidden className="absolute -bottom-40 left-1/3 -z-10 h-80 w-80 rounded-full bg-black/10" />
