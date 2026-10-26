@@ -73,7 +73,7 @@ export default function CampaignCard({
                 // Two photos only where the card is wide enough to keep
                 // the offer readable beside them (a container query: the
                 // card is narrow on phones AND in a three-across row).
-                i === 1 ? "hidden @min-[24rem]:block" : ""
+                i === 1 ? "hidden @min-[28rem]:block" : ""
               }`}
             >
               {photo.kind === "product" ? (
@@ -117,9 +117,9 @@ export default function CampaignCard({
           <span className="mt-3 rounded-full bg-black/40 px-2.5 py-0.5 text-[10px] font-bold text-white sm:text-[11px]">{date}</span>
         )}
 
-        <div className="flex flex-1 flex-col items-center justify-center py-2">
+        <div className="flex flex-1 flex-col items-center justify-center py-3">
           <p
-            className={`line-clamp-2 font-display text-[1.35rem] font-extrabold leading-[1.05] tracking-tight @min-[24rem]:text-[1.7rem] ${
+            className={`line-clamp-3 font-display text-[1.35rem] font-extrabold leading-[1.05] tracking-tight @min-[24rem]:text-[1.7rem] ${
               light ? "" : "drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)]"
             }`}
           >
@@ -141,8 +141,9 @@ export default function CampaignCard({
     </div>
   );
 
-  // Card proportions from the reference apps: about 2.4 : 1.
-  const frame = "@container group block aspect-[12/5]";
+  // About 2 : 1 — a little taller than the reference apps, so a long
+  // offer ("Buy 1, get 40% off the next") and its subtitle never crowd.
+  const frame = "@container group block aspect-[2/1]";
   return linkable ? (
     <Link href={href} className={frame}>
       {body}
