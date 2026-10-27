@@ -12,6 +12,21 @@ import type { Metadata } from "next";
 
 export const SITE_NAME = "Banaadir Mall";
 
+/** The marketplace's social accounts (tracking parameters stripped). */
+export const SOCIAL_PROFILES = [
+  "https://www.instagram.com/banaadirmall",
+  "https://www.tiktok.com/@banaadir__mall",
+];
+
+/** "Instagram", "TikTok", "Facebook" — a profile's label, from its address. */
+export function socialName(url: string): string {
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  if (host.includes("tiktok")) return "TikTok";
+  if (host.includes("instagram")) return "Instagram";
+  if (host.includes("facebook")) return "Facebook";
+  return host;
+}
+
 type OpenGraph = NonNullable<Metadata["openGraph"]>;
 
 export function openGraph(fields: { title: string; description?: string; url?: string; images?: OpenGraph["images"] }): OpenGraph {
@@ -64,6 +79,8 @@ export function organizationLd(origin: string) {
     description:
       "Somalia's online marketplace — trusted local stores, delivered. Pay with EVC Plus, Zaad, eDahab or cash on delivery.",
     areaServed: { "@type": "Country", name: "Somalia" },
+    // The brand's own profiles, so search engines tie them to the site.
+    sameAs: SOCIAL_PROFILES,
     ...(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP
       ? {
           contactPoint: {

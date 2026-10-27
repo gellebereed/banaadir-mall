@@ -24,7 +24,7 @@ export default function StoreCard({ store }: { store: Store }) {
         <div className="relative h-20">
           <Image
             src={store.banner!}
-            alt=""
+            alt={store.name}
             fill
             sizes="400px"
             onError={() => setBannerError(true)}

@@ -353,7 +353,9 @@ function SlideArt({
   priority: boolean;
 }) {
   const fit = slide.fit === "contain" ? "object-contain" : "object-cover";
-  const common = { alt: "", fill: true, sizes: "100vw", quality, priority } as const;
+  // The banner's own headline, so search engines see what the artwork says.
+  const alt = slide.title ?? slide.eyebrow ?? "";
+  const common = { alt, fill: true, sizes: "100vw", quality, priority } as const;
 
   if (slide.image && slide.mobileImage) {
     const {
@@ -364,7 +366,7 @@ function SlideArt({
       <picture>
         <source media="(max-width: 639px)" srcSet={mobileSrcSet} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img {...props} alt="" className={fit} />
+        <img {...props} alt={alt} className={fit} />
       </picture>
     );
   }

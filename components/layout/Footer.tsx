@@ -6,6 +6,7 @@ import type { T } from "@/lib/i18n";
 import { getT } from "@/lib/prefs-server";
 import { LanguageToggle } from "@/components/prefs/PrefsProvider";
 import LiteToggle from "@/components/prefs/LiteToggle";
+import { SOCIAL_PROFILES, socialName } from "@/lib/seo";
 
 /**
  * Footer link columns. The "Sell" column only offers links the visitor can
@@ -101,7 +102,7 @@ export default async function Footer({ session }: { session: Session | null }) {
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white p-1.5">
                 <Image
                   src="/banaadir-bag.png"
-                  alt=""
+                  alt="Banaadir Mall logo"
                   width={36}
                   height={36}
                   className="h-full w-auto"
@@ -114,6 +115,20 @@ export default async function Footer({ session }: { session: Session | null }) {
             <p className="mt-3 max-w-xs text-sm text-ocean-200">
               {t("footer.tagline")}
             </p>
+            {/* Where else to find us — the same profiles named in the site's structured data. */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {SOCIAL_PROFILES.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer me"
+                  className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-ocean-100 transition hover:bg-white/20 hover:text-white"
+                >
+                  {socialName(url)}
+                </a>
+              ))}
+            </div>
             <form className="mt-5 flex max-w-sm gap-2" action="/help">
               <input
                 type="email"

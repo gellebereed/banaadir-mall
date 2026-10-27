@@ -91,7 +91,7 @@ export default function CampaignCard({
                 />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element -- admin artwork and local previews
-                <img src={photo.src} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                <img src={photo.src} alt={headline} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
               )}
             </div>
           ))}

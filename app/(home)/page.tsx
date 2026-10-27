@@ -616,7 +616,7 @@ function OfficialBrands({ brands, t }: { brands: Store[]; t: T }) {
             {b.banner ? (
               <Image
                 src={b.banner}
-                alt=""
+                alt={b.name}
                 fill
                 sizes="(max-width: 640px) 50vw, 25vw"
                 className="object-cover transition duration-500 group-hover:scale-105"
