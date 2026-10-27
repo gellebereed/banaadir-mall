@@ -86,5 +86,5 @@ npm run graph           # when files were added, moved or removed
 ```
 
 Demo logins for clicking through (see README): seller
-`karaca-home@seller.banaadirmall.com` / `Seller@2026`, admin
-`admin@banaadirmall.com` / `Admin@2026`.
+`karaca-home@seller.banaadirmall.com` / `Seller@2026`, admin: the
+`ADMIN_EMAIL` env var (default in `lib/auth.ts`) / `Admin@2026`.

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useCart } from "@/lib/cart-context";
-import { scopedKey } from "@/lib/storage-scope";
+import { GUEST_SCOPE, scopedKey } from "@/lib/storage-scope";
 import { useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import ParcelCard from "@/components/track/ParcelCard";
@@ -26,9 +26,16 @@ function normaliseOrderId(raw: string): string {
   return v.replace(/^BM(?=\d)/, "BM-");
 }
 import type { Order, OrderStatus } from "@/lib/types";
+import type { T } from "@/lib/i18n";
 
 // The journey steps live in lib/delivery.ts (JOURNEY_STEPS) and are rendered
 // per parcel by ParcelCard — there is no order-wide timeline to define here.
+
+/** Pieces, not lines: two of one item and one of another is 3 items. */
+function itemCount(order: Order, t: T): string {
+  const n = order.items.reduce((sum, item) => sum + item.qty, 0);
+  return n === 1 ? t("cart.itemsOne") : t("cart.itemsMany", { n });
+}
 
 function TrackContent() {
   const searchParams = useSearchParams();
@@ -279,18 +286,19 @@ function TrackContent() {
                   <span className="min-w-0">
                     <span className="block font-mono text-sm font-bold text-ocean-950">{o.id}</span>
                     <span className="block truncate text-xs text-slate-500">
-                      {shortDate(o.date)} · {o.items.length} item{o.items.length === 1 ? "" : "s"} · {money(o.total)}
+                      {shortDate(o.date)} · {itemCount(o, t)} · {money(o.total)}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <StatusBadge status={o.status} t={t} />
-                    <span className="text-sm font-semibold text-ocean-700">Track →</span>
+                    <span className="text-sm font-semibold text-ocean-700">{t("track.open")}</span>
                   </span>
                 </button>
               </li>
             ))}
           </ul>
-          {mine.length === 0 && (
+          {/* Only a guest can see more by signing in. */}
+          {scope === GUEST_SCOPE && (
             <p className="mt-2 text-xs text-slate-400">
               <Link href="/login?next=/track" className="font-semibold text-ocean-700 hover:underline">
                 {t("track.signIn")}
@@ -306,11 +314,10 @@ function TrackContent() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand-200 pb-4">
             <div>
               <p className="font-display text-xl font-extrabold text-ocean-950">
-                Order #{order.id}
+                {t("track.orderNo", { id: order.id })}
               </p>
               <p className="text-xs text-slate-500">
-                Placed {shortDate(order.date)} · Deliver to {order.city} ·{" "}
-                {money(order.total)}
+                {t("track.placed", { date: shortDate(order.date), city: order.city, total: money(order.total) })}
               </p>
             </div>
             <StatusBadge status={order.status} t={t} />
@@ -373,10 +380,7 @@ function TrackContent() {
             marketplace presents a multi-seller order.
           */}
           {order.status === "cancelled" && (
-            <p className="mt-5 text-sm text-slate-500">
-              This order was cancelled. If that doesn&apos;t look right,
-              contact us via the Help page and we&apos;ll sort it out.
-            </p>
+            <p className="mt-5 text-sm text-slate-500">{t("track.cancelled")}</p>
           )}
 
           {/* Per-parcel status, courier and journey */}
@@ -384,14 +388,11 @@ function TrackContent() {
             <div className="border-t border-sand-200 pt-6">
               <h3 className="font-display text-sm font-extrabold uppercase tracking-wide text-slate-400 mb-1">
                 {storeEntries.length > 1
-                  ? `Your ${storeEntries.length} parcels`
-                  : "Your parcel"}
+                  ? t("track.yourParcels", { n: storeEntries.length })
+                  : t("track.yourParcel")}
               </h3>
               {storeEntries.length > 1 && (
-                <p className="mb-3 text-xs text-slate-500">
-                  Each store ships separately, so your parcels may arrive on
-                  different days.
-                </p>
+                <p className="mb-3 text-xs text-slate-500">{t("track.separate")}</p>
               )}
               {/* Same driver across several parcels — say it once, at the
                   top, instead of repeating the number on each card. */}
@@ -400,10 +401,11 @@ function TrackContent() {
                   key={group.courier.phone}
                   className="mb-3 rounded-xl bg-emerald-50 px-4 py-2.5 text-xs text-emerald-900"
                 >
-                  🚚 <strong>{group.courier.name}</strong> is bringing{" "}
-                  {group.parcels.length} of your parcels together —{" "}
-                  {group.parcels.map((p) => p.storeName).join(", ")}. One
-                  delivery, one number to call.
+                  🚚 <strong>{group.courier.name}</strong>{" "}
+                  {t("track.sharedDriver", {
+                    n: group.parcels.length,
+                    shops: group.parcels.map((p) => p.storeName).join(", "),
+                  })}
                 </p>
               ))}
 

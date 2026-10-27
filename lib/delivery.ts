@@ -15,6 +15,7 @@
 
 import { normalizeWhatsAppNumber } from "./whatsapp";
 import type { Courier, Order, OrderStatus, ParcelEvent } from "./types";
+import type { T } from "./i18n";
 
 /** The fulfilment path, in order. `cancelled` sits outside it. */
 export const JOURNEY_STEPS: {
@@ -152,7 +153,7 @@ export function stampLabel(iso: string | undefined): string {
  * rendering it on the server and hydrating on the client can't disagree
  * about what "today" means.
  */
-export function estimateLabel(iso: string | undefined, now = new Date()): string {
+export function estimateLabel(iso: string | undefined, t: T, now = new Date()): string {
   if (!iso) return "";
   const target = new Date(iso);
   if (Number.isNaN(target.getTime())) return "";
@@ -160,10 +161,10 @@ export function estimateLabel(iso: string | undefined, now = new Date()): string
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((startOfDay(target) - startOfDay(now)) / 86_400_000);
 
-  if (days < 0) return `Was expected ${stampLabel(iso)}`;
-  if (days === 0) return "Expected today";
-  if (days === 1) return "Expected tomorrow";
-  return `Expected ${target.getDate()} ${MONTHS[target.getMonth()]}`;
+  if (days < 0) return t("eta.was", { date: stampLabel(iso) });
+  if (days === 0) return t("eta.today");
+  if (days === 1) return t("eta.tomorrow");
+  return t("eta.on", { date: `${target.getDate()} ${MONTHS[target.getMonth()]}` });
 }
 
 /** A `tel:` link. Falls back to the raw string if it can't be normalised. */
