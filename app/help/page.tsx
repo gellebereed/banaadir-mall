@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { formatWhatsAppNumber, SUPPORT_WHATSAPP_CONFIGURED } from "@/lib/whatsapp";
 
-export const metadata: Metadata = { title: "Help & FAQ" };
+export const metadata: Metadata = {
+  title: "Help & FAQ",
+  description:
+    "Paying with EVC Plus, Zaad, eDahab or cash, delivery times across Somalia, returns and tracking your order — answers from Banaadir Mall.",
+  alternates: { canonical: "/help" },
+};
 
 const FAQS = [
   {

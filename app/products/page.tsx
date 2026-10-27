@@ -4,7 +4,13 @@ import { getT } from "@/lib/prefs-server";
 import { buildFacets } from "@/lib/taxonomy-attributes";
 import { getCategories, getListedStores, getMarketplaceProducts } from "@/lib/api";
 
-export const metadata: Metadata = { title: "All Products" };
+export const metadata: Metadata = {
+  title: "Shop all products",
+  description:
+    "Fashion, electronics, beauty, home and more from trusted Somali stores — delivered, with EVC Plus, Zaad or cash on delivery.",
+  // Sorted and filtered views (?sort=, ?max=) are the same page.
+  alternates: { canonical: "/products" },
+};
 
 /** Full catalog. Supports ?sort=sold|discount|new|... via the footer/home links. */
 export default async function ProductsPage({

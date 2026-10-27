@@ -11,12 +11,13 @@ import { openGraph } from "@/lib/seo";
 export async function generateMetadata(): Promise<Metadata> {
   const campaign = await getCampaign(FLASH_CAMPAIGN_ID);
   const description = "Limited-time offers across Banaadir Mall.";
-  if (!campaign) return { title: "Flash Deals", description };
+  if (!campaign) return { title: "Flash Deals", description, alternates: { canonical: "/flash" } };
   const title = `${campaign.headline} — ${campaign.name}`;
   const image = { url: campaignCardPath(campaign), width: 1200, height: 630, alt: title };
   return {
     title: "Flash Deals",
     description,
+    alternates: { canonical: "/flash" },
     openGraph: openGraph({ title, description, url: "/flash", images: [image] }),
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };

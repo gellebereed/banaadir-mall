@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ShopClient from "@/components/shop/ShopClient";
-import { metaDescription, openGraph } from "@/lib/seo";
+import { breadcrumbLd, jsonLd, metaDescription, openGraph } from "@/lib/seo";
+import { siteOrigin } from "@/lib/request-origin";
 import { buildFacets } from "@/lib/taxonomy-attributes";
 import { getCategories, getCategory, getProductsByCategory, getListedStores } from "@/lib/api";
 
@@ -45,7 +46,17 @@ export default async function CategoryPage({ params }: Props) {
    */
   const children = categories.filter((c) => c.parentSlug === slug && !c.hidden);
 
+  // Home › department › this category, for the trail Google shows.
+  const parent = category.parentSlug ? categories.find((c) => c.slug === category.parentSlug) : undefined;
+  const trailLd = breadcrumbLd(await siteOrigin(), [
+    { name: "Home", path: "/" },
+    ...(parent ? [{ name: parent.name, path: `/category/${parent.slug}` }] : []),
+    { name: category.name, path: `/category/${category.slug}` },
+  ]);
+
   return (
+    <>
+    <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(trailLd)} />
     <ShopClient
       products={products}
       facets={buildFacets(products)}
@@ -57,5 +68,6 @@ export default async function CategoryPage({ params }: Props) {
       // meaningful here; a leaf category has only itself and it is not.
       showCategoryFilter={children.length > 0}
     />
+    </>
   );
 }

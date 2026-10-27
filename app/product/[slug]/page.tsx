@@ -18,8 +18,8 @@ import {
 } from "@/lib/api";
 import { compact, money } from "@/lib/format";
 import { primaryImage } from "@/lib/product-utils";
-import { requestOrigin } from "@/lib/request-origin";
-import { jsonLd, metaDescription, openGraph } from "@/lib/seo";
+import { siteOrigin } from "@/lib/request-origin";
+import { breadcrumbLd, jsonLd, metaDescription, openGraph } from "@/lib/seo";
 import { getSession } from "@/lib/session";
 import { describeAttributes } from "@/lib/taxonomy-attributes";
 import { getT } from "@/lib/prefs-server";
@@ -79,13 +79,14 @@ export default async function ProductPage({ params }: Props) {
    * schema.org Product: what lets Google show the price, stock and rating
    * stars under the result instead of a bare link.
    */
-  const origin = await requestOrigin();
+  const origin = await siteOrigin();
   const sellerNumber = normalizeWhatsAppNumber(store?.whatsapp);
   const photo = primaryImage(product);
   const productLd = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
+    url: `${origin}/product/${product.slug}`,
     description: metaDescription(product.description, product.name),
     image: photo ? [photo.startsWith("http") ? photo : `${origin}${photo}`] : [`${origin}/product/${product.slug}/opengraph-image`],
     sku: product.internalReference || product.id,
@@ -111,10 +112,17 @@ export default async function ProductPage({ params }: Props) {
         }
       : {}),
   };
+  // The same trail as the breadcrumb nav below — shown by Google in place of the URL.
+  const trailLd = breadcrumbLd(origin, [
+    { name: "Home", path: "/" },
+    ...(category ? [{ name: category.name, path: `/category/${category.slug}` }] : []),
+    { name: product.name, path: `/product/${product.slug}` },
+  ]);
 
   return (
     <div className="pb-8">
       <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(productLd)} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(trailLd)} />
       {/* Records the visit and how long it held attention — the two
           strongest honest signals the recommender has. */}
       <TrackProductView productId={product.id} />

@@ -4,8 +4,10 @@ import PublicStoresClient from "@/components/PublicStoresClient";
 import { getListedStores } from "@/lib/api";
 
 export const metadata: Metadata = {
-  title: "All Stores & Official Brands | Banaadir Mall",
+  // The layout's template adds "· Banaadir Mall".
+  title: "All stores & official brands",
   description: "Browse official brand stores and verified local sellers across Mogadishu, Hargeisa, Kismayo and Somalia.",
+  alternates: { canonical: "/stores" },
 };
 
 // Rendered per request so admin approvals/suspensions show immediately.
