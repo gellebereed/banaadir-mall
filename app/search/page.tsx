@@ -12,7 +12,9 @@ import {
   searchProducts,
 } from "@/lib/api";
 
-export const metadata: Metadata = { title: "Search" };
+// Results pages are endless variations of the catalogue: crawl through
+// them to the products, but don't list them.
+export const metadata: Metadata = { title: "Search", robots: { index: false, follow: true } };
 
 export default async function SearchPage({
   searchParams,

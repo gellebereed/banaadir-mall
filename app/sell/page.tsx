@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: "Sell on Banaadir Mall",
   description:
     "Open your online store on Banaadir Mall for free. Reach customers across Somalia and get paid to your mobile money.",
+  alternates: { canonical: "/sell" },
 };
 
 const STEPS = [

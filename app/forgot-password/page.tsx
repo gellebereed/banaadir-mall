@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import ForgotForm from "./ForgotForm";
 
-export const metadata: Metadata = { title: "Forgot password" };
+export const metadata: Metadata = { title: "Forgot password", robots: { index: false } };
 
 export default function ForgotPasswordPage() {
   return (

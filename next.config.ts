@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /*
+   * Read at BUILD time, where Netlify sets CONTEXT (production,
+   * deploy-preview, branch-deploy) and URL (the site's primary domain), and
+   * baked in for lib/request-origin.ts — the canonical address and whether
+   * this deploy may be indexed.
+   */
+  env: {
+    BM_SITE_URL:
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.CONTEXT === "production" ? process.env.URL ?? "" : ""),
+    BM_DEPLOY_CONTEXT: process.env.CONTEXT ?? "",
+  },
   experimental: {
     // Product photo uploads are sent through server actions, so the default
     // 1 MB request limit is far too small (see lib/uploads.ts).

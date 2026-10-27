@@ -21,7 +21,7 @@ import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
 import Toaster from "@/components/Toaster";
-import { requestOrigin } from "@/lib/request-origin";
+import { isIndexableDeploy, siteOrigin } from "@/lib/request-origin";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -39,13 +39,35 @@ const SITE_DESCRIPTION =
  */
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    metadataBase: new URL(await requestOrigin()),
+    // The production address (see siteOrigin), so every page's canonical
+    // link names the one site Google should list.
+    metadataBase: new URL(await siteOrigin()),
     title: {
       default: "Banaadir Mall | Your next favourite, all in one place",
       template: "%s · Banaadir Mall",
     },
     description: SITE_DESCRIPTION,
     applicationName: "Banaadir Mall",
+    keywords: [
+      "Banaadir Mall",
+      "online shopping Somalia",
+      "Mogadishu online store",
+      "Somali marketplace",
+      "EVC Plus",
+      "Zaad",
+      "cash on delivery",
+    ],
+    // Deploy previews stay out of search; production is open.
+    ...(isIndexableDeploy() ? {} : { robots: { index: false, follow: false } }),
+    /*
+     * Google Search Console's "HTML tag" check. Set GOOGLE_SITE_VERIFICATION
+     * on Netlify to the code from the content="…" part of the tag Google
+     * gives you; Bing's works the same way.
+     */
+    verification: {
+      ...(process.env.GOOGLE_SITE_VERIFICATION ? { google: process.env.GOOGLE_SITE_VERIFICATION } : {}),
+      ...(process.env.BING_SITE_VERIFICATION ? { other: { "msvalidate.01": process.env.BING_SITE_VERIFICATION } } : {}),
+    },
     // iPhone "Add to Home Screen": the name under the icon, full-screen launch.
     appleWebApp: { capable: true, title: "Banaadir Mall", statusBarStyle: "default" },
     openGraph: {

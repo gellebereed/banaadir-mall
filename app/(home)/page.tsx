@@ -33,6 +33,9 @@ import {
   getOrders,
 } from "@/lib/api";
 import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib/types";
+import type { Metadata } from "next";
+import { siteOrigin } from "@/lib/request-origin";
+import { jsonLd, organizationLd, websiteLd } from "@/lib/seo";
 
 /**
  * Home page. The admin controls the content and the ORDER of every section
@@ -40,6 +43,10 @@ import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib
  * Rendered per request so marketing and seller edits show immediately.
  */
 export const dynamic = "force-dynamic";
+
+// The root layout's title and description; the home page only names itself
+// as the one address for "/" — not "/?ref=whatsapp" and the like.
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default async function HomePage() {
   const [categories, flashProducts, flash, bestsellers, newArrivals, stores, rawMarketing, allProducts] =
@@ -362,8 +369,16 @@ export default async function HomePage() {
     ? "trending"
     : visibleSections[visibleSections.length - 1]?.key;
 
+  const origin = await siteOrigin();
+
   return (
     <div>
+      {/* Who we are and the site search, for Google's result card. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(organizationLd(origin))} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(websiteLd(origin))} />
+      {/* The page's one heading, for search engines and screen readers; the
+          hero carousel below is what sighted shoppers read first. */}
+      <h1 className="sr-only">Banaadir Mall — online shopping from trusted Somali stores</h1>
       {firstName && <WelcomeStrip name={firstName} order={myOrder} t={t} />}
 
       <HeroCarousel

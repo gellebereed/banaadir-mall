@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Guides",
   description:
     "How to use, care for and get the most out of what you buy at Banaadir Mall.",
+  alternates: { canonical: "/learn" },
 };
 
 export const dynamic = "force-dynamic";

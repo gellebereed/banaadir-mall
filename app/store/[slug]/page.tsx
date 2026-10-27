@@ -10,7 +10,8 @@ import StoreAvatar from "@/components/StoreAvatar";
 import { getProductsByStore, getStore, getStores } from "@/lib/api";
 import { getCollections } from "@/lib/collections";
 import { compact } from "@/lib/format";
-import { metaDescription, openGraph } from "@/lib/seo";
+import { breadcrumbLd, jsonLd, metaDescription, openGraph } from "@/lib/seo";
+import { siteOrigin } from "@/lib/request-origin";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -63,8 +64,29 @@ export default async function StorePage({ params, searchParams }: Props) {
     .filter((c) => c.items.length > 0);
   const active = collections.find((c) => c.slug === activeSlug);
 
+  // The shop as a business of its own, sold through the marketplace.
+  const origin = await siteOrigin();
+  const absolute = (src: string) => (src.startsWith("http") ? src : `${origin}${src}`);
+  const storeLd = {
+    "@context": "https://schema.org",
+    "@type": "Store",
+    name: store.name,
+    url: `${origin}/store/${store.slug}`,
+    description: metaDescription(store.tagline, `${store.name} on Banaadir Mall.`),
+    ...(store.logo ? { logo: absolute(store.logo), image: absolute(store.logo) } : {}),
+    address: { "@type": "PostalAddress", addressLocality: store.city, addressCountry: "SO" },
+    parentOrganization: { "@id": `${origin}/#organization` },
+  };
+  const trailLd = breadcrumbLd(origin, [
+    { name: "Home", path: "/" },
+    { name: "Stores", path: "/stores" },
+    { name: store.name, path: `/store/${store.slug}` },
+  ]);
+
   return (
     <div>
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(storeLd)} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(trailLd)} />
       {/* Banner — uploaded image, or the store's gradient */}
       {store.banner ? (
         <div className="relative h-40 sm:h-52">

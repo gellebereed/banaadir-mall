@@ -5,6 +5,7 @@ import ProductCard from "@/components/ProductCard";
 import SectionHeader from "@/components/SectionHeader";
 import StoryPlayer from "@/components/story/StoryPlayer";
 import { getProducts, getStories, getStory } from "@/lib/api";
+import { metaDescription, openGraph } from "@/lib/seo";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -14,9 +15,14 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const story = await getStory((await params).id);
+  if (!story) return { title: "Guide" };
+  const path = `/learn/${encodeURIComponent(story.id)}`;
+  const description = metaDescription(story.subtitle, `${story.title} — a Banaadir Mall guide.`);
   return {
-    title: story?.title ?? "Guide",
-    description: story?.subtitle,
+    title: story.title,
+    description,
+    alternates: { canonical: path },
+    openGraph: openGraph({ title: story.title, description, url: path }),
   };
 }
 
