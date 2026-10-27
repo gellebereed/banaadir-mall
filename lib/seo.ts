@@ -16,6 +16,7 @@ export const SITE_NAME = "Banaadir Mall";
 export const SOCIAL_PROFILES = [
   "https://www.instagram.com/banaadirmall",
   "https://www.tiktok.com/@banaadir__mall",
+  "https://www.facebook.com/BanaadirMall",
 ];
 
 /** "Instagram", "TikTok", "Facebook" — a profile's label, from its address. */
