@@ -335,7 +335,7 @@ export default function ProductView({
             </a>
           ) : (
             <a href="#reviews" className="text-sm text-slate-400 hover:text-ocean-700 hover:underline">
-              {t("product.noReviews")}
+              {t("product.firstReview")}
             </a>
           )}
           <span className="text-sm text-slate-400">{t("product.sold", { n: compact(product.sold) })}</span>

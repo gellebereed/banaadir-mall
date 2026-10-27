@@ -46,6 +46,15 @@ export interface Toast {
    * surfaced if the shopper happened to open the basket.
    */
   offer?: { text: string; href: string };
+  /** The cart line this toast is about; a newer toast for it replaces this one. */
+  lineKey?: string;
+  /** How many of this line are in the cart now. */
+  inCart?: number;
+  /**
+   * Set when the tap added to a line that was already there — usually a
+   * double tap. Puts the line back to what it was before.
+   */
+  undo?: () => void;
 }
 
 interface CartContextValue {
@@ -258,7 +267,11 @@ export function CartProvider({
     const pushToast = (toast: Omit<Toast, "id">) => {
       const id = Date.now() + Math.random();
       // Keep at most three on screen so a burst of clicks can't cover the page.
-      setToasts((prev) => [...prev.slice(-2), { ...toast, id }]);
+      // A second add of the same line replaces its toast rather than stacking.
+      setToasts((prev) => [
+        ...prev.filter((t) => !toast.lineKey || t.lineKey !== toast.lineKey).slice(-2),
+        { ...toast, id },
+      ]);
       // Long enough to read — and tap — the offer line when there is one.
       setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), toast.offer ? TOAST_OFFER_MS : TOAST_MS);
     };
@@ -272,6 +285,10 @@ export function CartProvider({
       toasts,
       dismissToast: (id) => setToasts((prev) => prev.filter((t) => t.id !== id)),
       addToCart: (item, options) => {
+        const key = cartLineKey(item);
+        // Already in the cart: say how many there are now, with an undo, so
+        // a double tap doesn't silently buy two.
+        const before = items.find((i) => cartLineKey(i) === key)?.qty ?? 0;
         pushToast({
           kind: "cart",
           title: item.snapshot?.name ?? "Added to your cart",
@@ -279,9 +296,14 @@ export function CartProvider({
           image: item.snapshot?.image,
           icon: item.snapshot?.icon,
           offer: options?.offer,
+          lineKey: key,
+          inCart: before + item.qty,
+          undo:
+            before > 0
+              ? () => setItems((prev) => prev.map((i) => (cartLineKey(i) === key ? { ...i, qty: before } : i)))
+              : undefined,
         });
         setItems((prev) => {
-          const key = cartLineKey(item);
           const existing = prev.find((i) => cartLineKey(i) === key);
           if (existing) {
             return prev.map((i) =>
