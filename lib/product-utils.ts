@@ -481,3 +481,16 @@ export function lineDeal(
   if (product.flashSale) deal.flash = { until: product.flashSale.until };
   return deal;
 }
+
+/**
+ * Where "Back to products" (and the redirect after Save or Delete) goes.
+ *
+ * The products list keeps its filters in the URL, and passes that URL to
+ * the editor as `?from=`. Only a products-list path on this site is
+ * accepted — anything else (another page, another host) falls back, so
+ * the parameter can't be used to send someone elsewhere.
+ */
+export function productsReturnPath(from: unknown, fallback: string): string {
+  if (typeof from !== "string") return fallback;
+  return /^\/(vendor|admin)\/products(\?[^#\s]*)?$/.test(from) ? from : fallback;
+}

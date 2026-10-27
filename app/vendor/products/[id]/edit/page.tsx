@@ -5,6 +5,7 @@ import { deleteProduct, updateProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
 import { getBaseProduct, getCategoriesFlat, getDiscountMap, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
+import { productsReturnPath } from "@/lib/product-utils";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
 import { requireVendor } from "@/lib/session";
@@ -19,8 +20,10 @@ export const metadata: Metadata = { title: "Edit Product" };
  */
 export default async function EditProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "products.edit")) redirect("/vendor");
@@ -37,6 +40,12 @@ export default async function EditProductPage({
   if (session.role !== "admin" && product.store !== storeSlug) notFound();
 
   const discounts = await getDiscountMap(product.store);
+  // The list this product was opened from, filters and all — Back, Save
+  // and Delete all return there instead of to an unfiltered list.
+  const backHref = productsReturnPath(
+    (await searchParams).from,
+    session.role === "admin" ? "/admin/products" : "/vendor/products",
+  );
 
   return (
     <ProductEditor
@@ -54,7 +63,8 @@ export default async function EditProductPage({
       subcategories={subcategories}
       attributeSets={attributeSetsFor(categories)}
       aiSuggest={aiMatchingAvailable()}
-      backHref={session.role === "admin" ? "/admin/products" : "/vendor/products"}
+      backHref={backHref}
+      returnTo={backHref}
       previewHref={`/product/${product.slug}`}
       dangerZone={
         <div className="flex flex-col gap-3 rounded-2xl border border-coral-100 bg-coral-100/30 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -65,7 +75,7 @@ export default async function EditProductPage({
               to Hidden instead.
             </p>
           </div>
-          <form action={deleteProduct.bind(null, product.id)}>
+          <form action={deleteProduct.bind(null, product.id, backHref)}>
             <PendingButton className="rounded-full border border-coral-500 px-4 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Delete product
             </PendingButton>

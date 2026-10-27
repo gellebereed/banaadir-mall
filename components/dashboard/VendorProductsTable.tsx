@@ -3,6 +3,7 @@
 import PendingButton from "@/components/dashboard/PendingButton";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
 import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
 import { compact, money } from "@/lib/format";
@@ -102,6 +103,24 @@ function hasBarcode(product: Product): boolean {
 
 const VIEW_KEY = "banaadir_products_view";
 
+const FILTER_SELECT =
+  "h-10 w-full min-w-0 truncate rounded-xl border border-sand-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-ocean-500 focus:ring-2 focus:ring-ocean-200";
+
+/** Where this list lives; the filters ride along in its query string. */
+const LIST_PATH = "/vendor/products";
+
+const SORTS = [
+  { id: "default", label: "Recently edited" },
+  { id: "oldest", label: "Least recently edited" },
+  { id: "sold_desc", label: "Best selling" },
+  { id: "name_asc", label: "Name A–Z" },
+  { id: "price_asc", label: "Price: low → high" },
+  { id: "price_desc", label: "Price: high → low" },
+  { id: "stock_asc", label: "Stock: low → high" },
+  { id: "stock_desc", label: "Stock: high → low" },
+];
+
+
 export default function VendorProductsTable({
   products,
   discounts,
@@ -114,13 +133,29 @@ export default function VendorProductsTable({
   /** category slug → display name, so the filter reads like the shop does. */
   categoryNames?: Record<string, string>;
 }) {
+  /*
+   * Filters, sort and page come from the URL, and are written back to it as
+   * they change. Opening a product and coming back — by the browser's Back,
+   * the editor's "Back to products", or after Save — lands on the same
+   * filtered list instead of resetting to everything. Read on the client:
+   * Back restores the page from the router cache, whose server props are
+   * those of the first visit, not of the URL as it was left.
+   */
+  const searchParams = useSearchParams();
+  const param = (key: string) => searchParams.get(key) ?? "";
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<TabId>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("default");
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const status = param("status");
+    return TABS.some((t) => t.id === status) ? (status as TabId) : "all";
+  });
+  const [searchQuery, setSearchQuery] = useState(() => param("q"));
+  const [sortBy, setSortBy] = useState(() => {
+    const sort = param("sort");
+    return SORTS.some((s) => s.id === sort) ? sort : "default";
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Math.max(1, Math.floor(Number(param("page"))) || 1));
   const [view, setView] = useState<"list" | "grid">("list");
   const [bulkPrice, setBulkPrice] = useState("");
   const [bulkStock, setBulkStock] = useState("");
@@ -171,13 +206,17 @@ export default function VendorProductsTable({
       .map(([slug, count]) => ({ slug, count, name: categoryNames[slug] ?? slug }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }, [products, categoryNames]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    () => param("category") || "all",
+  );
 
   const subcategories = useMemo(
     () => Array.from(new Set(products.map((p) => p.subcategory).filter(Boolean))) as string[],
     [products],
   );
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>(
+    () => param("sub") || "all",
+  );
 
   const tabCounts = useMemo(
     () => Object.fromEntries(TABS.map((t) => [t.id, products.filter((p) => matchesTab(p, t.id)).length])),
@@ -235,10 +274,36 @@ export default function VendorProductsTable({
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  // Any change to what is being filtered puts you back on page one.
+  // Any change to what is being filtered puts you back on page one — but
+  // not on arrival, or a page restored from the URL would be thrown away.
+  const arrived = useRef(false);
   useEffect(() => {
+    if (!arrived.current) {
+      arrived.current = true;
+      return;
+    }
     setPage(1);
   }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
+
+  // The list as it stands, as a URL: kept in the address bar (replaced,
+  // not pushed, so Back still leaves the page) and handed to the editor.
+  const listHref = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (activeTab !== "all") qs.set("status", activeTab);
+    if (selectedCategory !== "all") qs.set("category", selectedCategory);
+    if (selectedSubcategory !== "all") qs.set("sub", selectedSubcategory);
+    if (searchQuery.trim()) qs.set("q", searchQuery.trim());
+    if (sortBy !== "default") qs.set("sort", sortBy);
+    if (currentPage > 1) qs.set("page", String(currentPage));
+    const query = qs.toString();
+    return query ? `${LIST_PATH}?${query}` : LIST_PATH;
+  }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy, currentPage]);
+  useEffect(() => {
+    if (window.location.pathname + window.location.search !== listHref) {
+      window.history.replaceState(null, "", listHref);
+    }
+  }, [listHref]);
+  const editQuery = listHref === LIST_PATH ? "" : `?from=${encodeURIComponent(listHref)}`;
 
   const filtersActive =
     activeTab !== "all" ||
@@ -356,101 +421,43 @@ export default function VendorProductsTable({
         })}
       </div>
 
-      {/* ── Search & filters ───────────────────────────────────────── */}
-      <div className="card space-y-3 p-3 sm:p-4">
-        <div className="relative">
-          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, SKU or barcode…"
-            aria-label="Search products"
-            className="input !pl-11 !pr-12"
-          />
-          <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-sand-200 bg-sand-50 px-1.5 text-[10px] font-semibold text-slate-400 sm:block">
-            /
-          </kbd>
-        </div>
-
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5" role="tablist" aria-label="Filter by status">
-            {TABS.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                    isActive
-                      ? "bg-ocean-900 text-white"
-                      : "bg-sand-100 text-slate-600 hover:bg-sand-200 hover:text-ocean-900"
-                  }`}
-                >
-                  {tab.label}
-                  <span
-                    className={`rounded-full px-1.5 text-[10px] ${
-                      isActive ? "bg-white/20 text-white" : "bg-white text-slate-500"
-                    }`}
-                  >
-                    {tabCounts[tab.id]}
-                  </span>
-                </button>
-              );
-            })}
+      {/* ── Search & filters ─────────────────────────────────────────
+          Three tidy rows instead of one crowded one: search with sort and
+          view beside it; the status tabs; then the category filters. Each
+          control keeps its own room, so nothing wraps under anything else. */}
+      <div className="card divide-y divide-sand-100">
+        <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:p-4">
+          <div className="relative min-w-0 flex-1">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+            <input
+              ref={searchRef}
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, SKU or barcode…"
+              aria-label="Search products"
+              className="input !py-2.5 !pl-11 !pr-12"
+            />
+            <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-sand-200 bg-sand-50 px-1.5 text-[10px] font-semibold text-slate-400 sm:block">
+              /
+            </kbd>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {categories.length > 1 && (
+          <div className="flex items-center gap-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
+              <span className="shrink-0 text-xs font-semibold text-slate-500">Sort</span>
               <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                aria-label="Category"
-                className="max-w-52 rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className={`${FILTER_SELECT} sm:w-48`}
               >
-                <option value="all">All categories</option>
-                {categories.map((category) => (
-                  <option key={category.slug} value={category.slug}>
-                    {category.name} ({category.count})
+                {SORTS.map((sort) => (
+                  <option key={sort.id} value={sort.id}>
+                    {sort.label}
                   </option>
                 ))}
               </select>
-            )}
-            {subcategories.length > 0 && (
-              <select
-                value={selectedSubcategory}
-                onChange={(e) => setSelectedSubcategory(e.target.value)}
-                aria-label="Subcategory"
-                className="max-w-44 rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
-              >
-                <option value="all">All subcategories</option>
-                {subcategories.map((sub) => (
-                  <option key={sub} value={sub}>
-                    {sub}
-                  </option>
-                ))}
-              </select>
-            )}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              aria-label="Sort"
-              className="rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-ocean-500"
-            >
-              <option value="default">Recently edited</option>
-              <option value="oldest">Least recently edited</option>
-              <option value="sold_desc">Best selling</option>
-              <option value="name_asc">Name A–Z</option>
-              <option value="price_asc">Price: low → high</option>
-              <option value="price_desc">Price: high → low</option>
-              <option value="stock_asc">Stock: low → high</option>
-              <option value="stock_desc">Stock: high → low</option>
-            </select>
-            <div className="flex rounded-xl border border-sand-200 bg-white p-0.5" role="group" aria-label="View">
+            </label>
+            <div className="flex h-10 shrink-0 rounded-xl border border-sand-200 bg-white p-0.5" role="group" aria-label="View">
               {(["list", "grid"] as const).map((v) => (
                 <button
                   key={v}
@@ -458,7 +465,7 @@ export default function VendorProductsTable({
                   onClick={() => changeView(v)}
                   aria-pressed={view === v}
                   title={v === "list" ? "List view" : "Grid view"}
-                  className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                  className={`w-9 rounded-lg text-sm font-bold transition ${
                     view === v ? "bg-ocean-900 text-white" : "text-slate-500 hover:text-ocean-900"
                   }`}
                 >
@@ -468,6 +475,97 @@ export default function VendorProductsTable({
             </div>
           </div>
         </div>
+
+        <div
+          className="flex gap-1.5 overflow-x-auto px-3 py-2.5 sm:flex-wrap sm:overflow-visible sm:px-4"
+          role="tablist"
+          aria-label="Filter by status"
+        >
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  isActive
+                    ? "bg-ocean-900 text-white"
+                    : "bg-sand-100 text-slate-600 hover:bg-sand-200 hover:text-ocean-900"
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={`rounded-full px-1.5 text-[10px] leading-4 ${
+                    isActive ? "bg-white/20 text-white" : "bg-white text-slate-500"
+                  }`}
+                >
+                  {tabCounts[tab.id].toLocaleString()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {(categories.length > 1 || subcategories.length > 0 || filtersActive) && (
+          <div className="grid gap-2 p-3 sm:grid-cols-[repeat(2,minmax(0,16rem))_1fr] sm:items-end sm:px-4">
+            {categories.length > 1 && (
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Category
+                </span>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className={FILTER_SELECT}
+                >
+                  <option value="all">All categories</option>
+                  {categories.map((category) => (
+                    <option key={category.slug} value={category.slug}>
+                      {category.name} ({category.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {subcategories.length > 0 && (
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Subcategory
+                </span>
+                <select
+                  value={selectedSubcategory}
+                  onChange={(e) => setSelectedSubcategory(e.target.value)}
+                  className={FILTER_SELECT}
+                >
+                  <option value="all">All subcategories</option>
+                  {subcategories.map((sub) => (
+                    <option key={sub} value={sub}>
+                      {sub}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {filtersActive && (
+              <div className="flex items-center justify-between gap-3 sm:col-start-3 sm:h-10 sm:justify-end">
+                <span className="text-xs text-slate-500">
+                  <strong className="text-slate-700">{filtered.length.toLocaleString()}</strong> of{" "}
+                  {products.length.toLocaleString()} shown
+                </span>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-ocean-700 transition hover:border-ocean-400"
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Bulk bar ───────────────────────────────────────────────── */}
@@ -627,6 +725,7 @@ export default function VendorProductsTable({
               mayEdit={mayEdit}
               selected={selectedSet.has(p.id)}
               onToggle={() => toggleSelectOne(p.id)}
+              editQuery={editQuery}
             />
           ))}
         </div>
@@ -664,6 +763,7 @@ export default function VendorProductsTable({
                 selected={selectedSet.has(p.id)}
                 onToggle={() => toggleSelectOne(p.id)}
                 onResult={setStatusMessage}
+                editQuery={editQuery}
               />
             ))}
           </ul>
@@ -931,6 +1031,7 @@ function ProductRow({
   selected,
   onToggle,
   onResult,
+  editQuery,
 }: {
   product: Product;
   categoryName: string;
@@ -939,6 +1040,8 @@ function ProductRow({
   selected: boolean;
   onToggle: () => void;
   onResult: (result: { ok: boolean; text: string }) => void;
+  /** `?from=…` — brings the editor back to this filtered list. */
+  editQuery: string;
 }) {
   const stock = totalStock(p);
   const variants = hasVariants(p);
@@ -974,7 +1077,7 @@ function ProductRow({
 
       {/* Product */}
       <div className="flex min-w-0 items-center gap-3">
-        <Link href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`} className="shrink-0">
+        <Link href={mayEdit ? `/vendor/products/${p.id}/edit${editQuery}` : `/product/${p.slug}`} className="shrink-0">
           <ProductImage
             product={p}
             iconClass="text-xl"
@@ -984,7 +1087,7 @@ function ProductRow({
         </Link>
         <div className="min-w-0">
           <Link
-            href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`}
+            href={mayEdit ? `/vendor/products/${p.id}/edit${editQuery}` : `/product/${p.slug}`}
             className={`block truncate text-sm font-semibold hover:text-ocean-700 ${
               p.hidden ? "text-slate-400" : "text-slate-900"
             }`}
@@ -1061,7 +1164,7 @@ function ProductRow({
         <div className="ml-auto flex items-center gap-2 md:ml-0 md:justify-end">
           {mayEdit && (
             <Link
-              href={`/vendor/products/${p.id}/edit`}
+              href={`/vendor/products/${p.id}/edit${editQuery}`}
               className="rounded-full border border-sand-200 bg-white px-3 py-1 text-xs font-bold text-ocean-800 transition hover:border-ocean-400"
             >
               Edit
@@ -1088,12 +1191,14 @@ function ProductTile({
   mayEdit,
   selected,
   onToggle,
+  editQuery,
 }: {
   product: Product;
   discount?: number;
   mayEdit: boolean;
   selected: boolean;
   onToggle: () => void;
+  editQuery: string;
 }) {
   const stock = totalStock(p);
   return (
@@ -1102,7 +1207,7 @@ function ProductTile({
         selected ? "!border-ocean-500 ring-2 ring-ocean-200" : ""
       }`}
     >
-      <Link href={mayEdit ? `/vendor/products/${p.id}/edit` : `/product/${p.slug}`} className="block">
+      <Link href={mayEdit ? `/vendor/products/${p.id}/edit${editQuery}` : `/product/${p.slug}`} className="block">
         <ProductImage
           product={p}
           iconClass="text-4xl"

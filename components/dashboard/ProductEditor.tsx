@@ -84,6 +84,7 @@ export default function ProductEditor({
   product,
   discountPct: activeDiscount = 0,
   backHref,
+  returnTo,
   previewHref,
   dangerZone,
 }: {
@@ -101,6 +102,8 @@ export default function ProductEditor({
   /** A promotion currently discounting this product, in percent. */
   discountPct?: number;
   backHref: string;
+  /** Sent with the form; the save action redirects here (see productsReturnPath). */
+  returnTo?: string;
   previewHref?: string;
   /** Rendered below the form — it holds its own <form>, which cannot nest. */
   dangerZone?: React.ReactNode;
@@ -309,6 +312,7 @@ export default function ProductEditor({
       >
         <div ref={rootRef} className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           {product && <input type="hidden" name="id" value={product.id} />}
+          {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
 
           {/* ═══ Main column ═══════════════════════════════════════════ */}
           <div className="min-w-0 space-y-5">

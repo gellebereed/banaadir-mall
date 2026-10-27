@@ -75,7 +75,7 @@ import type {
   Store,
   Variant,
 } from "@/lib/types";
-import { isUploadPlaceholder } from "@/lib/product-utils";
+import { isUploadPlaceholder, productsReturnPath } from "@/lib/product-utils";
 import { deleteUpload, filesFrom, saveImages } from "@/lib/uploads";
 import {
   saveFlashInSupabase,
@@ -569,7 +569,13 @@ export async function updateProduct(formData: FormData): Promise<void> {
 
   await logActivity(product.store, "product.update", describeProductChange(product, updatedFields), id);
   refresh();
-  redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
+  // Back to the list as it was left — same filters, same page.
+  redirect(
+    productsReturnPath(
+      formData.get("returnTo"),
+      session.role === "admin" ? "/admin/products" : "/vendor/products",
+    ),
+  );
 }
 
 export async function toggleProductHidden(id: string): Promise<void> {
@@ -673,7 +679,7 @@ export async function batchUpdateProducts(
   return { ok: true, count, message: `Successfully updated ${count} products.` };
 }
 
-export async function deleteProduct(id: string): Promise<void> {
+export async function deleteProduct(id: string, returnTo?: string): Promise<void> {
   // Deleting is its own permission: someone who maintains prices and stock
   // all day does not thereby need to be able to erase the catalogue.
   const session = await requirePermission("products.delete");
@@ -691,7 +697,9 @@ export async function deleteProduct(id: string): Promise<void> {
   }
   await logActivity(product.store, "product.delete", `Deleted "${product.name}"`, id);
   refresh();
-  redirect(session.role === "admin" ? "/admin/products" : "/vendor/products");
+  redirect(
+    productsReturnPath(returnTo, session.role === "admin" ? "/admin/products" : "/vendor/products"),
+  );
 }
 
 export async function createProduct(formData: FormData): Promise<void> {
