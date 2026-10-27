@@ -354,7 +354,7 @@ function SlideArt({
 }) {
   const fit = slide.fit === "contain" ? "object-contain" : "object-cover";
   // The banner's own headline, so search engines see what the artwork says.
-  const alt = slide.title ?? slide.eyebrow ?? "";
+  const alt = slide.title ?? slide.eyebrow ?? "Banaadir Mall";
   const common = { alt, fill: true, sizes: "100vw", quality, priority } as const;
 
   if (slide.image && slide.mobileImage) {
