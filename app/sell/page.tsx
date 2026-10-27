@@ -167,7 +167,7 @@ export default async function SellPage({
             Open your store
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Fill this in and your store will be created instantly.
+            Fill this in and we'll review your store within 48 hours.
           </p>
 
           <StoreApplicationForm />

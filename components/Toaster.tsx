@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/lib/cart-context";
+import { useT } from "@/components/prefs/PrefsProvider";
 
 /**
  * Confirmations for cart and wishlist actions.
@@ -17,6 +18,7 @@ import { useCart } from "@/lib/cart-context";
  */
 export default function Toaster() {
   const { toasts, dismissToast } = useCart();
+  const t = useT();
   if (toasts.length === 0) return null;
 
   return (
@@ -43,11 +45,12 @@ export default function Toaster() {
 
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-600">
-                {toast.kind === "cart" && "✓ Added to cart"}
+                {toast.kind === "cart" &&
+                  (toast.undo && toast.inCart ? t("toast.inCart", { n: toast.inCart }) : t("toast.added"))}
                 {toast.kind === "wishlist" && (
-                  <span className="text-coral-600">♥ Saved to wishlist</span>
+                  <span className="text-coral-600">{t("toast.saved")}</span>
                 )}
-                {isRemoval && <span className="text-slate-500">Removed from wishlist</span>}
+                {isRemoval && <span className="text-slate-500">{t("toast.removed")}</span>}
               </p>
               <p className="truncate text-sm font-semibold text-ocean-950">{toast.title}</p>
               {toast.subtitle && toast.kind === "cart" && (
@@ -55,14 +58,29 @@ export default function Toaster() {
               )}
             </div>
 
+            {/* With an undo there are two buttons: give them their own row. */}
             {toast.kind === "cart" && (
-              <Link
-                href="/cart"
-                onClick={() => dismissToast(toast.id)}
-                className="shrink-0 rounded-full bg-ocean-700 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-mango-500"
-              >
-                View cart
-              </Link>
+              <div className={`flex shrink-0 gap-2 ${toast.undo ? "order-last basis-full justify-end" : ""}`}>
+                {toast.undo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.undo?.();
+                      dismissToast(toast.id);
+                    }}
+                    className="rounded-full border border-sand-300 px-3.5 py-2 text-xs font-bold text-ocean-800 transition hover:border-ocean-300"
+                  >
+                    {t("toast.undo")}
+                  </button>
+                )}
+                <Link
+                  href="/cart"
+                  onClick={() => dismissToast(toast.id)}
+                  className="rounded-full bg-ocean-700 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-mango-500"
+                >
+                  {t("toast.viewCart")}
+                </Link>
+              </div>
             )}
             {toast.kind === "wishlist" && (
               <Link
@@ -70,13 +88,13 @@ export default function Toaster() {
                 onClick={() => dismissToast(toast.id)}
                 className="shrink-0 rounded-full border border-coral-500 px-3.5 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white"
               >
-                View
+                {t("toast.view")}
               </Link>
             )}
 
             <button
               onClick={() => dismissToast(toast.id)}
-              aria-label="Dismiss"
+              aria-label={t("toast.dismiss")}
               className="shrink-0 px-1 text-slate-300 transition hover:text-slate-600"
             >
               ✕

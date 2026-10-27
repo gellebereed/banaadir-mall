@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 /**
  * Admin control panel layout: dark sidebar (tab bar on mobile) + content.
  * Guarded by the demo session — only the admin role gets in
- * (admin@banaadirmall.com / Admin@2026). Swap for real auth before launch.
+ * (ADMIN_EMAIL from lib/auth.ts / Admin@2026). Swap for real auth before launch.
  */
 export default async function AdminLayout({
   children,

@@ -46,7 +46,7 @@ export default function ParcelCard({
   }));
   const courier = order.delivery?.courier;
   const cancelled = order.status === "cancelled";
-  const eta = estimateLabel(order.delivery?.estimatedAt);
+  const eta = estimateLabel(order.delivery?.estimatedAt, t);
 
   return (
     <div className="rounded-2xl border border-sand-200 bg-white p-4 sm:p-5">
@@ -63,7 +63,7 @@ export default function ParcelCard({
           <div className="min-w-0">
             <p className="truncate font-display font-bold text-ocean-950">{storeName}</p>
             <p className="text-xs text-slate-500">
-              Parcel {index} of {total}
+              {t("parcel.of", { i: index, n: total })}
               <span className="ml-1.5 font-mono text-[11px] text-slate-400">{order.id}</span>
             </p>
           </div>
@@ -103,17 +103,15 @@ export default function ParcelCard({
             ✓
           </span>
           <div>
-            <p className="font-extrabold text-emerald-900">Parcel Successfully Delivered 🎉</p>
-            <p className="text-[11px] text-emerald-700">
-              This parcel has been safely handed over to the recipient.
-            </p>
+            <p className="font-extrabold text-emerald-900">{t("parcel.delivered")}</p>
+            <p className="text-[11px] text-emerald-700">{t("parcel.deliveredText")}</p>
           </div>
         </div>
       )}
 
       {cancelled ? (
         <p className="mt-4 rounded-xl bg-coral-50 px-3 py-2 text-xs text-coral-800">
-          This parcel was cancelled. The rest of your order is unaffected.
+          {t("parcel.cancelled")}
         </p>
       ) : (
         <ol className="mt-4">
@@ -140,7 +138,7 @@ export default function ParcelCard({
                   {step.label}
                   {step.current && (
                     <span className="ml-2 rounded-full bg-mango-100 px-2 py-0.5 text-[10px] font-bold text-mango-900">
-                      Now
+                      {t("parcel.now")}
                     </span>
                   )}
                 </p>
@@ -164,7 +162,7 @@ export default function ParcelCard({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-900">
-                🚚 Your driver
+                {t("parcel.driver")}
               </p>
               <p className="truncate text-sm font-bold text-ocean-950">
                 {courier.name}
@@ -181,12 +179,12 @@ export default function ParcelCard({
                 href={telLink(courier.phone)}
                 className="rounded-xl bg-ocean-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-ocean-800"
               >
-                📞 Call
+                {t("parcel.call")}
               </a>
               <a
                 href={whatsappLink(
                   courier.phone,
-                  `Hello ${courier.name}, I'm asking about my Banaadir Mall parcel ${order.id}. Where is it now?`,
+                  t("parcel.waMessage", { name: courier.name, id: order.id }),
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -199,14 +197,15 @@ export default function ParcelCard({
 
           {sharedWith && sharedWith.length > 0 && (
             <p className="mt-2 border-t border-emerald-200 pt-2 text-[11px] text-emerald-800">
-              Also bringing your {sharedWith.join(" and ")} parcel
-              {sharedWith.length === 1 ? "" : "s"} — one delivery, one call.
+              {t(sharedWith.length === 1 ? "parcel.alsoOne" : "parcel.alsoMany", {
+                shops: sharedWith.join(t("parcel.and")),
+              })}
             </p>
           )}
 
           {order.delivery?.trackingCode && (
             <p className="mt-2 font-mono text-[11px] text-slate-500">
-              Waybill: {order.delivery.trackingCode}
+              {t("parcel.waybill", { code: order.delivery.trackingCode })}
             </p>
           )}
           {order.delivery?.note && (
@@ -218,9 +217,8 @@ export default function ParcelCard({
       {/* Not yet dispatched: say what happens next rather than nothing. */}
       {!courier && !cancelled && order.status !== "delivered" && (
         <p className="mt-2 rounded-xl bg-sand-50 px-3 py-2 text-[11px] text-slate-500">
-          {eta
-            ? `${eta}. You'll see the driver's number here once ${storeName} hands this parcel over.`
-            : `You'll see the driver's number here once ${storeName} hands this parcel over.`}
+          {eta && `${eta}. `}
+          {t("parcel.driverSoon", { shop: storeName })}
         </p>
       )}
 

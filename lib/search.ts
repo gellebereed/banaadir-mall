@@ -126,6 +126,9 @@ const SYNONYMS: Record<string, string[]> = {
   tv: ["television"],
   television: ["tv"],
   earbud: ["earphone", "headphone", "aurapod"],
+  // Brand names people search with, mapped to what the shops call them.
+  airpod: ["earbud", "aurapod"],
+  earpod: ["earbud", "earphone"],
   earphone: ["earbud", "headphone"],
   headphone: ["earphone", "earbud"],
   laptop: ["notebook", "computer"],

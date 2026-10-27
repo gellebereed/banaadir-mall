@@ -104,6 +104,14 @@ export default function FormattedTextarea({
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <label htmlFor={id} className="label mb-0">
           {label}
+          {required && (
+            <>
+              {" "}
+              <span className="text-coral-500" aria-hidden>
+                *
+              </span>
+            </>
+          )}
         </label>
         <button
           type="button"

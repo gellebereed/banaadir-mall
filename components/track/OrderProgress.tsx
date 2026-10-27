@@ -142,23 +142,26 @@ export function LiveIndicator({
   lastCheckedAt: number | null;
   onRefresh?: () => void;
 }) {
+  const { t } = usePrefs();
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400">
       {live ? (
         <>
           <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
           <span>
-            Updating automatically
+            {t("live.updating")}
             {lastCheckedAt
-              ? ` · checked ${new Date(lastCheckedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
+              ? ` · ${t("live.checked", {
+                  time: new Date(lastCheckedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
                 })}`
               : ""}
           </span>
         </>
       ) : (
-        <span>This order is complete — nothing left to update.</span>
+        <span>{t("live.complete")}</span>
       )}
       {onRefresh && live && (
         <button
@@ -166,7 +169,7 @@ export function LiveIndicator({
           onClick={onRefresh}
           className="font-semibold text-ocean-700 underline hover:text-ocean-900"
         >
-          Check now
+          {t("live.checkNow")}
         </button>
       )}
     </div>

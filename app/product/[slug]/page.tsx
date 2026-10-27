@@ -161,7 +161,8 @@ export default async function ProductPage({ params }: Props) {
                   {store.name} {store.verified && <span className="text-ocean-500">✔</span>}
                 </p>
                 <p className="text-xs text-slate-500">
-                  ★ {store.rating} · {t("store.followers", { n: compact(store.followers) })} · {store.city}
+                  {store.reviewCount > 0 && `★ ${store.rating.toFixed(1)} · `}
+                  {t("store.followers", { n: compact(store.followers) })} · {store.city}
                 </p>
               </div>
             </Link>
