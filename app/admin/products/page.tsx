@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
-import { getBaseProducts, getStores } from "@/lib/api";
+import AdminProductFilters from "@/components/dashboard/AdminProductFilters";
+import { getBaseProducts, getCategories, getStores } from "@/lib/api";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { compact, money } from "@/lib/format";
 
@@ -11,10 +12,60 @@ export const metadata: Metadata = { title: "Products" };
  * Admin product catalog across all stores — every product is editable.
  * Shows base (undiscounted) prices, matching what the edit form saves.
  */
-export default async function AdminProductsPage() {
-  const [products, stores] = await Promise.all([getBaseProducts(), getStores()]);
+export default async function AdminProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const param = (key: string) => {
+    const value = params[key];
+    return ((Array.isArray(value) ? value[0] : value) ?? "").trim();
+  };
+  const filters = { q: param("q"), store: param("store"), category: param("category"), stock: param("stock") };
+
+  const [products, stores, categoryList] = await Promise.all([
+    getBaseProducts(),
+    getStores(),
+    getCategories(true),
+  ]);
   const storeName = (slug: string) =>
     stores.find((s) => s.slug === slug)?.name ?? slug;
+  const categoryNames = new Map(categoryList.map((c) => [c.slug, c.name]));
+
+  // Categories that actually hold products, biggest first — the same
+  // order the seller's list uses.
+  const categoryCounts = new Map<string, number>();
+  for (const p of products) {
+    if (p.category) categoryCounts.set(p.category, (categoryCounts.get(p.category) ?? 0) + 1);
+  }
+  const categoryOptions = [...categoryCounts.entries()]
+    .map(([slug, count]) => ({ slug, count, name: categoryNames.get(slug) ?? slug }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+  const q = filters.q.toLowerCase();
+  const shown = products.filter((p) => {
+    if (filters.store && p.store !== filters.store) return false;
+    if (filters.category && p.category !== filters.category) return false;
+    if (filters.stock === "low" && !(p.stock > 0 && p.stock <= 15)) return false;
+    if (filters.stock === "out" && p.stock > 0) return false;
+    if (q) {
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.slug.toLowerCase().includes(q) ||
+        Boolean(p.internalReference?.toLowerCase().includes(q)) ||
+        Boolean(p.barcode?.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
+  const filtersActive = Object.values(filters).some(Boolean);
+
+  // This list, filters and all — the editor comes back here.
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value) as [string, string][],
+  ).toString();
+  const editQuery = query ? `?from=${encodeURIComponent(`/admin/products?${query}`)}` : "";
 
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
   const lowStock = products.filter((p) => p.stock <= 15);
@@ -46,7 +97,21 @@ export default async function AdminProductsPage() {
         )}
       </p>
 
-      <div className="card mt-5 overflow-x-auto">
+      <AdminProductFilters
+        key={query}
+        {...filters}
+        stores={stores.map((s) => ({ slug: s.slug, name: s.name }))}
+        categories={categoryOptions}
+        active={filtersActive}
+      />
+      {filtersActive && (
+        <p className="mt-3 px-1 text-xs text-slate-500">
+          <strong className="text-slate-700">{shown.length.toLocaleString()}</strong> of{" "}
+          {products.length.toLocaleString()} products match
+        </p>
+      )}
+
+      <div className="card mt-3 overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
@@ -62,7 +127,17 @@ export default async function AdminProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => (
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-5 py-12 text-center text-sm text-slate-500">
+                  Nothing matches these filters.{" "}
+                  <Link href="/admin/products" className="font-bold text-ocean-700 hover:underline">
+                    Clear filters
+                  </Link>
+                </td>
+              </tr>
+            )}
+            {shown.map((p) => (
               <tr key={p.id} className="border-b border-sand-100 last:border-0 hover:bg-sand-50">
                 <td className="max-w-72 px-5 py-3.5">
                   <Link href={`/product/${p.slug}`} className="flex items-center gap-3 hover:text-ocean-700">
@@ -87,7 +162,7 @@ export default async function AdminProductsPage() {
                 </td>
                 <td className="px-5 py-3.5 text-slate-500">{storeName(p.store)}</td>
                 <td className="px-5 py-3.5 text-slate-500 capitalize">
-                  {p.category.replace("-", " ")}
+                  {categoryNames.get(p.category) ?? p.category.replace("-", " ")}
                 </td>
                 <td className="px-5 py-3.5 font-semibold">
                   {money(p.price)}
@@ -107,7 +182,7 @@ export default async function AdminProductsPage() {
                 <td className="px-5 py-3.5 text-slate-600">★ {p.rating}</td>
                 <td className="px-5 py-3.5 text-right">
                   <Link
-                    href={`/vendor/products/${p.id}/edit`}
+                    href={`/vendor/products/${p.id}/edit${editQuery}`}
                     className="text-xs font-bold text-ocean-700 hover:underline"
                   >
                     Edit →
