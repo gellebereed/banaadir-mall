@@ -74,6 +74,7 @@ export default function PayShopPanel({
           <p className="mt-1 select-all font-mono text-lg font-extrabold tracking-wide text-ocean-950">
             {method.number}
           </p>
+          {method.merchant && <p className="text-[11px] text-slate-600">{t("pay.merchant", { method: label })}</p>}
           {method.accountName && (
             <p className="text-[11px] text-slate-600">{t("pay.name", { name: method.accountName })}</p>
           )}
