@@ -50,6 +50,7 @@ import {
   visibleCategories,
   stockedCategories,
 } from "./category-tree";
+import { HOLDING_SLUG } from "./category-holding";
 import { isOfferLive, offerCovers } from "./offers";
 import { inShopWindow } from "./shop-time";
 import type {
@@ -124,6 +125,17 @@ export async function getCategoryTree(includeHidden = false): Promise<CategoryNo
  */
 export async function getCategoriesFlat(includeHidden = false): Promise<CategoryNode[]> {
   return flattenCategoryTree(await getCategoryTree(includeHidden));
+}
+
+/**
+ * What the product editor's category picker offers: every category,
+ * hidden ones included — hiding decides what shoppers see, not where a
+ * seller may file a product. A product already in a hidden category used
+ * to open with an empty picker and then fail to save. The holding shelf is
+ * left out: products wait there, nobody files them into it.
+ */
+export async function getEditorCategories(): Promise<CategoryNode[]> {
+  return (await getCategoriesFlat(true)).filter((c) => c.slug !== HOLDING_SLUG);
 }
 
 /** A category and all its ancestors, root first — the breadcrumb trail. */

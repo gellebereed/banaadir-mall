@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
-import { getCategoriesFlat, getSubcategories } from "@/lib/api";
+import { getEditorCategories, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
@@ -19,7 +19,7 @@ export default async function NewProductPage() {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "products.edit")) redirect("/vendor");
   const [categories, subcategories] = await Promise.all([
-    getCategoriesFlat(),
+    getEditorCategories(),
     getSubcategories(),
   ]);
 

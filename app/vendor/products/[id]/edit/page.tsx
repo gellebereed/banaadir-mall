@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
-import { getBaseProduct, getCategoriesFlat, getDiscountMap, getSubcategories } from "@/lib/api";
+import { getBaseProduct, getEditorCategories, getDiscountMap, getSubcategories } from "@/lib/api";
 import { may } from "@/lib/auth";
+import { HOLDING_SLUG } from "@/lib/category-holding";
 import { productsReturnPath } from "@/lib/product-utils";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
@@ -33,7 +34,7 @@ export default async function EditProductPage({
   // prices, never the temporarily discounted ones a promotion produces.
   const [product, categories, subcategories] = await Promise.all([
     getBaseProduct(id),
-    getCategoriesFlat(),
+    getEditorCategories(),
     getSubcategories(),
   ]);
   if (!product) notFound();
@@ -52,7 +53,9 @@ export default async function EditProductPage({
       mode="edit"
       action={updateProduct}
       storeSlug={storeSlug}
-      product={product}
+      // A product waiting on the holding shelf opens with no category, so the
+      // form asks for one instead of posting the shelf and being refused.
+      product={product.category === HOLDING_SLUG ? { ...product, category: "" } : product}
       discountPct={discounts[product.id] ?? 0}
       categories={categories.map((c) => ({
         value: c.slug,

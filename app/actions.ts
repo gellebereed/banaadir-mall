@@ -323,7 +323,13 @@ const LEGACY_CATEGORY_MAP: Record<string, string> = {
 async function resolveCategory(submitted: string): Promise<string> {
   const slug = (submitted || "").trim();
   const { getCategories } = await import("@/lib/api");
-  const categories = await getCategories();
+  const { HOLDING_SLUG } = await import("@/lib/category-holding");
+  // Hidden categories count. Hiding is about what shoppers see, not about
+  // where a product may live — validating against the visible list alone
+  // made every product in a hidden category impossible to save, with an
+  // error production then redacts. The holding shelf is the one exception:
+  // products wait there for a real category, they are never filed into it.
+  const categories = (await getCategories(true)).filter((c) => c.slug !== HOLDING_SLUG);
 
   if (categories.some((c) => c.slug === slug)) return slug;
 
@@ -334,6 +340,52 @@ async function resolveCategory(submitted: string): Promise<string> {
     `"${slug || "(empty)"}" is not a valid category, so the product would not ` +
       `appear anywhere on the site. Pick one of: ${categories.map((c) => c.slug).join(", ")}.`,
   );
+}
+
+/**
+ * A live product brings its category back onto the storefront.
+ *
+ * A category hidden while empty (or hidden by hand, long ago) otherwise
+ * swallowed every product later put live in it: the seller saw "Live",
+ * shoppers saw nothing, and nobody was told why. Showing a category is
+ * safe to do automatically — the storefront already leaves out categories
+ * with no live products (getShopperCategories) — so one going live
+ * un-hides it and every hidden ancestor above it. Never the holding shelf.
+ */
+async function revealCategoryOf(categorySlug: string): Promise<void> {
+  const { getCategories } = await import("@/lib/api");
+  const { HOLDING_SLUG } = await import("@/lib/category-holding");
+  const categories = await getCategories(true);
+  const bySlug = new Map(categories.map((c) => [c.slug, c]));
+
+  const toReveal: string[] = [];
+  const seen = new Set<string>();
+  let cursor = bySlug.get(categorySlug);
+  while (cursor && !seen.has(cursor.slug)) {
+    seen.add(cursor.slug);
+    if (cursor.hidden && cursor.slug !== HOLDING_SLUG) toReveal.push(cursor.slug);
+    cursor = cursor.parentSlug ? bySlug.get(cursor.parentSlug) : undefined;
+  }
+  if (toReveal.length === 0) return;
+
+  if (useSupabaseMutations()) {
+    // Each of these is known to be hidden, so the toggle shows it.
+    await Promise.all(toReveal.map(toggleCategoryVisibilityInSupabase));
+  } else {
+    await mutateDB((db) => {
+      db.categories = db.categories || [];
+      for (const slug of toReveal) {
+        const stored = db.categories.find((c) => c.slug === slug);
+        if (stored) stored.hidden = false;
+        else {
+          // A seed category exists only in code; the overlay entry is what
+          // records that it is shown now.
+          const seed = bySlug.get(slug);
+          if (seed) db.categories.push({ ...seed, hidden: false });
+        }
+      }
+    });
+  }
 }
 
 /**
@@ -567,6 +619,8 @@ export async function updateProduct(formData: FormData): Promise<void> {
   // shown — which is the whole reason this moved down here.
   await Promise.all(orphaned.map(deleteUpload));
 
+  if (!(updatedFields.hidden ?? product.hidden)) await revealCategoryOf(category);
+
   await logActivity(product.store, "product.update", describeProductChange(product, updatedFields), id);
   refresh();
   // Back to the list as it was left — same filters, same page.
@@ -593,6 +647,7 @@ export async function toggleProductHidden(id: string): Promise<void> {
       };
     });
   }
+  if (product.hidden) await revealCategoryOf(product.category);
   await logActivity(product.store, "product.visibility", `${product.hidden ? "Put" : "Hid"} "${product.name}" ${product.hidden ? "back in the shop" : "from the shop"}`, id);
   refresh();
 }
@@ -627,6 +682,7 @@ export async function batchUpdateProducts(
 
   let count = 0;
   let onlyName = "";
+  const shownCategories = new Set<string>();
   for (const id of ids) {
     const product = await getBaseProduct(id);
     if (!product) continue;
@@ -661,9 +717,11 @@ export async function batchUpdateProducts(
           };
         });
       }
+      if (action === "show") shownCategories.add(product.category);
       count++;
     }
   }
+  for (const slug of shownCategories) await revealCategoryOf(slug);
 
   await logActivity(
     session.store ?? "platform",
@@ -765,6 +823,7 @@ export async function createProduct(formData: FormData): Promise<void> {
       db.newProducts.push(product);
     });
   }
+  await revealCategoryOf(category);
   await logActivity(product.store, "product.create", `Added "${product.name}" at ${money(product.price)}`, product.id);
   refresh();
   redirect("/vendor/products");
