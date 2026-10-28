@@ -26,11 +26,11 @@ import type { Order, Store } from "./types";
 
 export type ShopPaymentKind =
   | "evc"
-  | "evc_merchant"
   | "zaad"
-  | "zaad_merchant"
   | "edahab"
   | "sahal"
+  | "tplus"
+  | "ebesa"
   | "premier"
   | "bank"
   | "cod";
@@ -38,8 +38,13 @@ export type ShopPaymentKind =
 /** One way a shop accepts money, as saved in its settings. */
 export interface ShopPaymentMethod {
   kind: ShopPaymentKind;
-  /** Wallet number or bank account. Empty only for cash on delivery. */
+  /** Wallet number, merchant code or bank account. Empty only for cash on delivery. */
   number?: string;
+  /**
+   * A business merchant (till) code rather than a personal number. Same
+   * wallet for the customer; it only means there's no dial shortcut.
+   */
+  merchant?: boolean;
   /** The name the customer's wallet shows before they confirm — the check that they have the right shop. */
   accountName?: string;
 }
@@ -50,16 +55,8 @@ export interface PaymentKindInfo {
   kind: ShopPaymentKind;
   label: string;
   icon: string;
-  /** Mobile wallets: the number must be a phone number. */
+  /** A mobile wallet — paid to a number or merchant code. */
   wallet: boolean;
-  /**
-   * A business till number on a wallet — short, not a phone number. The
-   * customer still pays from the same wallet, so checkout offers the
-   * wallet (`family`) and either kind of shop number answers it.
-   */
-  merchant?: boolean;
-  /** The wallet the customer pays from. Defaults to the kind itself. */
-  family?: ShopPaymentKind;
   /** Network or bank, for the shop's settings. */
   provider?: string;
 }
@@ -67,11 +64,11 @@ export interface PaymentKindInfo {
 /** In the order checkout offers them — the wallets most Somali shoppers carry first. */
 export const PAYMENT_KINDS: PaymentKindInfo[] = [
   { kind: "evc", label: "EVC Plus", icon: "📲", wallet: true, provider: "Hormuud" },
-  { kind: "evc_merchant", label: "EVC Merchant", icon: "🏪", wallet: true, merchant: true, family: "evc", provider: "Hormuud" },
   { kind: "zaad", label: "Zaad", icon: "📱", wallet: true, provider: "Telesom" },
-  { kind: "zaad_merchant", label: "Zaad Merchant", icon: "🏪", wallet: true, merchant: true, family: "zaad", provider: "Telesom" },
   { kind: "edahab", label: "eDahab", icon: "💳", wallet: true, provider: "Somtel" },
   { kind: "sahal", label: "Sahal", icon: "📱", wallet: true, provider: "Golis" },
+  { kind: "tplus", label: "T-Plus", icon: "📱", wallet: true },
+  { kind: "ebesa", label: "eBesa", icon: "📱", wallet: true },
   { kind: "premier", label: "Premier Wallet", icon: "🏦", wallet: true, provider: "Premier Bank" },
   { kind: "bank", label: "Bank transfer", icon: "🏦", wallet: false },
   { kind: "cod", label: "Cash on delivery", icon: "💵", wallet: false },
@@ -81,14 +78,21 @@ export function kindInfo(kind: string | undefined): PaymentKindInfo | undefined 
   return PAYMENT_KINDS.find((k) => k.kind === kind);
 }
 
-/** The merchant (till) version of a wallet, where the network has one. */
-function merchantOf(kind: ShopPaymentKind): PaymentKindInfo | undefined {
-  return PAYMENT_KINDS.find((k) => k.merchant && k.family === kind);
-}
+/**
+ * "EVC Merchant" and "Zaad Merchant" were briefly separate kinds; a shop
+ * that saved one keeps working as the wallet with its merchant flag.
+ */
+const LEGACY_KINDS: Record<string, ShopPaymentKind> = { evc_merchant: "evc", zaad_merchant: "zaad" };
 
-/** The wallet a customer pays this kind from — "evc" for an EVC Merchant number. */
-export function familyOf(kind: ShopPaymentKind): ShopPaymentKind {
-  return kindInfo(kind)?.family ?? kind;
+/** What a store row holds, read safely — unknown kinds dropped, legacy ones mapped. */
+export function readMethods(raw: unknown): ShopPaymentMethod[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const m = entry as ShopPaymentMethod & { kind: string };
+    const legacy = LEGACY_KINDS[m?.kind];
+    if (legacy) return [{ ...m, kind: legacy, merchant: true }];
+    return kindInfo(m?.kind) ? [m] : [];
+  });
 }
 
 /** How long a parcel may wait for payment before the seller is asked to chase or cancel it. */
@@ -100,7 +104,7 @@ export const UNPAID_FLAG_HOURS = 48;
  * the day this ships because it hasn't opened its settings yet.
  */
 export function acceptedMethods(store: Pick<Store, "paymentMethods"> | undefined): ShopPaymentMethod[] {
-  const saved = (store?.paymentMethods ?? []).filter((m) => kindInfo(m.kind));
+  const saved = readMethods(store?.paymentMethods);
   return saved.length > 0 ? saved : [{ kind: "cod" }];
 }
 
@@ -112,8 +116,6 @@ export function resolvePayment(
   const methods = acceptedMethods(store);
   return (
     methods.find((m) => m.kind === chosen) ??
-    // Paying from EVC Plus reaches an EVC Merchant number just the same.
-    methods.find((m) => familyOf(m.kind) === chosen) ??
     methods.find((m) => m.kind === "cod") ??
     methods[0]
   );
@@ -134,7 +136,7 @@ export function basketOptions(stores: (Pick<Store, "paymentMethods"> | undefined
 }[] {
   const counts = new Map<ShopPaymentKind, number>();
   for (const store of stores) {
-    for (const kind of new Set(acceptedMethods(store).map((m) => familyOf(m.kind)))) {
+    for (const kind of new Set(acceptedMethods(store).map((m) => m.kind))) {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
   }
@@ -159,7 +161,7 @@ export function localWalletNumber(number: string): string {
  * gets the copy button alone.
  */
 export function dialCode(method: ShopPaymentMethod, amount: number): string | undefined {
-  if (!method.number || !Number.isInteger(amount) || amount <= 0) return undefined;
+  if (!method.number || method.merchant || !Number.isInteger(amount) || amount <= 0) return undefined;
   const number = localWalletNumber(method.number);
   if (number.length < 7) return undefined;
   if (method.kind === "evc") return `*712*${number}*${amount}#`;
@@ -192,23 +194,27 @@ export function cleanMethods(
     }
     const number = String((entry as ShopPaymentMethod).number ?? "").trim().slice(0, 40);
     const accountName = String((entry as ShopPaymentMethod).accountName ?? "").trim().slice(0, 60);
-    const digits = number.replace(/\D/g, "");
-    // Merchant (till) numbers are short codes; a personal wallet is a phone number.
-    const ok = info.merchant ? digits.length >= 3 : info.wallet ? digits.length >= 7 : number.length >= 4;
+    const merchant = Boolean((entry as ShopPaymentMethod).merchant);
+    /*
+     * Deliberately loose. Personal numbers, merchant codes and short codes
+     * all come in different lengths, and refusing a real number the shop
+     * reads off its own phone is worse than saving one with a typo — the
+     * owner sees exactly what customers will see.
+     */
+    const ok = info.wallet ? /\d{3,}/.test(number.replace(/[\s-]/g, "")) : number.length >= 4;
     if (!ok) {
       return {
-        error: !number
-          ? `Add the ${info.label} ${info.wallet ? "number" : "account"} customers should pay to — nothing was saved.`
-          : info.merchant
-            ? `"${number}" doesn't look like a merchant number — enter the ${info.label} number customers pay to. Nothing was saved.`
-            : info.wallet
-              ? `"${number}" isn't a full phone number for ${info.label} (e.g. 61 555 1234).${
-                  merchantOf(info.kind) ? ` For a merchant number, tick ${merchantOf(info.kind)!.label} instead.` : ""
-                } Nothing was saved.`
-              : `Add the full bank name and account number. Nothing was saved.`,
+        error: info.wallet
+          ? `Add the ${info.label} number or merchant code customers pay to — nothing was saved.`
+          : "Add the bank name and account number customers pay to — nothing was saved.",
       };
     }
-    methods.push({ kind: info.kind, number, ...(accountName ? { accountName } : {}) });
+    methods.push({
+      kind: info.kind,
+      number,
+      ...(merchant && info.wallet ? { merchant: true } : {}),
+      ...(accountName ? { accountName } : {}),
+    });
   }
   return { methods };
 }

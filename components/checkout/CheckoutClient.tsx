@@ -50,9 +50,9 @@ import { basketOptions, kindInfo, resolvePayment, type ShopPaymentKind } from "@
 /** The line under each payment option when one shop is being paid. */
 const PAYMENT_NOTES: Record<ShopPaymentKind, MessageKey> = {
   evc: "checkout.pay.evc",
-  evc_merchant: "checkout.pay.evc",
   zaad: "checkout.pay.zaad",
-  zaad_merchant: "checkout.pay.zaad",
+  tplus: "checkout.pay.tplus",
+  ebesa: "checkout.pay.ebesa",
   edahab: "checkout.pay.edahab",
   sahal: "checkout.pay.sahal",
   premier: "checkout.pay.premier",

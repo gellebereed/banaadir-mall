@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { readMethods } from "../shop-payments";
 import { cache as perRequest } from "react";
 import { DEFAULT_COMMISSION } from "../commission";
 import { DEFAULT_POS } from "../pos";
@@ -164,7 +165,7 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       couriers: Array.isArray(s.couriers) ? s.couriers : [],
       // Added by supabase/migration-shop-payments.sql. Absent means cash on
       // delivery only (lib/shop-payments.ts acceptedMethods).
-      paymentMethods: Array.isArray(s.payment_methods) ? s.payment_methods : [],
+      paymentMethods: readMethods(s.payment_methods),
       // Absent until supabase/migration-pos.sql is applied, and absent
       // means OFF — a marketplace does not switch a till on for every
       // shop in it because a column is missing.
