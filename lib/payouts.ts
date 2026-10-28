@@ -20,6 +20,19 @@
  *   paid    = payments the admin has recorded against that month
  *   owed    = earned − paid
  *
+ * ── Shops paid directly (lib/shop-payments.ts) ───────────────────────────
+ * An order carrying a paymentStatus was paid to the SHOP, not to the
+ * marketplace, so it earns the shop nothing from us — it means the shop
+ * owes us that order's commission instead. Both directions share one
+ * balance, because a shop with old orders still owed to it and new ones
+ * owing commission should see a single number, not two that net off:
+ *
+ *   earned    = (marketplace-collected sales − their commission)
+ *               − commission on shop-collected sales
+ *   paid      = payouts sent to the shop   (records with amount > 0)
+ *   received  = commission the shop sent   (records with amount < 0)
+ *   owed      = earned − paid + received   (below zero: the shop owes us)
+ *
  * A late delivery or a cancellation changes `earned` for its month after
  * the fact; `owed` then shows the difference instead of hiding it.
  * ─────────────────────────────────────────────────────────────────────────
@@ -162,8 +175,14 @@ export interface MonthStatement {
   orders: number;
   gross: number;
   commission: number;
+  /** Delivered sales the customer paid to the shop directly. */
+  collectedByShop: number;
+  /** The commission on those — owed BY the shop. Included in `commission`. */
+  commissionDue: number;
   earned: number;
   paid: number;
+  /** Commission the shop has sent us. */
+  received: number;
   owed: number;
   payments: PayoutRecord[];
 }
@@ -172,6 +191,8 @@ export interface PayoutSummary {
   months: MonthStatement[];
   totalEarned: number;
   totalPaid: number;
+  totalReceived: number;
+  /** Below zero when the shop owes the marketplace. */
   totalOwed: number;
   /** Sales not delivered yet — earned once they are. */
   onTheWay: { orders: number; gross: number };
@@ -213,22 +234,30 @@ export function buildPayoutSummary(
     .sort((a, b) => b.localeCompare(a))
     .map((period) => {
       const monthOrders = delivered.filter((o) => periodOf(o.date) === period);
-      const totals = summariseCommission(monthOrders, products, settings);
+      const direct = monthOrders.filter((o) => o.paymentStatus);
+      const viaUs = monthOrders.filter((o) => !o.paymentStatus);
       // With commission switched off the marketplace keeps nothing.
-      const commission = settings.enabled ? totals.commission : 0;
-      const gross = round2(monthOrders.reduce((sum, o) => sum + (o.total || 0), 0));
-      const earned = round2(gross - commission);
+      const commissionOn = (list: Order[]) =>
+        settings.enabled && list.length > 0 ? summariseCommission(list, products, settings).commission : 0;
+      const sum = (list: Order[]) => round2(list.reduce((t, o) => t + (o.total || 0), 0));
+      const commissionViaUs = commissionOn(viaUs);
+      const commissionDue = round2(commissionOn(direct));
+      const earned = round2(sum(viaUs) - commissionViaUs - commissionDue);
       const monthPayments = payments.filter((p) => p.period === period);
-      const paid = round2(monthPayments.reduce((sum, p) => sum + p.amount, 0));
+      const paid = round2(monthPayments.filter((p) => p.amount > 0).reduce((t, p) => t + p.amount, 0));
+      const received = round2(monthPayments.filter((p) => p.amount < 0).reduce((t, p) => t - p.amount, 0));
       return {
         period,
         label: periodLabel(period),
         orders: monthOrders.length,
-        gross,
-        commission: round2(commission),
+        gross: sum(monthOrders),
+        commission: round2(commissionViaUs + commissionDue),
+        collectedByShop: sum(direct),
+        commissionDue,
         earned,
         paid,
-        owed: round2(earned - paid),
+        received,
+        owed: round2(earned - paid + received),
         payments: monthPayments,
       };
     });
@@ -237,6 +266,7 @@ export function buildPayoutSummary(
     months,
     totalEarned: round2(months.reduce((s, m) => s + m.earned, 0)),
     totalPaid: round2(months.reduce((s, m) => s + m.paid, 0)),
+    totalReceived: round2(months.reduce((s, m) => s + m.received, 0)),
     totalOwed: round2(months.reduce((s, m) => s + m.owed, 0)),
     onTheWay: {
       orders: inFlight.length,

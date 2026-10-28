@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * What this store has earned, what the marketplace has paid, and what is
- * still owed — month by month. See lib/payouts.ts for how it's worked out.
+ * still owed either way — month by month. Orders the customer paid the
+ * shop directly leave the shop owing the marketplace its commission. See lib/payouts.ts for how it's worked out.
  *
  * The owner sees everything and sets where to be paid. Staff see it only
  * with "See cost price & profit" (the Money permission), and can't change
@@ -42,18 +43,27 @@ export default async function VendorPayoutsPage() {
       <h1 className="font-display text-2xl font-extrabold text-ocean-950 sm:text-3xl">Payouts</h1>
       <p className="mt-1 text-sm text-slate-500">
         Money from delivered orders, after the marketplace&apos;s commission
-        {settings.enabled ? "" : " (none is charged at the moment)"}, and what has been sent to you.
+        {settings.enabled ? "" : " (none is charged at the moment)"}. When customers pay you directly,
+        you keep the money and owe the marketplace its commission — it&apos;s recorded here once you send it.
       </p>
 
       {/* ── Balance ──────────────────────────────────────────────── */}
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <div className="card p-5">
-          <p className="text-xs font-semibold text-slate-500">Owed to you</p>
-          <p className={`mt-1 font-display text-3xl font-extrabold ${summary.totalOwed > 0 ? "text-emerald-700" : "text-slate-800"}`}>
-            {money(summary.totalOwed)}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-400">Earned, not yet paid</p>
-        </div>
+        {summary.totalOwed < -0.004 ? (
+          <div className="card p-5">
+            <p className="text-xs font-semibold text-slate-500">You owe the marketplace</p>
+            <p className="mt-1 font-display text-3xl font-extrabold text-coral-600">{money(-summary.totalOwed)}</p>
+            <p className="mt-1 text-[11px] text-slate-400">Commission on orders customers paid you directly</p>
+          </div>
+        ) : (
+          <div className="card p-5">
+            <p className="text-xs font-semibold text-slate-500">Owed to you</p>
+            <p className={`mt-1 font-display text-3xl font-extrabold ${summary.totalOwed > 0 ? "text-emerald-700" : "text-slate-800"}`}>
+              {money(summary.totalOwed)}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">Earned, not yet paid</p>
+          </div>
+        )}
         <div className="card p-5">
           <p className="text-xs font-semibold text-slate-500">Paid to you so far</p>
           <p className="mt-1 font-display text-3xl font-extrabold text-slate-800">{money(summary.totalPaid)}</p>
@@ -120,14 +130,20 @@ export default async function VendorPayoutsPage() {
                       <p className="font-semibold text-slate-800">{m.label}</p>
                       {m.payments.map((p) => (
                         <p key={p.id} className="mt-0.5 text-[11px] text-slate-500">
-                          Paid {money(p.amount)} on {shortDate(p.paidAt.slice(0, 10))}
+                          {p.amount < 0 ? `You sent ${money(-p.amount)}` : `Paid ${money(p.amount)}`} on{" "}
+                          {shortDate(p.paidAt.slice(0, 10))}
                           {p.method ? ` · ${p.method}` : ""}
                           {p.reference ? ` · ref ${p.reference}` : ""}
                         </p>
                       ))}
                     </td>
                     <td className="px-5 py-3 text-right text-slate-600">{m.orders}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{money(m.gross)}</td>
+                    <td className="px-5 py-3 text-right text-slate-600">
+                      {money(m.gross)}
+                      {m.collectedByShop > 0 && (
+                        <p className="text-[11px] text-slate-400">{money(m.collectedByShop)} paid to you</p>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right text-slate-500">{m.commission > 0 ? `−${money(m.commission)}` : "—"}</td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-800">{money(m.earned)}</td>
                     <td className="px-5 py-3 text-right text-slate-600">{money(m.paid)}</td>
@@ -135,7 +151,7 @@ export default async function VendorPayoutsPage() {
                       {m.owed > 0.004 ? (
                         <span className="rounded-full bg-mango-100 px-2 py-0.5 text-xs font-bold text-mango-800">{money(m.owed)}</span>
                       ) : m.owed < -0.004 ? (
-                        <span className="text-xs font-semibold text-slate-500">overpaid {money(-m.owed)}</span>
+                        <span className="rounded-full bg-coral-100 px-2 py-0.5 text-xs font-bold text-coral-700">you owe {money(-m.owed)}</span>
                       ) : (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">✓ Settled</span>
                       )}

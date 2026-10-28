@@ -373,7 +373,7 @@ const M = {
   "checkout.pay.planTitle": { en: "How you'll pay", so: "Sida aad u bixinayso" },
   "checkout.pay.planDirect": { en: "You pay each shop directly. Once you order, we show each shop's number and the exact amount, and they're on your tracking page too.", so: "Dukaan kasta si toos ah ayaad u bixinaysaa. Marka aad dalbato, waxaan ku tusaynaa lambarka dukaan kasta iyo lacagta saxda ah, sidoo kale bogga la socodka ayay ku jiraan." },
   "checkout.pay.planCod": { en: "Nothing to pay now — you pay when your order arrives.", so: "Hadda waxba ma bixinaysid — waxaad bixinaysaa marka dalabkaagu yimaado." },
-  "checkout.pay.planDelivery": { en: "Delivery ({fee}) is paid when it arrives.", so: "Keenista ({fee}) waxaa la bixiyaa marka ay timaado." },
+  "checkout.pay.planDelivery": { en: "Delivery ({fee}) is paid to the Banaadir Mall driver, who brings every shop's parcel together.", so: "Keenista ({fee}) waxaa la siinayaa darawalka Banaadir Mall, oo xidhmooyinka dukaan kasta hal mar kuu keenaya." },
   "pay.title": { en: "💳 How to pay", so: "💳 Sida loo bixiyo" },
   "pay.body": { en: "Send each shop its amount on the number shown — these are the only numbers to pay. The shop confirms and marks it paid.", so: "Dukaan kasta u dir lacagtiisa lambarka muuqda — kuwani waa lambarada kaliya ee lacagta loo diro. Dukaanku wuu xaqiijinayaa, wuxuuna calaamadinayaa in la bixiyay." },
   "pay.send": { en: "Send {amount} by {method}", so: "U dir {amount} · {method}" },

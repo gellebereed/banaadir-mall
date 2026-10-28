@@ -9,18 +9,23 @@ export function RecordPayoutForm({
   owed,
   defaultMethod,
   methods,
+  direction = "to_store",
 }: {
   store: string;
   period: string;
+  /** What is outstanding in this form's direction — always positive. */
   owed: number;
   defaultMethod?: string;
   methods: readonly string[];
+  /** "from_store": commission the shop sent us (lib/payouts.ts). */
+  direction?: "to_store" | "from_store";
 }) {
   const [state, action, pending] = useActionState<MoneyState, FormData>(recordPayout, {});
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="store" value={store} />
       <input type="hidden" name="period" value={period} />
+      <input type="hidden" name="direction" value={direction} />
       <label className="block">
         <span className="mb-0.5 block text-[10px] font-bold uppercase text-slate-400">Amount</span>
         <input
@@ -50,7 +55,7 @@ export function RecordPayoutForm({
         disabled={pending}
         className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
       >
-        {pending ? "Saving…" : "Mark paid"}
+        {pending ? "Saving…" : direction === "from_store" ? "Mark received" : "Mark paid"}
       </button>
       {state.error && <p className="w-full text-xs font-semibold text-coral-600">{state.error}</p>}
       {state.ok && <p className="w-full text-xs font-semibold text-emerald-700">{state.ok}</p>}

@@ -130,16 +130,21 @@ export async function recordPayout(_prev: MoneyState, formData: FormData): Promi
   const method = String(formData.get("method") ?? "").trim();
   const reference = String(formData.get("reference") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
+  // Commission a shop sends us, for orders its customers paid it directly
+  // (lib/payouts.ts) — kept in the same ledger as a negative amount.
+  const fromStore = formData.get("direction") === "from_store";
 
   if (!store || !/^\d{4}-\d{2}$/.test(period)) return { error: "Missing store or month." };
-  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter the amount you sent." };
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: fromStore ? "Enter the amount the store sent." : "Enter the amount you sent." };
+  }
 
   try {
     await addPayoutRecord({
       id: `pay-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       store,
       period,
-      amount,
+      amount: fromStore ? -amount : amount,
       method: method || undefined,
       reference: reference || undefined,
       note: note || undefined,
@@ -152,12 +157,12 @@ export async function recordPayout(_prev: MoneyState, formData: FormData): Promi
   await logActivity(
     store,
     "payout.record",
-    `Recorded a payout of ${money(amount)} for ${period}${method ? ` via ${method}` : ""}${reference ? ` (ref ${reference})` : ""}`,
+    `${fromStore ? "Recorded commission received" : "Recorded a payout"} of ${money(amount)} for ${period}${method ? ` via ${method}` : ""}${reference ? ` (ref ${reference})` : ""}`,
     period,
   );
   revalidatePath("/admin/payouts");
   revalidatePath("/vendor/payouts");
-  return { ok: `Recorded ${money(amount)}.` };
+  return { ok: fromStore ? `Recorded ${money(amount)} received.` : `Recorded ${money(amount)}.` };
 }
 
 export async function removePayout(id: string): Promise<MoneyState> {
@@ -169,7 +174,7 @@ export async function removePayout(id: string): Promise<MoneyState> {
       await logActivity(
         removed.store,
         "payout.delete",
-        `Deleted a recorded payout of ${money(removed.amount)} for ${removed.period}`,
+        `Deleted a recorded ${removed.amount < 0 ? "commission receipt" : "payout"} of ${money(Math.abs(removed.amount))} for ${removed.period}`,
         removed.period,
       );
     }
