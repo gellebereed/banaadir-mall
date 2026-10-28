@@ -71,6 +71,8 @@ export default async function VendorOrdersPage() {
         newIds={[...newIds]}
         mayManage={mayManage}
         savedCouriers={savedCouriers}
+        storeName={store?.name ?? storeSlug}
+        paymentMethods={store?.paymentMethods ?? []}
       />
 
       {/* Opening this page IS reading them, so the badge clears — but only

@@ -44,13 +44,19 @@ import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
 import type { MarketingSettings, Offer, Store } from "@/lib/types";
 import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
 import { detectUserLocation } from "@/lib/detect-location";
+import type { MessageKey } from "@/lib/i18n";
+import { basketOptions, kindInfo, resolvePayment, type ShopPaymentKind } from "@/lib/shop-payments";
 
-const PAYMENT_METHODS = [
-  { id: "evc", icon: "📲", name: "EVC Plus", note: "checkout.pay.evc" },
-  { id: "zaad", icon: "📱", name: "Zaad", note: "checkout.pay.zaad" },
-  { id: "edahab", icon: "💳", name: "eDahab", note: "checkout.pay.edahab" },
-  { id: "cod", icon: "💵", name: "Cash on Delivery", note: "checkout.pay.cod" },
-] as const;
+/** The line under each payment option when one shop is being paid. */
+const PAYMENT_NOTES: Record<ShopPaymentKind, MessageKey> = {
+  evc: "checkout.pay.evc",
+  zaad: "checkout.pay.zaad",
+  edahab: "checkout.pay.edahab",
+  sahal: "checkout.pay.sahal",
+  premier: "checkout.pay.premier",
+  bank: "checkout.pay.bank",
+  cod: "checkout.pay.cod",
+};
 
 type Field = "name" | "email" | "phone" | "city" | "district";
 /** Top-to-bottom form order — the first one wrong is the one scrolled to. */
@@ -84,7 +90,8 @@ export default function CheckoutClient({
   const addressKey = scopedKey("banaadir_delivery_address", scope);
   const ordersKey = scopedKey("banaadir_user_orders", scope);
   const { trackPurchase } = useReco();
-  const [payment, setPayment] = useState<string>("evc");
+  /** The customer's pick; until they make one, the most widely accepted option (see payOptions). */
+  const [payment, setPayment] = useState<string>("");
   /**
    * What was bought, kept for the confirmation screen's recommendations.
    * The cart is empty by then, so "goes with what you just ordered" has
@@ -356,6 +363,32 @@ export default function CheckoutClient({
   );
   const units = lines.reduce((sum, l) => sum + l.qty, 0);
 
+  /*
+   * ── One choice, every shop paid ─────────────────────────────────────
+   * Customers pay each shop directly (lib/shop-payments.ts). Asking for a
+   * method per shop would turn a two-shop basket into two payment forms,
+   * so the customer picks ONE, and this works out — before the button —
+   * how each shop is actually paid. A shop that doesn't take their pick
+   * says so here, not after the order is placed.
+   */
+  const payOptions = useMemo(
+    () => basketOptions(parcels.map(([slug]) => stores.find((s) => s.slug === slug))),
+    [parcels, stores],
+  );
+  const chosenPay = payOptions.some((o) => o.kind === payment) ? payment : (payOptions[0]?.kind ?? "cod");
+  const payPlan = parcels.map(([slug, storeLines]) => {
+    const store = stores.find((s) => s.slug === slug);
+    return {
+      slug,
+      storeName: store?.name ?? slug.replace(/-/g, " "),
+      method: resolvePayment(store, chosenPay),
+      amount:
+        pricing?.stores[slug]?.total ??
+        Math.round(storeLines.reduce((sum, l) => sum + l.product.price * l.qty, 0) * 100) / 100,
+    };
+  });
+  const paysAtDoor = payPlan.every((p) => p.method.kind === "cod");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -506,7 +539,7 @@ export default function CheckoutClient({
         subtotal,
         deliveryFee: delivery,
         total,
-        paymentMethod: payment,
+        paymentMethod: chosenPay,
         promoCode: appliedPromo ?? undefined,
       });
       /*
@@ -564,8 +597,7 @@ export default function CheckoutClient({
     // builds each vendor's message from it, and `lines` is empty by then.
     const grouped = groupByStore(lines.map((l) => ({ ...l, store: l.product.store })));
     const parcelIds = vendorOrderIds(orderId, [...grouped.keys()]);
-    const paymentLabel =
-      PAYMENT_METHODS.find((m) => m.id === payment)?.name ?? payment;
+    const paymentLabel = kindInfo(chosenPay)?.label ?? chosenPay;
     // The parcels' own totals are what the couriers collect; the summary
     // adds up to exactly them.
     const placedItems = serverParcels
@@ -580,7 +612,7 @@ export default function CheckoutClient({
       address: fullAddress,
       city: destinationCity,
       paymentLabel,
-      paymentMethod: payment,
+      paymentMethod: chosenPay,
       subtotal: Math.round((placedItems + savedOnServer) * 100) / 100,
       discount: savedOnServer,
       saleDiscount,
@@ -600,6 +632,7 @@ export default function CheckoutClient({
           storeLogo: store?.logo,
           whatsapp: store?.whatsapp,
           orderId: parcelIds.get(storeSlug) ?? orderId,
+          payTo: resolvePayment(store, chosenPay),
           subtotal:
             pricing?.stores[storeSlug]?.total ??
             Math.round(storeLines.reduce((sum, l) => sum + priceOf(l) * l.qty, 0) * 100) / 100,
@@ -1307,46 +1340,78 @@ export default function CheckoutClient({
           <section className="card p-5 sm:p-6">
             <StepTitle n={2} title={t("checkout.payment")} />
             <div className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label={t("checkout.payment")}>
-              {PAYMENT_METHODS.map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border-2 p-4 transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ocean-300 ${
-                    payment === m.id
-                      ? "border-ocean-700 bg-ocean-50"
-                      : "border-sand-200 bg-white hover:border-ocean-300"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment"
-                    value={m.id}
-                    checked={payment === m.id}
-                    onChange={() => setPayment(m.id)}
-                    className="sr-only"
-                  />
-                  <span className="text-2xl" aria-hidden>{m.icon}</span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold text-ocean-950">
-                      {m.id === "cod" ? t("checkout.pay.codName") : m.name}
-                    </span>
-                    <span className="block text-xs text-slate-500">{t(m.note)}</span>
-                  </span>
-                  <span
-                    className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                      payment === m.id ? "border-ocean-700" : "border-slate-300"
+              {payOptions.map(({ kind, acceptedBy }) => {
+                const info = kindInfo(kind)!;
+                const selected = chosenPay === kind;
+                return (
+                  <label
+                    key={kind}
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border-2 p-4 transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ocean-300 ${
+                      selected
+                        ? "border-ocean-700 bg-ocean-50"
+                        : "border-sand-200 bg-white hover:border-ocean-300"
                     }`}
-                    aria-hidden
                   >
-                    {payment === m.id && <span className="h-2.5 w-2.5 rounded-full bg-ocean-700" />}
-                  </span>
-                </label>
-              ))}
+                    <input
+                      type="radio"
+                      name="payment"
+                      value={kind}
+                      checked={selected}
+                      onChange={() => setPayment(kind)}
+                      className="sr-only"
+                    />
+                    <span className="text-2xl" aria-hidden>{info.icon}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-ocean-950">
+                        {kind === "cod" ? t("checkout.pay.codName") : info.label}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {parcels.length < 2
+                          ? t(PAYMENT_NOTES[kind])
+                          : acceptedBy === parcels.length
+                            ? t("checkout.pay.allShops", { n: parcels.length })
+                            : t("checkout.pay.someShops", { n: acceptedBy, total: parcels.length })}
+                      </span>
+                    </span>
+                    <span
+                      className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                        selected ? "border-ocean-700" : "border-slate-300"
+                      }`}
+                      aria-hidden
+                    >
+                      {selected && <span className="h-2.5 w-2.5 rounded-full bg-ocean-700" />}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
-            {payment !== "cod" && (
-              <p className="mt-3 rounded-lg bg-sand-100 px-3 py-2 text-xs text-slate-600">
-                📲 {t("checkout.payPrompt")}
+
+            {/*
+              Who gets what, before the button. With several shops this is
+              the whole point: the customer sees each amount and how it is
+              paid now, rather than finding a second payment after ordering.
+            */}
+            <div className="mt-4 rounded-2xl bg-sand-50 p-4 ring-1 ring-sand-200">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t("checkout.pay.planTitle")}</p>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {payPlan.map((p) => (
+                  <li key={p.slug} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <strong className="block truncate text-ocean-950">{p.storeName}</strong>
+                      <span className="block text-xs text-slate-500">
+                        {kindInfo(p.method.kind)?.icon}{" "}
+                        {p.method.kind === "cod" ? t("checkout.pay.codName") : kindInfo(p.method.kind)?.label}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-semibold text-ocean-950">{money(p.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-slate-600">
+                {paysAtDoor ? t("checkout.pay.planCod") : t("checkout.pay.planDirect")}
+                {delivery > 0 && ` ${t("checkout.pay.planDelivery", { fee: money(delivery) })}`}
               </p>
-            )}
+            </div>
           </section>
 
           {/* Phone: the bill before the button — the lines are folded away

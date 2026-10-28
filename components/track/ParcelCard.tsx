@@ -4,6 +4,8 @@ import { useT } from "@/components/prefs/PrefsProvider";
 import type { MessageKey } from "@/lib/i18n";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
+import PayShopPanel from "@/components/checkout/PayShopPanel";
+import type { ShopPaymentMethod } from "@/lib/shop-payments";
 import { money } from "@/lib/format";
 import { estimateLabel, parcelJourney, stampLabel, telLink } from "@/lib/delivery";
 import { formatWhatsAppNumber, whatsappLink } from "@/lib/whatsapp";
@@ -28,6 +30,8 @@ export default function ParcelCard({
   total,
   /** Set when this parcel shares its driver with others in the same order. */
   sharedWith,
+  payTo,
+  storeWhatsapp,
 }: {
   order: Order;
   storeName: string;
@@ -37,6 +41,9 @@ export default function ParcelCard({
   index: number;
   total: number;
   sharedWith?: string[];
+  /** The shop's method this parcel is paid with, with its current number. */
+  payTo?: ShopPaymentMethod;
+  storeWhatsapp?: string;
 }) {
   const t = useT();
   const journey = parcelJourney(order).map((step) => ({
@@ -94,6 +101,21 @@ export default function ParcelCard({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* ── Paying for it ─────────────────────────────────────────── */}
+      {payTo && order.paymentStatus && !cancelled && (
+        <div className="mt-3">
+          <PayShopPanel
+            storeName={storeName}
+            storeWhatsapp={storeWhatsapp}
+            orderId={order.id}
+            customerName={order.customer}
+            amount={order.total}
+            method={payTo}
+            status={order.paymentStatus}
+          />
+        </div>
       )}
 
       {/* ── Where it has got to ───────────────────────────────────── */}

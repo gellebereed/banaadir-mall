@@ -14,6 +14,7 @@ import { addPayoutRecord, deletePayoutRecord, PAYOUT_METHODS, savePayoutAccount 
 import { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } from "@/lib/rate-limit";
 import { clearSessionCookie, getSession } from "@/lib/session";
 import { money } from "@/lib/format";
+import { cleanMethods, kindInfo } from "@/lib/shop-payments";
 
 export interface MoneyState {
   ok?: string;
@@ -56,6 +57,57 @@ export async function savePayoutDetails(_prev: MoneyState, formData: FormData): 
   await logActivity(session.store, "payout.details", `Changed payout details to ${method}`);
   revalidatePath("/vendor/payouts");
   return { ok: "Saved. Future payouts go here." };
+}
+
+// ── Where customers pay the shop ───────────────────────────────────────
+
+/**
+ * The numbers customers send money to (lib/shop-payments.ts).
+ *
+ * Owner only, for the same reason as payout details: swapping the shop's
+ * EVC number for your own is the one edit that quietly redirects every
+ * customer's money. Each change is logged with the methods (not the
+ * numbers), so an owner can see when it happened and by whom.
+ */
+export async function savePaymentMethods(_prev: MoneyState, formData: FormData): Promise<MoneyState> {
+  const session = await getSession();
+  if (!session || session.role !== "seller" || session.access || !session.store) {
+    return { error: "Only the store owner can change where customers pay." };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get("methodsJson") ?? "[]"));
+  } catch {
+    return { error: "Couldn't read the payment methods — nothing was saved." };
+  }
+  const cleaned = cleanMethods(raw);
+  if ("error" in cleaned) return { error: cleaned.error };
+  if (cleaned.methods.length === 0) {
+    return { error: "Keep at least one way to pay — customers can't order from a shop that takes nothing." };
+  }
+
+  const { updateStorePaymentMethodsInSupabase, useSupabaseMutations } = await import("@/lib/supabase/mutations");
+  if (useSupabaseMutations()) {
+    const result = await updateStorePaymentMethodsInSupabase(session.store, cleaned.methods);
+    if (result === "missing-column") {
+      return { error: "Payment methods need a database update — ask the marketplace admin to run supabase/migration-shop-payments.sql." };
+    }
+    if (result === "error") return { error: "Couldn't save — please try again." };
+  } else {
+    const { mutateDB } = await import("@/lib/db");
+    const store = session.store;
+    await mutateDB((db) => {
+      db.storeOverrides[store] = { ...db.storeOverrides[store], paymentMethods: cleaned.methods };
+    });
+  }
+  await logActivity(
+    session.store,
+    "store.payments",
+    `Changed how customers pay: ${cleaned.methods.map((m) => kindInfo(m.kind)?.label ?? m.kind).join(", ")}`,
+  );
+  revalidatePath("/vendor/settings");
+  revalidatePath("/checkout");
+  return { ok: "Saved. Customers will see these at checkout." };
 }
 
 // ── The admin records a payment ────────────────────────────────────────

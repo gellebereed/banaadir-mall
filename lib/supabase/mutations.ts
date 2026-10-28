@@ -16,6 +16,7 @@
 
 import { getDataClient } from "./service";
 import { isSupabaseConfigured } from "./storage";
+import type { ShopPaymentMethod } from "../shop-payments";
 import type {
   CommissionSettings,
   Employee,
@@ -482,6 +483,31 @@ export async function updateStoreFields(
   }
 }
 
+/**
+ * A shop's payment numbers, on their own: unlike the profile fields these
+ * must never be dropped quietly on an unmigrated database — a seller told
+ * "saved" whose customers then see no numbers is worse than an error.
+ */
+export async function updateStorePaymentMethodsInSupabase(
+  slug: string,
+  methods: ShopPaymentMethod[],
+): Promise<"ok" | "missing-column" | "error"> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { data, error } = await getDataClient()
+      .from("stores").update({ payment_methods: methods }).eq("slug", slug).select("slug");
+    if (error) {
+      if (isMissingColumnError(error)) return "missing-column";
+      console.error("[Supabase Mutations] updateStorePaymentMethods error:", error.message);
+      return "error";
+    }
+    return (data?.length ?? 0) > 0 ? "ok" : "error";
+  } catch (err) {
+    console.error("[Supabase Mutations] updateStorePaymentMethods exception:", err);
+    return "error";
+  }
+}
+
 export async function setStoreStatusInSupabase(
   slug: string,
   status: Store["status"]
@@ -521,6 +547,7 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
     // a null `payment` column on a database that has never seen a till.
     if (order.channel) row.channel = order.channel;
     if (order.payment) row.payment = order.payment;
+    if (order.paymentStatus) row.payment_status = order.paymentStatus;
 
     let { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
 
@@ -531,13 +558,15 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
     // optional columns so the order always lands.
     if (error && isMissingColumnError(error)) {
       console.warn(
-        "[Supabase] orders is missing `timeline`, `channel` or `payment` — run " +
-          "supabase/migration-order-delivery.sql and supabase/migration-pos.sql. " +
+        "[Supabase] orders is missing `timeline`, `channel`, `payment` or `payment_status` — run " +
+          "supabase/migration-order-delivery.sql, supabase/migration-pos.sql and " +
+          "supabase/migration-shop-payments.sql. " +
           "Saving the order without them.",
       );
       delete row.timeline;
       delete row.channel;
       delete row.payment;
+      delete row.payment_status;
       ({ error } = await supabase.from("orders").upsert(row, { onConflict: "id" }));
     }
 
@@ -652,6 +681,30 @@ export async function updateOrderDeliveryInSupabase(
   } catch (err) {
     console.error("[Supabase Mutations] updateOrderDelivery exception:", err);
     return false;
+  }
+}
+
+/** The shop marks a parcel paid, or takes the mark back. */
+export async function updateOrderPaymentInSupabase(
+  orderId: string,
+  fields: Pick<Order, "paymentStatus" | "paidAt">,
+): Promise<"ok" | "missing-column" | "error"> {
+  if (!useSupabaseMutations()) return "error";
+  try {
+    const { data, error } = await getDataClient()
+      .from("orders")
+      .update({ payment_status: fields.paymentStatus ?? null, paid_at: fields.paidAt ?? null })
+      .eq("id", orderId)
+      .select("id");
+    if (error) {
+      if (isMissingColumnError(error)) return "missing-column";
+      console.error("[Supabase Mutations] updateOrderPayment error:", error.message);
+      return "error";
+    }
+    return (data?.length ?? 0) > 0 ? "ok" : "error";
+  } catch (err) {
+    console.error("[Supabase Mutations] updateOrderPayment exception:", err);
+    return "error";
   }
 }
 

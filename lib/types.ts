@@ -29,6 +29,8 @@
  * `product.product.barcode` relationship.
  */
 
+import type { PaymentStatus, ShopPaymentKind, ShopPaymentMethod } from "./shop-payments";
+
 /** Gradient pair used to render generated product/category artwork. */
 export type Art = { from: string; to: string };
 
@@ -120,6 +122,12 @@ export interface Store {
    * a contact is one the customer cannot chase.
    */
   couriers?: Courier[];
+  /**
+   * How customers pay this shop directly — wallets with their numbers, and
+   * cash on delivery. Empty means cash on delivery only. See
+   * lib/shop-payments.ts.
+   */
+  paymentMethods?: ShopPaymentMethod[];
   /**
    * The counter. Absent or disabled for every store that already has a
    * till of its own — see PosSettings.
@@ -451,8 +459,18 @@ export interface Order {
    * one of them always forgets.
    */
   channel?: "online" | "pos";
-  /** How a counter sale was paid. Only set when `channel` is "pos". */
-  payment?: PaymentMethod;
+  /**
+   * How it is paid: the till's method for a counter sale, or — online —
+   * which of the shop's own methods the customer is paying it with.
+   */
+  payment?: PaymentMethod | ShopPaymentKind;
+  /**
+   * Online orders only. Absent on orders placed before customers paid
+   * shops directly, which is treated as nothing to chase.
+   */
+  paymentStatus?: PaymentStatus;
+  /** ISO timestamp the shop marked it paid. */
+  paidAt?: string;
 }
 
 /** A line in the client-side shopping cart (persisted to localStorage). */

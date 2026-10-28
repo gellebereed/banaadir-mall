@@ -49,7 +49,7 @@ export interface LiveOrderState {
 
 function signature(parcels: OrderParcel[]): string {
   return parcels
-    .map((p) => `${p.order.id}:${p.order.status}:${p.order.delivery?.courier?.phone ?? ""}`)
+    .map((p) => `${p.order.id}:${p.order.status}:${p.order.paymentStatus ?? ""}:${p.order.delivery?.courier?.phone ?? ""}`)
     .join("|");
 }
 

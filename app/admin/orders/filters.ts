@@ -1,3 +1,4 @@
+import { unpaidTooLong } from "@/lib/shop-payments";
 import type { Order, OrderStatus } from "@/lib/types";
 
 /**
@@ -33,6 +34,7 @@ const DAY = 86_400_000;
 export function needsAttention(order: Order, now = Date.now()): boolean {
   const age = now - Date.parse(order.date);
   if ((order.status === "pending" || order.status === "processing") && age > 2 * DAY) return true;
+  if (unpaidTooLong(order, now)) return true;
   return order.status === "shipped" && !order.delivery?.courier?.phone;
 }
 

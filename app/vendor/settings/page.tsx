@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import StoreSettingsForm from "@/components/dashboard/StoreSettingsForm";
 import PosSettingsForm from "@/components/pos/PosSettingsForm";
+import PaymentMethodsForm from "@/components/dashboard/PaymentMethodsForm";
 import StoreLinkPanel from "@/components/store-site/StoreLinkPanel";
 import { getPosSettings, getStore } from "@/lib/api";
 import { ROOT_DOMAIN } from "@/lib/store-site";
@@ -41,6 +42,32 @@ export default async function VendorSettingsPage() {
       <div className="card mt-5 p-6 sm:p-8">
         <StoreSettingsForm store={store} includeStoreField={session.role === "admin"} />
       </div>
+
+      {/* ── How customers pay ─────────────────────────────────────── */}
+      <section className="card mt-5 p-6 sm:p-8">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-2xl">
+            💳
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-extrabold text-ocean-950">
+              How customers pay you
+            </h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Customers pay your shop directly. They pick one of these at
+              checkout and see your number with the amount to send. Mark
+              each parcel paid in Orders once the money arrives.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-sand-100 pt-5">
+          <PaymentMethodsForm
+            initial={store.paymentMethods ?? []}
+            canEdit={session.role === "seller" && !session.access}
+          />
+        </div>
+      </section>
 
       {/* ── Your own website ──────────────────────────────────────── */}
       <section className="card mt-5 p-6 sm:p-8">

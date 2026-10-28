@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import OrderSlipShare from "@/components/checkout/OrderSlipShare";
+import PayShopPanel from "@/components/checkout/PayShopPanel";
+import { kindInfo, type ShopPaymentMethod } from "@/lib/shop-payments";
 import { usePrefs } from "@/components/prefs/PrefsProvider";
 import RecoStack from "@/components/reco/RecoStack";
 import { money } from "@/lib/format";
@@ -28,6 +30,8 @@ export interface PlacedParcel {
   /** This parcel's real order id, e.g. "BM-12345-KARA". */
   orderId: string;
   subtotal: number;
+  /** Which of this shop's methods pays for it — see lib/shop-payments.ts. */
+  payTo?: ShopPaymentMethod;
   lines: {
     name: string;
     qty: number;
@@ -97,6 +101,8 @@ export default function OrderConfirmation({
   const split = order.parcels.length > 1;
   const firstName = order.customerName.split(" ")[0];
   const cash = order.paymentMethod === "cod";
+  // Shops the customer has to send money to now, rather than pay at the door.
+  const toPay = order.parcels.filter((p) => p.payTo && p.payTo.kind !== "cod");
   const paymentName = cash ? t("checkout.pay.codName") : order.paymentLabel;
 
   /*
@@ -166,6 +172,42 @@ export default function OrderConfirmation({
       </div>
 
       {/*
+        Paying comes first when there is something to send: it is the one
+        thing on this screen the order now waits on, and every shop the
+        customer pays is listed with its own number and amount — one card,
+        not a hunt through each parcel.
+      */}
+      {toPay.length > 0 && (
+        <div className="card mt-8 border-2 border-mango-300 p-6">
+          <h2 className="font-display text-base font-extrabold text-ocean-950">{t("pay.title")}</h2>
+          <p className="mt-1 text-xs text-slate-600">{t("pay.body")}</p>
+          <div className="mt-4 space-y-4">
+            {order.parcels.map((parcel) =>
+              parcel.payTo ? (
+                <div key={parcel.storeSlug}>
+                  <p className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                    <strong className="min-w-0 truncate text-ocean-950">{parcel.storeName}</strong>
+                    <span className="shrink-0 font-mono text-[11px] text-slate-400">{parcel.orderId}</span>
+                  </p>
+                  <PayShopPanel
+                    storeName={parcel.storeName}
+                    storeWhatsapp={parcel.whatsapp}
+                    orderId={parcel.orderId}
+                    customerName={order.customerName}
+                    amount={parcel.subtotal}
+                    method={parcel.payTo}
+                  />
+                </div>
+              ) : null,
+            )}
+          </div>
+          {order.delivery > 0 && (
+            <p className="mt-4 text-xs text-slate-500">{t("checkout.pay.planDelivery", { fee: money(order.delivery) })}</p>
+          )}
+        </div>
+      )}
+
+      {/*
         What happens now, in three plain steps. A first-time online shopper
         reading "Order confirmed" has no idea whether to wait, call or pay —
         this is the part of the screen they actually need.
@@ -176,9 +218,11 @@ export default function OrderConfirmation({
           {[
             t("conf.next1"),
             t("conf.next2", { phone: order.customerPhone }),
-            cash
-              ? t("conf.next3Cash", { total: money(order.total) })
-              : t("conf.next3", { total: money(order.total), method: paymentName }),
+            toPay.length > 0
+              ? t("conf.next3Direct")
+              : cash
+                ? t("conf.next3Cash", { total: money(order.total) })
+                : t("conf.next3", { total: money(order.total), method: paymentName }),
           ].map((step, i) => (
             <li key={i} className="flex gap-3">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ocean-100 text-xs font-bold text-ocean-800">
@@ -286,7 +330,8 @@ export default function OrderConfirmation({
               customerPhone: order.customerPhone,
               address: order.address,
               city: order.city,
-              paymentMethod: order.paymentLabel,
+              // This shop's own method — in a mixed basket it can differ from the customer's pick.
+              paymentMethod: parcel.payTo ? (kindInfo(parcel.payTo.kind)?.label ?? order.paymentLabel) : order.paymentLabel,
               placedAt,
               lines: parcel.lines,
               dashboardUrl: "banaadirmall.com/vendor/orders",

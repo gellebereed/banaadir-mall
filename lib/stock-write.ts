@@ -115,3 +115,37 @@ export async function deductStock(
     }
   }
 }
+
+/**
+ * Put a cancelled parcel's items back on the shelf — the reverse of
+ * deductStock. Cancelling used to leave them sold, so every unpaid or
+ * refused parcel quietly took stock out of the shop for good.
+ */
+export async function returnStock(
+  lines: { productId: string; qty: number; selectedColor?: string; selectedSize?: string }[],
+): Promise<void> {
+  const byProduct = new Map<string, typeof lines>();
+  for (const line of lines) byProduct.set(line.productId, [...(byProduct.get(line.productId) ?? []), line]);
+
+  for (const [productId, productLines] of byProduct) {
+    const product = await getBaseProduct(productId);
+    if (!product) continue;
+    const returned = productLines.reduce((t, l) => t + l.qty, 0);
+    const sold = Math.max(0, (product.sold ?? 0) - returned);
+    if (product.variants?.length) {
+      const changes = new Map<string, number>();
+      for (const line of productLines) {
+        const variant = findVariant(product, line.selectedColor, line.selectedSize);
+        if (!variant) continue;
+        changes.set(variant.id, (changes.get(variant.id) ?? variant.stock) + line.qty);
+      }
+      if (changes.size === 0) continue;
+      await saveStock(productId, {
+        ...applyToProduct(product, [...changes].map(([variantId, to]) => ({ variantId, to }))),
+        sold,
+      });
+    } else {
+      await saveStock(productId, { stock: product.stock + returned, sold });
+    }
+  }
+}
