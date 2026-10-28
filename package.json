@@ -17,7 +17,8 @@
     "reset:demo": "node scripts/reset-demo-data.mjs",
     "graph": "node scripts/build-code-graph.mjs",
     "taxonomy": "node scripts/build-taxonomy.mjs",
-    "migrate:owners": "node scripts/migrate-seller-ownership.mjs"
+    "migrate:owners": "node scripts/migrate-seller-ownership.mjs",
+    "find:garbled": "node scripts/find-garbled-text.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",

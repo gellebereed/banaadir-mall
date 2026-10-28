@@ -13,6 +13,37 @@
 const DELIMITERS = [",", ";", "\t", "|"] as const;
 
 /**
+ * Bytes → text, in whatever encoding the file was actually saved in.
+ *
+ * Excel's plain "CSV" on a Turkish Windows is NOT UTF-8: it is Windows-1254,
+ * where ş, ğ, ı, İ, ü, ö, ç are single bytes that are invalid UTF-8. Reading
+ * those as UTF-8 turns every Turkish letter into "�" — and the import then
+ * saves "Pe�tamal Havlu" as the product name. "Unicode Text" is UTF-16. So:
+ * honour a BOM, accept the bytes as UTF-8 only if they are valid UTF-8, and
+ * otherwise read them as Windows-1254 (which is Latin-1 plus the six
+ * Turkish letters, so Western European files survive too).
+ */
+export function decodeCsv(bytes: Uint8Array): string {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes.subarray(3));
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Not UTF-8 — fall through to the legacy code page.
+  }
+  try {
+    return new TextDecoder("windows-1254").decode(bytes);
+  } catch {
+    // A Node built without full ICU knows only UTF-8/16 and Latin-1.
+    return Buffer.from(bytes).toString("latin1");
+  }
+}
+
+/**
  * The delimiter that splits the first non-empty line into the most fields.
  * Counted OUTSIDE quotes, so a comma inside "Jacket, navy" doesn't win the
  * vote for a semicolon-separated file.

@@ -97,7 +97,10 @@ export function buildProduct(
 ): Product {
   const draft = planned.draft;
   const isNew = !existing;
-  const takeDetails = isNew || options.overwriteDetails;
+  // Text an earlier import mis-decoded (see decodeCsv) is never the seller's
+  // own wording, so re-importing the file repairs it even with "overwrite
+  // details" off.
+  const takeDetails = isNew || options.overwriteDetails || hasGarbledText(existing);
   const takePrices = isNew || options.overwritePrices;
 
   const variants = mergeVariants(planned, existing);
@@ -174,6 +177,13 @@ export function buildProduct(
  * truth would delete the first colour — along with its stock, its photos,
  * and the barcode a customer's order still refers to.
  */
+/** True when the product's text holds "�", the mark of a mis-decoded file. */
+export function hasGarbledText(product: Product | undefined): boolean {
+  if (!product) return false;
+  const text = [product.name, product.description, product.subcategory, ...(product.features ?? [])];
+  return text.some((value) => typeof value === "string" && value.includes("\uFFFD"));
+}
+
 function mergeVariants(planned: PlannedProduct, existing: Product | undefined): Variant[] {
   const byKey = new Map<string, Variant>();
   const keyOf = (barcode?: string, sku?: string) =>
