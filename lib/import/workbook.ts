@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { parseCsv } from "./csv.ts";
+import { decodeCsv, parseCsv } from "./csv.ts";
 import { expandVariantValues } from "./variant-values.ts";
 import { readXlsx, type Sheet } from "./xlsx.ts";
 
@@ -110,7 +110,7 @@ export function readTables(bytes: Buffer, filename: string): SheetTable[] {
   const name = filename.toLowerCase();
 
   if (name.endsWith(".csv") || name.endsWith(".tsv") || name.endsWith(".txt")) {
-    const rows = parseCsv(bytes.toString("utf8"));
+    const rows = parseCsv(decodeCsv(bytes));
     return [toTable({ name: "Sheet1", rows })];
   }
 
