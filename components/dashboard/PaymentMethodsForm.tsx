@@ -60,19 +60,22 @@ export default function PaymentMethodsForm({
               />
               <span aria-hidden className="text-lg">{info.icon}</span>
               <span className="text-sm font-bold text-ocean-950">{info.label}</span>
+              {info.provider && <span className="text-xs text-slate-400">{info.provider}</span>}
             </label>
             {on && info.kind !== "cod" && (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor={`pm-${info.kind}-number`} className="label">
-                    {info.wallet ? "Number customers pay to" : "Bank and account number"}
+                    {info.merchant ? "Merchant number" : info.wallet ? "Number customers pay to" : "Bank and account number"}
                   </label>
                   <input
                     id={`pm-${info.kind}-number`}
                     value={method?.number ?? ""}
                     onChange={(e) => edit(info.kind, "number", e.target.value)}
                     disabled={!canEdit}
-                    placeholder={info.wallet ? "e.g. 61 555 1234" : "e.g. Premier Bank 0012345678"}
+                    placeholder={
+                      info.merchant ? "e.g. 512345" : info.wallet ? "e.g. 61 555 1234" : "e.g. Premier Bank 0012345678"
+                    }
                     inputMode={info.wallet ? "tel" : "text"}
                     className="input"
                   />
