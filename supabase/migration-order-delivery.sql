@@ -59,7 +59,8 @@ CREATE INDEX IF NOT EXISTS orders_courier_phone_idx
 
 -- Every parcel a driver is currently carrying — what a dispatcher needs
 -- when a customer calls asking where their driver has got to.
-CREATE OR REPLACE VIEW public.courier_workload AS
+CREATE OR REPLACE VIEW public.courier_workload
+WITH (security_invoker = true) AS
 SELECT
   o.delivery -> 'courier' ->> 'phone'    AS courier_phone,
   o.delivery -> 'courier' ->> 'name'     AS courier_name,
@@ -77,7 +78,9 @@ WHERE o.delivery -> 'courier' ->> 'phone' IS NOT NULL
 COMMENT ON VIEW public.courier_workload IS
   'Parcels currently out with a driver, keyed by their phone number.';
 
-GRANT SELECT ON public.courier_workload TO anon, authenticated;
+-- Customer names and order totals: never for the public key (see
+-- migration-view-lockdown.sql). The server uses the service role key.
+REVOKE ALL ON public.courier_workload FROM anon, authenticated;
 
 -- ── 4. VERIFY ───────────────────────────────────────────────────────────
 SELECT 'Parcel delivery migration completed.' AS result;

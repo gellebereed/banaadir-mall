@@ -57,6 +57,9 @@ Do these in order — step 3 before step 1–2 takes the site offline.
 2. **Check `/api/health`** shows `"serviceRole": true`.
 3. **Run `supabase/migration-lockdown.sql`** in the Supabase SQL editor.
    `/api/health` should then show `"publicKeyCanReadPrivateTables": false`.
+   Then run **`supabase/migration-view-lockdown.sql`**: views are not
+   tables, and without it the public key could edit products and orders
+   through `product_margin` and `courier_workload`.
 4. **Run `npm run migrate:owners`** (with the service key in `.env.local`),
    read the list, then `npm run migrate:owners -- --apply`. Without this,
    sellers whose ownership was only recorded the old way sign in as
