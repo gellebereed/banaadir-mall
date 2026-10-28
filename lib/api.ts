@@ -48,6 +48,7 @@ import {
   categoryWithDescendants,
   flattenCategoryTree,
   visibleCategories,
+  stockedCategories,
 } from "./category-tree";
 import { isOfferLive, offerCovers } from "./offers";
 import { inShopWindow } from "./shop-time";
@@ -90,6 +91,17 @@ export async function getCategories(includeHidden = false): Promise<Category[]> 
   // visibleCategories() drops hidden categories AND everything beneath
   // them — see lib/category-tree.ts for why that matters.
   return includeHidden ? list : visibleCategories(list);
+}
+
+/**
+ * The categories a shopper is shown in menus, the home page, search and the
+ * sitemap: visible ones that hold at least one marketplace product, directly
+ * or in a category beneath them. Admin and seller screens use
+ * getCategories() so a new, empty category can still be picked and filled.
+ */
+export async function getShopperCategories(): Promise<Category[]> {
+  const [categories, products] = await Promise.all([getCategories(), getMarketplaceProducts()]);
+  return stockedCategories(categories, products);
 }
 
 export async function getCategory(slug: string): Promise<Category | undefined> {

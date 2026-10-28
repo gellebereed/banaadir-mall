@@ -7,7 +7,7 @@
  * typing.
  */
 
-import { getCategories, getListedStores, searchProducts } from "@/lib/api";
+import { getListedStores, getShopperCategories, searchProducts } from "@/lib/api";
 import { primaryImage } from "@/lib/product-utils";
 import { normalize } from "@/lib/search";
 
@@ -22,7 +22,7 @@ export async function searchSuggestions(query: string): Promise<SearchSuggestion
   const q = String(query ?? "").slice(0, 80).trim();
   if (q.length < 2) return { products: [], categories: [], stores: [] };
 
-  const [result, categories, stores] = await Promise.all([searchProducts(q), getCategories(), getListedStores()]);
+  const [result, categories, stores] = await Promise.all([searchProducts(q), getShopperCategories(), getListedStores()]);
   const needle = normalize(q);
   const nameMatches = (name: string) => normalize(name).split(" ").some((w) => w.startsWith(needle) || needle.startsWith(w) && w.length >= 3);
 

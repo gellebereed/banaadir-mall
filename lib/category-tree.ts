@@ -130,6 +130,31 @@ export function visibleCategories(categories: Category[]): Category[] {
 }
 
 /**
+ * Shopper view: only categories with something in them. A department or
+ * sub-category with no products is a dead end — the shopper taps it and
+ * finds an empty page — so the storefront leaves it out until a product
+ * lands in it. A parent stays as long as it, or anything beneath it, has a
+ * product: its own page aggregates its children's products.
+ *
+ * `products` should be what the shopper can actually see (visible, from
+ * stores listed on the marketplace). Dashboards keep the full list.
+ */
+export function stockedCategories(categories: Category[], products: { category: string }[]): Category[] {
+  const bySlug = new Map(categories.map((c) => [c.slug, c]));
+  const stocked = new Set<string>();
+
+  for (const slug of new Set(products.map((p) => p.category))) {
+    // Mark the product's category and every ancestor, once each.
+    let cursor = bySlug.get(slug);
+    while (cursor && !stocked.has(cursor.slug)) {
+      stocked.add(cursor.slug);
+      cursor = cursor.parentSlug ? bySlug.get(cursor.parentSlug) : undefined;
+    }
+  }
+  return categories.filter((c) => stocked.has(c.slug));
+}
+
+/**
  * Categories that may be chosen as `slug`'s parent — everything except the
  * category itself and its own descendants. Choosing a descendant would make
  * the category its own ancestor; not offering the choice is friendlier than

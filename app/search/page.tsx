@@ -7,6 +7,7 @@ import { buildFacets } from "@/lib/taxonomy-attributes";
 import {
   getCategories,
   getListedStores,
+  getShopperCategories,
   getProductsByStore,
   getStore,
   searchProducts,
@@ -36,16 +37,17 @@ export default async function SearchPage({
    */
   const scopedStore = storeSlug ? await getStore(storeSlug) : undefined;
 
-  const [search, stores, categories] = await Promise.all([
+  const [search, stores, categories, shopperCategories] = await Promise.all([
     scopedStore ? searchWithinStore(scopedStore.slug, q) : searchProducts(q),
     getListedStores(),
     getCategories(true),
+    getShopperCategories(),
   ]);
   const results = search.products;
   const searchHref = (term: string) =>
     `/search?q=${encodeURIComponent(term)}${scopedStore ? `&store=${scopedStore.slug}` : ""}`;
   // Departments to offer when nothing was found — somewhere to go next.
-  const departments = categories.filter((c) => !c.parentSlug && !c.hidden && c.slug !== "needs-category").slice(0, 8);
+  const departments = shopperCategories.filter((c) => !c.parentSlug && c.slug !== "needs-category").slice(0, 8);
 
   const where = scopedStore ? ` in ${scopedStore.name}` : "";
 

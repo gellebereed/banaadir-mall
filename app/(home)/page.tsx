@@ -23,7 +23,6 @@ import { RAIL_CARD } from "@/lib/card-sizes";
 import type { T } from "@/lib/i18n";
 import {
   getBestsellers,
-  getCategories,
   getFlashDeal,
   getFlashProducts,
   getListedStores,
@@ -31,6 +30,7 @@ import {
   getMarketplaceProducts,
   getNewArrivals,
   getOrders,
+  getShopperCategories,
 } from "@/lib/api";
 import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib/types";
 import type { Metadata } from "next";
@@ -51,7 +51,7 @@ export const metadata: Metadata = { alternates: { canonical: "/" } };
 export default async function HomePage() {
   const [categories, flashProducts, flash, bestsellers, newArrivals, stores, rawMarketing, allProducts] =
     await Promise.all([
-      getCategories(),
+      getShopperCategories(),
       getFlashProducts(),
       getFlashDeal(),
       getBestsellers(),

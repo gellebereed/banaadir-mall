@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getCategories, getListedStores, getMarketplaceProducts, getStories } from "@/lib/api";
+import { getListedStores, getMarketplaceProducts, getShopperCategories, getStories } from "@/lib/api";
 import { HOLDING_SLUG } from "@/lib/category-holding";
 import { siteOrigin } from "@/lib/request-origin";
 
@@ -14,7 +14,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [origin, products, categories, stores, guides] = await Promise.all([
     siteOrigin(),
     getMarketplaceProducts(),
-    getCategories(),
+    getShopperCategories(),
     getListedStores(),
     getStories(),
   ]);
