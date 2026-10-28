@@ -102,8 +102,7 @@ export default function Header({
    * the main navigation beside "Electronics". Sub-categories are reached
    * from their department's page.
    */
-  const allCategories =
-    dynamicCategories && dynamicCategories.length > 0 ? dynamicCategories : seedCategories;
+  const allCategories = dynamicCategories ?? seedCategories;
   const categoriesList = allCategories.filter((c) => !c.parentSlug && !c.hidden);
 
   /**

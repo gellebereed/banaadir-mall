@@ -8,7 +8,7 @@ import { getLang, getLite } from "@/lib/prefs-server";
 import { localizeMarketing } from "@/lib/marketing-copy";
 import { RecoProvider } from "@/components/reco/RecoProvider";
 import PromptHost from "@/components/reco/PromptHost";
-import { getCategories, getMarketingSettings, getStore } from "@/lib/api";
+import { getMarketingSettings, getShopperCategories, getStore } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { Suspense } from "react";
 import { headers } from "next/headers";
@@ -109,7 +109,7 @@ export default async function RootLayout({
   const [rawMarketing, session, categories, lang, lite] = await Promise.all([
     getMarketingSettings(),
     getSession(),
-    getCategories(),
+    getShopperCategories(),
     getLang(),
     getLite(),
   ]);
