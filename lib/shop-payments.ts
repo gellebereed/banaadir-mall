@@ -24,7 +24,16 @@
 
 import type { Order, Store } from "./types";
 
-export type ShopPaymentKind = "evc" | "zaad" | "edahab" | "sahal" | "premier" | "bank" | "cod";
+export type ShopPaymentKind =
+  | "evc"
+  | "evc_merchant"
+  | "zaad"
+  | "zaad_merchant"
+  | "edahab"
+  | "sahal"
+  | "premier"
+  | "bank"
+  | "cod";
 
 /** One way a shop accepts money, as saved in its settings. */
 export interface ShopPaymentMethod {
@@ -43,21 +52,43 @@ export interface PaymentKindInfo {
   icon: string;
   /** Mobile wallets: the number must be a phone number. */
   wallet: boolean;
+  /**
+   * A business till number on a wallet — short, not a phone number. The
+   * customer still pays from the same wallet, so checkout offers the
+   * wallet (`family`) and either kind of shop number answers it.
+   */
+  merchant?: boolean;
+  /** The wallet the customer pays from. Defaults to the kind itself. */
+  family?: ShopPaymentKind;
+  /** Network or bank, for the shop's settings. */
+  provider?: string;
 }
 
 /** In the order checkout offers them — the wallets most Somali shoppers carry first. */
 export const PAYMENT_KINDS: PaymentKindInfo[] = [
-  { kind: "evc", label: "EVC Plus", icon: "📲", wallet: true },
-  { kind: "zaad", label: "Zaad", icon: "📱", wallet: true },
-  { kind: "edahab", label: "eDahab", icon: "💳", wallet: true },
-  { kind: "sahal", label: "Sahal", icon: "📱", wallet: true },
-  { kind: "premier", label: "Premier Wallet", icon: "🏦", wallet: true },
+  { kind: "evc", label: "EVC Plus", icon: "📲", wallet: true, provider: "Hormuud" },
+  { kind: "evc_merchant", label: "EVC Merchant", icon: "🏪", wallet: true, merchant: true, family: "evc", provider: "Hormuud" },
+  { kind: "zaad", label: "Zaad", icon: "📱", wallet: true, provider: "Telesom" },
+  { kind: "zaad_merchant", label: "Zaad Merchant", icon: "🏪", wallet: true, merchant: true, family: "zaad", provider: "Telesom" },
+  { kind: "edahab", label: "eDahab", icon: "💳", wallet: true, provider: "Somtel" },
+  { kind: "sahal", label: "Sahal", icon: "📱", wallet: true, provider: "Golis" },
+  { kind: "premier", label: "Premier Wallet", icon: "🏦", wallet: true, provider: "Premier Bank" },
   { kind: "bank", label: "Bank transfer", icon: "🏦", wallet: false },
   { kind: "cod", label: "Cash on delivery", icon: "💵", wallet: false },
 ];
 
 export function kindInfo(kind: string | undefined): PaymentKindInfo | undefined {
   return PAYMENT_KINDS.find((k) => k.kind === kind);
+}
+
+/** The merchant (till) version of a wallet, where the network has one. */
+function merchantOf(kind: ShopPaymentKind): PaymentKindInfo | undefined {
+  return PAYMENT_KINDS.find((k) => k.merchant && k.family === kind);
+}
+
+/** The wallet a customer pays this kind from — "evc" for an EVC Merchant number. */
+export function familyOf(kind: ShopPaymentKind): ShopPaymentKind {
+  return kindInfo(kind)?.family ?? kind;
 }
 
 /** How long a parcel may wait for payment before the seller is asked to chase or cancel it. */
@@ -81,6 +112,8 @@ export function resolvePayment(
   const methods = acceptedMethods(store);
   return (
     methods.find((m) => m.kind === chosen) ??
+    // Paying from EVC Plus reaches an EVC Merchant number just the same.
+    methods.find((m) => familyOf(m.kind) === chosen) ??
     methods.find((m) => m.kind === "cod") ??
     methods[0]
   );
@@ -101,7 +134,7 @@ export function basketOptions(stores: (Pick<Store, "paymentMethods"> | undefined
 }[] {
   const counts = new Map<ShopPaymentKind, number>();
   for (const store of stores) {
-    for (const kind of new Set(acceptedMethods(store).map((m) => m.kind))) {
+    for (const kind of new Set(acceptedMethods(store).map((m) => familyOf(m.kind)))) {
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
     }
   }
@@ -159,8 +192,21 @@ export function cleanMethods(
     }
     const number = String((entry as ShopPaymentMethod).number ?? "").trim().slice(0, 40);
     const accountName = String((entry as ShopPaymentMethod).accountName ?? "").trim().slice(0, 60);
-    if (info.wallet ? number.replace(/\D/g, "").length < 7 : number.length < 4) {
-      return { error: `Add the ${info.label} ${info.wallet ? "number" : "account"} customers should pay to — nothing was saved.` };
+    const digits = number.replace(/\D/g, "");
+    // Merchant (till) numbers are short codes; a personal wallet is a phone number.
+    const ok = info.merchant ? digits.length >= 3 : info.wallet ? digits.length >= 7 : number.length >= 4;
+    if (!ok) {
+      return {
+        error: !number
+          ? `Add the ${info.label} ${info.wallet ? "number" : "account"} customers should pay to — nothing was saved.`
+          : info.merchant
+            ? `"${number}" doesn't look like a merchant number — enter the ${info.label} number customers pay to. Nothing was saved.`
+            : info.wallet
+              ? `"${number}" isn't a full phone number for ${info.label} (e.g. 61 555 1234).${
+                  merchantOf(info.kind) ? ` For a merchant number, tick ${merchantOf(info.kind)!.label} instead.` : ""
+                } Nothing was saved.`
+              : `Add the full bank name and account number. Nothing was saved.`,
+      };
     }
     methods.push({ kind: info.kind, number, ...(accountName ? { accountName } : {}) });
   }
