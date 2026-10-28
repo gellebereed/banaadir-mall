@@ -35,6 +35,7 @@ import {
 } from "@/lib/order-utils";
 import { normalizeWhatsAppNumber } from "@/lib/whatsapp";
 import { recordEvent, sameCourier } from "@/lib/delivery";
+import { acceptedMethods, initialStatus, resolvePayment, type ShopPaymentMethod } from "@/lib/shop-payments";
 import {
   can,
   may,
@@ -91,6 +92,7 @@ import {
   markOrdersSeenInSupabase,
   setOrderStatusInSupabase,
   updateOrderDeliveryInSupabase,
+  updateOrderPaymentInSupabase,
   insertPromotion,
   upsertOfferInSupabase,
   deleteOfferFromSupabase,
@@ -1802,6 +1804,7 @@ export async function updateParcelDelivery(formData: FormData): Promise<SaveStat
       db.orderDelivery[orderId] = { delivery, timeline };
     });
   }
+  await syncStockForStatus(order, status);
 
   if (remember && courier) {
     const store = await getStore(order.store);
@@ -1832,6 +1835,62 @@ export async function updateParcelDelivery(formData: FormData): Promise<SaveStat
   };
 }
 
+/**
+ * Keep the shelf in step with a status change: cancelling puts the
+ * parcel's items back, and un-cancelling takes them off again. Never
+ * allowed to fail the status change itself — the next stock upload
+ * corrects a count, nothing corrects a seller who couldn't cancel.
+ */
+async function syncStockForStatus(order: Order, next: OrderStatus): Promise<void> {
+  const wasCancelled = order.status === "cancelled";
+  if (wasCancelled === (next === "cancelled")) return;
+  const lines = order.items.map((i) => ({
+    productId: i.productId,
+    qty: i.qty,
+    selectedColor: i.selectedColor,
+    selectedSize: i.selectedSize,
+  }));
+  try {
+    const { deductStock, returnStock } = await import("@/lib/stock-write");
+    await (next === "cancelled" ? returnStock(lines) : deductStock(lines));
+  } catch (err) {
+    console.error(`[orders] stock not adjusted for ${order.id} → ${next}:`, err);
+  }
+}
+
+/**
+ * The shop says it has the money for a parcel — or takes that back.
+ * Customers pay shops directly (lib/shop-payments.ts), so the shop is the
+ * only one who can know, and its mark is what the tracking page shows.
+ */
+export async function setParcelPayment(orderId: string, paid: boolean): Promise<SaveState> {
+  const session = await requireAccess("orders");
+  const { getOrder } = await import("@/lib/api");
+  const order = await getOrder(orderId);
+  if (!order) return { ok: false, message: "Parcel not found." };
+  if (session.role === "seller" && order.store !== session.store) {
+    return { ok: false, message: "You can only manage your own store's parcels." };
+  }
+  const fields: Pick<Order, "paymentStatus" | "paidAt"> = paid
+    ? { paymentStatus: "paid", paidAt: new Date().toISOString() }
+    : { paymentStatus: order.payment === "cod" ? "on_delivery" : "awaiting", paidAt: undefined };
+
+  const result = await updateOrderPaymentInSupabase(orderId, fields);
+  if (result === "missing-column") {
+    return { ok: false, message: "Payment marks need a database update — run supabase/migration-shop-payments.sql." };
+  }
+  if (result === "error") {
+    if (useSupabaseMutations()) return { ok: false, message: "Couldn't save — please try again." };
+    await mutateDB((db) => {
+      db.orderPayment = db.orderPayment ?? {};
+      db.orderPayment[orderId] = fields;
+    });
+  }
+  await logActivity(order.store, "order.payment", `${paid ? "Marked" : "Unmarked"} order ${orderId} as paid`, orderId);
+  refresh();
+  return { ok: true, message: paid ? "Marked as paid. The customer sees it on their tracking page." : "Payment mark removed." };
+}
+
 export async function setOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   const session = await requireAccess("orders");
   // Sellers may only manage orders of their own store.
@@ -1843,14 +1902,16 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
     }
   }
 
+  const { getOrder } = await import("@/lib/api");
+  const before = await getOrder(orderId);
   const supabaseOk = await setOrderStatusInSupabase(orderId, status);
   if (!supabaseOk) {
     await mutateDB((db) => {
       db.orderStatus[orderId] = status;
     });
   }
+  if (before) await syncStockForStatus(before, status);
   {
-    const { getOrder } = await import("@/lib/api");
     const order = await getOrder(orderId);
     await logActivity(order?.store ?? "platform", "order.status", `Marked order ${orderId} as ${status}`, orderId);
   }
@@ -2633,6 +2694,8 @@ export interface ResolvedParcel {
   /** The vendor's own order id, e.g. "BM-12345-KARA". */
   orderId: string;
   subtotal: number;
+  /** Which of this shop's methods the customer pays it with (lib/shop-payments.ts). */
+  payTo?: ShopPaymentMethod;
   lines: {
     name: string;
     qty: number;
@@ -2840,6 +2903,9 @@ export async function submitOrderAction(payload: {
       storeItems.reduce((acc, i) => acc + i.charged.reduce((t, c) => t + c.price * c.qty, 0), 0);
     const store = storesBySlug.get(storeSlug);
     const parcelId = orderIds.get(storeSlug) ?? id;
+    // The customer picked one way to pay for the basket; this shop is paid
+    // that way if it takes it, else the way checkout already told them.
+    const payTo = resolvePayment(store, payload.paymentMethod);
 
     const orderRecord: Order = {
       id: parcelId,
@@ -2879,6 +2945,8 @@ export async function submitOrderAction(payload: {
         })),
       ),
       status: "pending",
+      payment: payTo.kind,
+      paymentStatus: initialStatus(payTo),
     };
 
     if (useSupabaseMutations()) {
@@ -2897,6 +2965,7 @@ export async function submitOrderAction(payload: {
       whatsapp: store?.whatsapp,
       orderId: parcelId,
       subtotal: storeSubtotal,
+      payTo,
       lines: storeItems.flatMap((i) =>
         i.charged.map((c) => ({
           name: i.name,
@@ -3162,6 +3231,8 @@ export interface OrderParcel {
   storeIcon: string;
   storeLogo?: string;
   storeWhatsapp?: string;
+  /** The shop's method this parcel is paid with, with its CURRENT number. */
+  payTo?: ShopPaymentMethod;
 }
 
 /**
@@ -3189,6 +3260,11 @@ export async function getOrderParcelsAction(orderId: string): Promise<OrderParce
         storeIcon: store?.icon ?? "🏪",
         storeLogo: store?.logo,
         storeWhatsapp: store?.whatsapp,
+        // Read from the shop now, not copied onto the order: a shop that
+        // changes its number should not leave customers paying the old one.
+        payTo: order.payment
+          ? acceptedMethods(store).find((m) => m.kind === order.payment) ?? { kind: order.payment as ShopPaymentMethod["kind"] }
+          : undefined,
       };
     })
     // Stable order so parcels don't shuffle between refreshes.

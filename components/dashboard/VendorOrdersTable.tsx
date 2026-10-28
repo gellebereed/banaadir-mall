@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import ParcelDispatch from "@/components/dashboard/ParcelDispatch";
+import ParcelPayment from "@/components/dashboard/ParcelPayment";
+import { kindInfo, type ShopPaymentMethod } from "@/lib/shop-payments";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { telLink } from "@/lib/delivery";
 import { money, shortDate } from "@/lib/format";
@@ -17,6 +19,7 @@ interface ExtendedOrderRow extends Order {
 const TABS: { id: string; label: string; icon: string }[] = [
   { id: "todo", label: "To do", icon: "⏳" },
   { id: "all", label: "All", icon: "📋" },
+  { id: "unpaid", label: "Awaiting payment", icon: "💳" },
   { id: "pending", label: "Order placed", icon: "🧾" },
   { id: "processing", label: "Being packed", icon: "📦" },
   { id: "shipped", label: "On the way", icon: "🚚" },
@@ -25,6 +28,7 @@ const TABS: { id: string; label: string; icon: string }[] = [
 ];
 
 const isTodo = (o: Order) => o.status === "pending" || o.status === "processing";
+const isUnpaid = (o: Order) => o.paymentStatus === "awaiting" && o.status !== "cancelled";
 
 /**
  * The seller's parcels: a table on a computer, cards on a phone — where a
@@ -39,11 +43,16 @@ export default function VendorOrdersTable({
   newIds,
   mayManage,
   savedCouriers,
+  storeName,
+  paymentMethods,
 }: {
   rows: ExtendedOrderRow[];
   newIds: string[];
   mayManage: boolean;
   savedCouriers: Courier[];
+  storeName: string;
+  /** This shop's saved numbers — the WhatsApp button asks for payment on them. */
+  paymentMethods: ShopPaymentMethod[];
 }) {
   const todoCount = rows.filter(isTodo).length;
   const [activeTab, setActiveTab] = useState<string>(todoCount > 0 ? "todo" : "all");
@@ -51,11 +60,18 @@ export default function VendorOrdersTable({
   const newIdSet = new Set(newIds);
 
   const countFor = (id: string) =>
-    id === "all" ? rows.length : id === "todo" ? todoCount : rows.filter((r) => r.status === id).length;
+    id === "all"
+      ? rows.length
+      : id === "todo"
+        ? todoCount
+        : id === "unpaid"
+          ? rows.filter(isUnpaid).length
+          : rows.filter((r) => r.status === id).length;
 
   const filteredRows = rows.filter((r) => {
     if (activeTab === "todo" && !isTodo(r)) return false;
-    if (activeTab !== "all" && activeTab !== "todo" && r.status !== activeTab) return false;
+    if (activeTab === "unpaid" && !isUnpaid(r)) return false;
+    if (!["all", "todo", "unpaid"].includes(activeTab) && r.status !== activeTab) return false;
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
     const digits = q.replace(/\D/g, "");
@@ -68,6 +84,22 @@ export default function VendorOrdersTable({
     );
   });
 
+  /*
+   * The first message to a customer who still has to pay says how: the
+   * amount and the shop's number for the method they picked. That is the
+   * "the shop contacts you" step, without the seller retyping a number
+   * into every chat.
+   */
+  const greeting = (o: Order) => {
+    const hello = `Hello ${o.customer.split(" ")[0]}, this is ${storeName} about your Banaadir Mall order ${o.id}.`;
+    const method = paymentMethods.find((m) => m.kind === o.payment);
+    if (o.paymentStatus !== "awaiting" || !method?.number) return hello;
+    return (
+      `${hello} Please send ${money(o.total)} by ${kindInfo(method.kind)?.label} to ${method.number}` +
+      `${method.accountName ? ` (${method.accountName})` : ""}, then reply here. Thank you!`
+    );
+  };
+
   const contact = (o: Order) =>
     o.phone ? (
       <span className="flex flex-wrap gap-1.5">
@@ -75,7 +107,7 @@ export default function VendorOrdersTable({
           📞 {formatWhatsAppNumber(o.phone)}
         </a>
         <a
-          href={whatsappLink(o.phone, `Hello ${o.customer.split(" ")[0]}, this is about your Banaadir Mall order ${o.id}.`)}
+          href={whatsappLink(o.phone, greeting(o))}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
@@ -99,19 +131,23 @@ export default function VendorOrdersTable({
     </ul>
   );
 
-  const control = (o: ExtendedOrderRow) =>
-    mayManage ? (
-      <ParcelDispatch order={o} savedCouriers={savedCouriers} />
-    ) : (
-      <div className="space-y-1">
-        <StatusBadge status={o.status} />
-        {o.delivery?.courier && (
-          <p className="text-[11px] text-slate-500">
-            🚚 {o.delivery.courier.name} · {formatWhatsAppNumber(o.delivery.courier.phone)}
-          </p>
-        )}
-      </div>
-    );
+  const control = (o: ExtendedOrderRow) => (
+    <div className="space-y-2">
+      <ParcelPayment order={o} mayManage={mayManage} />
+      {mayManage ? (
+        <ParcelDispatch order={o} savedCouriers={savedCouriers} />
+      ) : (
+        <div className="space-y-1">
+          <StatusBadge status={o.status} />
+          {o.delivery?.courier && (
+            <p className="text-[11px] text-slate-500">
+              🚚 {o.delivery.courier.name} · {formatWhatsAppNumber(o.delivery.courier.phone)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="mt-5 space-y-4">
@@ -152,7 +188,11 @@ export default function VendorOrdersTable({
 
       {filteredRows.length === 0 ? (
         <div className="card p-10 text-center text-sm text-slate-500">
-          {activeTab === "todo" ? "🎉 Nothing waiting — every parcel is on its way or delivered." : "No orders match."}
+          {activeTab === "todo"
+            ? "🎉 Nothing waiting — every parcel is on its way or delivered."
+            : activeTab === "unpaid"
+              ? "🎉 Every parcel is paid for."
+              : "No orders match."}
         </div>
       ) : (
         <>

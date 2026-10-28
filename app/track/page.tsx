@@ -426,6 +426,8 @@ function TrackContent() {
                         index={i + 1}
                         total={parcels.length}
                         sharedWith={sharedWith(p.order.store)}
+                        payTo={p.payTo}
+                        storeWhatsapp={p.storeWhatsapp}
                       />
                     ))
                   : storeEntries.map(([storeSlug, storeItems], i) => {

@@ -3,6 +3,7 @@
 import { useT } from "@/components/prefs/PrefsProvider";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
+import PayShopPanel from "@/components/checkout/PayShopPanel";
 import OrderProgress, { LiveIndicator } from "@/components/track/OrderProgress";
 import { money } from "@/lib/format";
 import { useLiveOrder } from "@/lib/use-live-order";
@@ -129,6 +130,21 @@ export default function OrderVendorSections({
                 highlight={changed}
               />
             </div>
+
+            {/* How to pay this shop, until it marks the parcel paid. */}
+            {parcel?.payTo && parcel.order.paymentStatus && status !== "cancelled" && (
+              <div className="mb-3">
+                <PayShopPanel
+                  storeName={displayName}
+                  storeWhatsapp={parcel.storeWhatsapp}
+                  orderId={parcel.order.id}
+                  customerName={parcel.order.customer}
+                  amount={parcel.order.total}
+                  method={parcel.payTo}
+                  status={parcel.order.paymentStatus}
+                />
+              </div>
+            )}
 
             {/* Driver details, once the shop has handed the parcel over. */}
             {parcel?.order.delivery?.courier && (

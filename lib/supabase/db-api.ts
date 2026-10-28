@@ -162,6 +162,9 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // order notifications without the seller re-typing it.
       whatsapp: s.whatsapp || s.phone || undefined,
       couriers: Array.isArray(s.couriers) ? s.couriers : [],
+      // Added by supabase/migration-shop-payments.sql. Absent means cash on
+      // delivery only (lib/shop-payments.ts acceptedMethods).
+      paymentMethods: Array.isArray(s.payment_methods) ? s.payment_methods : [],
       // Absent until supabase/migration-pos.sql is applied, and absent
       // means OFF — a marketplace does not switch a till on for every
       // shop in it because a column is missing.
@@ -383,6 +386,9 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
       // which is what every order placed before the till existed was.
       channel: (o.channel as Order["channel"]) || undefined,
       payment: (o.payment as Order["payment"]) || undefined,
+      // Added by supabase/migration-shop-payments.sql.
+      paymentStatus: (o.payment_status as Order["paymentStatus"]) || undefined,
+      paidAt: o.paid_at || undefined,
     }));
   } catch {
     return null;

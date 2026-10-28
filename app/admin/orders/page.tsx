@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import OrderStatusSelect from "@/components/dashboard/OrderStatusSelect";
+import ParcelPayment from "@/components/dashboard/ParcelPayment";
 import { getOrders, getStores } from "@/lib/api";
 import { money, shortDate } from "@/lib/format";
 import { applyFilters, inRange, needsAttention, readFilters, STATUSES, type OrderFilters } from "./filters";
@@ -87,7 +88,7 @@ export default async function AdminOrdersPage({
           { label: "Orders", value: String(live.length), note: `${ranged.length - live.length} cancelled` },
           { label: "Revenue", value: money(revenue), note: "excluding cancelled" },
           { label: "Average order", value: live.length ? money(revenue / live.length) : "—" },
-          { label: "Needs attention", value: String(attention), note: "waiting 2+ days, or no driver", warn: attention > 0 },
+          { label: "Needs attention", value: String(attention), note: "waiting 2+ days, unpaid 48h+, or no driver", warn: attention > 0 },
         ].map((tile) => (
           <div key={tile.label} className={`card p-4 ${tile.warn ? "ring-1 ring-amber-300" : ""}`}>
             <p className="text-xs font-medium text-slate-500">{tile.label}</p>
@@ -210,6 +211,10 @@ export default async function AdminOrdersPage({
                   <td className="whitespace-nowrap px-4 py-3 font-semibold">{money(o.total)}</td>
                   <td className="px-4 py-3">
                     <OrderStatusSelect orderId={o.id} status={o.status} />
+                    {/* Read-only here: only the shop knows whether its customer paid. */}
+                    <div className="mt-1.5">
+                      <ParcelPayment order={o} mayManage={false} />
+                    </div>
                   </td>
                 </tr>
               );

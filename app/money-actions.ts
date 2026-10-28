@@ -14,6 +14,7 @@ import { addPayoutRecord, deletePayoutRecord, PAYOUT_METHODS, savePayoutAccount 
 import { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } from "@/lib/rate-limit";
 import { clearSessionCookie, getSession } from "@/lib/session";
 import { money } from "@/lib/format";
+import { cleanMethods, kindInfo } from "@/lib/shop-payments";
 
 export interface MoneyState {
   ok?: string;
@@ -58,6 +59,57 @@ export async function savePayoutDetails(_prev: MoneyState, formData: FormData): 
   return { ok: "Saved. Future payouts go here." };
 }
 
+// ── Where customers pay the shop ───────────────────────────────────────
+
+/**
+ * The numbers customers send money to (lib/shop-payments.ts).
+ *
+ * Owner only, for the same reason as payout details: swapping the shop's
+ * EVC number for your own is the one edit that quietly redirects every
+ * customer's money. Each change is logged with the methods (not the
+ * numbers), so an owner can see when it happened and by whom.
+ */
+export async function savePaymentMethods(_prev: MoneyState, formData: FormData): Promise<MoneyState> {
+  const session = await getSession();
+  if (!session || session.role !== "seller" || session.access || !session.store) {
+    return { error: "Only the store owner can change where customers pay." };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get("methodsJson") ?? "[]"));
+  } catch {
+    return { error: "Couldn't read the payment methods — nothing was saved." };
+  }
+  const cleaned = cleanMethods(raw);
+  if ("error" in cleaned) return { error: cleaned.error };
+  if (cleaned.methods.length === 0) {
+    return { error: "Keep at least one way to pay — customers can't order from a shop that takes nothing." };
+  }
+
+  const { updateStorePaymentMethodsInSupabase, useSupabaseMutations } = await import("@/lib/supabase/mutations");
+  if (useSupabaseMutations()) {
+    const result = await updateStorePaymentMethodsInSupabase(session.store, cleaned.methods);
+    if (result === "missing-column") {
+      return { error: "Payment methods need a database update — ask the marketplace admin to run supabase/migration-shop-payments.sql." };
+    }
+    if (result === "error") return { error: "Couldn't save — please try again." };
+  } else {
+    const { mutateDB } = await import("@/lib/db");
+    const store = session.store;
+    await mutateDB((db) => {
+      db.storeOverrides[store] = { ...db.storeOverrides[store], paymentMethods: cleaned.methods };
+    });
+  }
+  await logActivity(
+    session.store,
+    "store.payments",
+    `Changed how customers pay: ${cleaned.methods.map((m) => kindInfo(m.kind)?.label ?? m.kind).join(", ")}`,
+  );
+  revalidatePath("/vendor/settings");
+  revalidatePath("/checkout");
+  return { ok: "Saved. Customers will see these at checkout." };
+}
+
 // ── The admin records a payment ────────────────────────────────────────
 
 async function requirePayoutAdmin() {
@@ -78,16 +130,21 @@ export async function recordPayout(_prev: MoneyState, formData: FormData): Promi
   const method = String(formData.get("method") ?? "").trim();
   const reference = String(formData.get("reference") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
+  // Commission a shop sends us, for orders its customers paid it directly
+  // (lib/payouts.ts) — kept in the same ledger as a negative amount.
+  const fromStore = formData.get("direction") === "from_store";
 
   if (!store || !/^\d{4}-\d{2}$/.test(period)) return { error: "Missing store or month." };
-  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter the amount you sent." };
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: fromStore ? "Enter the amount the store sent." : "Enter the amount you sent." };
+  }
 
   try {
     await addPayoutRecord({
       id: `pay-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       store,
       period,
-      amount,
+      amount: fromStore ? -amount : amount,
       method: method || undefined,
       reference: reference || undefined,
       note: note || undefined,
@@ -100,12 +157,12 @@ export async function recordPayout(_prev: MoneyState, formData: FormData): Promi
   await logActivity(
     store,
     "payout.record",
-    `Recorded a payout of ${money(amount)} for ${period}${method ? ` via ${method}` : ""}${reference ? ` (ref ${reference})` : ""}`,
+    `${fromStore ? "Recorded commission received" : "Recorded a payout"} of ${money(amount)} for ${period}${method ? ` via ${method}` : ""}${reference ? ` (ref ${reference})` : ""}`,
     period,
   );
   revalidatePath("/admin/payouts");
   revalidatePath("/vendor/payouts");
-  return { ok: `Recorded ${money(amount)}.` };
+  return { ok: fromStore ? `Recorded ${money(amount)} received.` : `Recorded ${money(amount)}.` };
 }
 
 export async function removePayout(id: string): Promise<MoneyState> {
@@ -117,7 +174,7 @@ export async function removePayout(id: string): Promise<MoneyState> {
       await logActivity(
         removed.store,
         "payout.delete",
-        `Deleted a recorded payout of ${money(removed.amount)} for ${removed.period}`,
+        `Deleted a recorded ${removed.amount < 0 ? "commission receipt" : "payout"} of ${money(Math.abs(removed.amount))} for ${removed.period}`,
         removed.period,
       );
     }

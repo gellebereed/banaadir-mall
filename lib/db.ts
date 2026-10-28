@@ -65,6 +65,8 @@ export interface DB {
    * db.json without it still loads.
    */
   orderDelivery?: Record<string, Pick<Order, "delivery" | "timeline">>;
+  /** Payment marks per order id, for the local-dev path (lib/shop-payments.ts). */
+  orderPayment?: Record<string, Pick<Order, "paymentStatus" | "paidAt">>;
   /** orderId → ISO timestamp the seller first opened it (unread badge). */
   ordersSeen?: Record<string, string>;
   /** Status overrides per store slug (approve / reject / suspend). */
