@@ -84,6 +84,24 @@ body {
   mix-blend-mode: overlay;
 }
 
+/* The brand hero slide's backdrop: the arcade of a market hall — a row of
+   arches, each with a warm lamp at its crown — fading up into the dark.
+   Inline SVG, so like the grain it costs no request. */
+.scene-arcade {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='300'%3E%3Cg fill='none' stroke='%23fff' stroke-width='1.2'%3E%3Cpath stroke-opacity='.55' d='M14 300V112a56 56 0 0 1 112 0v188'/%3E%3Cpath stroke-opacity='.22' d='M26 300V116a44 44 0 0 1 88 0v184'/%3E%3Cpath stroke-opacity='.22' d='M0 300V40M140 300V40'/%3E%3C/g%3E%3Ccircle cx='70' cy='86' r='2.5' fill='%23ffc25e'/%3E%3Ccircle cx='70' cy='86' r='9' fill='%23ffc25e' fill-opacity='.18'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: center bottom;
+  background-size: 120px 257px;
+  opacity: 0.16;
+  -webkit-mask-image: linear-gradient(to top, #000 15%, transparent 90%);
+  mask-image: linear-gradient(to top, #000 15%, transparent 90%);
+}
+@media (min-width: 1024px) {
+  .scene-arcade {
+    background-size: 170px 364px;
+  }
+}
+
 /* ── Feeling like an app rather than a web page ────────────────────────
  *
  * Small, boring rules. Together they remove most of what makes a site

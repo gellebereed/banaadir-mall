@@ -12,10 +12,12 @@ import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import CampaignTiles from "@/components/home/CampaignTiles";
+import HeroBrandArt from "@/components/home/HeroBrandArt";
 import { campaignPath, isScheduledLive, SALE_CAMPAIGN_ID, shopDay } from "@/lib/campaign-utils";
 import { PALETTES } from "@/lib/scenes";
 import { getCampaigns, homeEligible, MAX_TILES, planHero, planTiles, type Campaign } from "@/lib/campaigns";
 import { discountPct, money } from "@/lib/format";
+import { primaryImage } from "@/lib/product-utils";
 import { getSession } from "@/lib/session";
 import { getLang, getT } from "@/lib/prefs-server";
 import { localizeMarketing } from "@/lib/marketing-copy";
@@ -90,28 +92,27 @@ export default async function HomePage() {
   const campaigns = homeEligible(await getCampaigns(t), marketing);
   const campaignTiles = planTiles(marketing, campaigns, activeTiles.length);
 
-  // Select 1 real product from each of 4 distinct stores for the Hero section
+  // The brand slide's shop window (HeroBrandArt): one product from each of
+  // up to four shops, those with a photo first and the best sellers first
+  // among them — a placeholder icon is the one thing that window must not
+  // show while a photographed product exists.
   const heroProducts: Product[] = [];
   const seenStores = new Set<string>();
-  const targetStores = ["karaca-home", "us-polo-assn", "altinyildiz-classics", "ozdilek-home"];
-
-  for (const slug of targetStores) {
-    const p = allProducts.find((item) => item.store === slug);
-    if (p) {
-      heroProducts.push(p);
-      seenStores.add(p.store);
-    }
+  const byAppeal = [...allProducts].sort(
+    (a, b) => Number(Boolean(primaryImage(b))) - Number(Boolean(primaryImage(a))) || (b.sold ?? 0) - (a.sold ?? 0),
+  );
+  for (const p of byAppeal) {
+    if (seenStores.has(p.store)) continue;
+    heroProducts.push(p);
+    seenStores.add(p.store);
+    if (heroProducts.length === 4) break;
   }
-
-  if (heroProducts.length < 4) {
-    for (const p of allProducts) {
-      if (!seenStores.has(p.store)) {
-        heroProducts.push(p);
-        seenStores.add(p.store);
-        if (heroProducts.length === 4) break;
-      }
-    }
+  // Fewer than three shops: fill the window from the same shops instead.
+  for (const p of byAppeal) {
+    if (heroProducts.length >= 3) break;
+    if (!heroProducts.includes(p)) heroProducts.push(p);
   }
+  const storeNames = new Map(stores.map((s) => [s.slug, s.name]));
 
   /*
    * ── The hero's slides ────────────────────────────────────────────────
@@ -210,13 +211,21 @@ export default async function HomePage() {
             // The headline is written as two lines in the admin form; the hero
             // wraps it itself, so they are joined with a space rather than a
             // <br> that would break awkwardly on a narrow phone.
-            title: [marketing.heroTitleTop, marketing.heroTitleHighlight].filter(Boolean).join(" "),
+            title: marketing.heroTitleTop || marketing.heroTitleHighlight,
+            highlight: marketing.heroTitleTop ? marketing.heroTitleHighlight : undefined,
             subtitle: marketing.heroSubtitle,
             // Sellers have their own band lower down and in the footer; here a
             // second button only competed with shopping for every visitor.
             cta: t("home.startShopping"),
             ...PALETTES.ocean,
             brand: true,
+            visual: (
+              <HeroBrandArt
+                products={heroProducts}
+                storeNames={storeNames}
+                badges={[deliveryLine(marketing.delivery, t), "EVC Plus · Zaad · eDahab"]}
+              />
+            ),
           },
         ];
       case "banner": {
@@ -381,10 +390,7 @@ export default async function HomePage() {
       <h1 className="sr-only">Banaadir Mall — online shopping from trusted Somali stores</h1>
       {firstName && <WelcomeStrip name={firstName} order={myOrder} t={t} />}
 
-      <HeroCarousel
-        slides={heroSlides}
-        brandDecoration={<HeroProductCards products={heroProducts} />}
-      />
+      <HeroCarousel slides={heroSlides} />
       {marketing.campaign.active && (marketing.campaign.stores?.length ?? 0) > 0 && (
         <CampaignBanner campaign={marketing.campaign} />
       )}
@@ -515,82 +521,6 @@ function BrandWall({ brands }: { brands: Store[] }) {
         </Link>
       ))}
     </div>
-  );
-}
-
-function shortHeroTitle(name: string): string {
-  if (!name) return "";
-  // Remove duplicate words like "Slim Fit Slim Fit"
-  const clean = name.replace(/\b(\w+)\s+\1\b/gi, "$1").trim();
-  if (clean.toLowerCase().includes("hatır")) return "Hatır Coffee Maker";
-  if (clean.toLowerCase().includes("polo")) return "Classic Polo Shirt";
-  if (clean.toLowerCase().includes("suit")) return "Slim Fit Wool Suit";
-  if (clean.toLowerCase().includes("towel") || clean.toLowerCase().includes("rose") || clean.toLowerCase().includes("duvet"))
-    return "Rose Bamboo Duvet Set";
-
-  const words = clean.split(/\s+/);
-  return words.slice(0, 3).join(" ");
-}
-
-function shortStoreName(store: string): string {
-  const s = store.toLowerCase();
-  if (s.includes("karaca")) return "KARACA";
-  if (s.includes("polo")) return "U.S. POLO";
-  if (s.includes("altinyildiz")) return "ALTINYILDIZ";
-  if (s.includes("ozdilek")) return "ÖZDILEK";
-  return store.replace(/-/g, " ").toUpperCase();
-}
-
-/**
- * The floating product cards on the hero's brand slide.
- *
- * All that survives of the old standalone hero, and deliberately so: they
- * are real products at real prices, drifting over the gradient, which does
- * more for a marketplace's credibility than any stock photograph. They stay
- * `lg` and up — on a phone they would sit on top of the headline, which is
- * exactly why the reference app shows a photograph there instead.
- */
-function HeroProductCards({ products }: { products: Product[] }) {
-  const cardPositions = [
-    { cls: "left-0 top-1", delay: "0s" },
-    { cls: "right-0 top-16", delay: "0.8s" },
-    { cls: "left-4 bottom-2", delay: "1.6s" },
-    { cls: "right-0 bottom-20", delay: "2.4s" },
-  ];
-
-  return (
-    <>
-      {products.map((p, idx) => {
-        const pos = cardPositions[idx % cardPositions.length];
-
-        return (
-          <Link
-            key={p.id}
-            href={`/product/${p.slug}`}
-            className={`animate-float absolute ${pos.cls} group z-10 flex w-52 items-center gap-3 rounded-2xl bg-white/95 p-2.5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80`}
-            style={{ animationDelay: pos.delay }}
-          >
-            <ProductImage
-              product={p}
-              sizes="44px"
-              className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
-            />
-            <div className="min-w-0 flex-1">
-              <span className="inline-block truncate rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900">
-                {shortStoreName(p.store)}
-              </span>
-              <p className="truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
-                {shortHeroTitle(p.name)}
-              </p>
-              <p className="font-display text-xs font-extrabold text-ocean-950">
-                {money(p.price)}
-              </p>
-            </div>
-          </Link>
-        );
-      })}
-      <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
-    </>
   );
 }
 
@@ -824,16 +754,20 @@ function budgetPicks(products: Product[]): BudgetBand[] {
  * arguments on the page, arriving after the shopper had already decided
  * whether to scroll. Swipes sideways on a phone rather than wrapping.
  */
+/** The delivery promise in one line — the trust strip's and the hero's. */
+function deliveryLine(delivery: MarketingSettings["delivery"], t: T): string {
+  return delivery.freeThreshold > 0
+    ? t("trust.freeOver", { amount: money(delivery.freeThreshold) })
+    : delivery.estimate
+      ? t("trust.delivery", { estimate: delivery.estimate })
+      : t("trust.fast");
+}
+
 function TrustStrip({ delivery, t }: { delivery: MarketingSettings["delivery"]; t: T }) {
   const items = [
     {
       icon: "🚚",
-      text:
-        delivery.freeThreshold > 0
-          ? t("trust.freeOver", { amount: money(delivery.freeThreshold) })
-          : delivery.estimate
-            ? t("trust.delivery", { estimate: delivery.estimate })
-            : t("trust.fast"),
+      text: deliveryLine(delivery, t),
     },
     { icon: "📲", text: "EVC Plus · Zaad · eDahab" },
     { icon: "💵", text: t("trust.cod") },
