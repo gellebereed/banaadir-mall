@@ -289,6 +289,20 @@ body {
   animation: marquee 25s linear infinite;
 }
 
+/* The bar across the top while the next page loads
+   (components/layout/NavigationProgress). It races to a third at once — so
+   the tap visibly registered — then creeps, never quite reaching the end
+   until the page has actually arrived. */
+@keyframes nav-progress {
+  0% { width: 0%; }
+  10% { width: 35%; }
+  50% { width: 70%; }
+  100% { width: 92%; }
+}
+.animate-nav-progress {
+  animation: nav-progress 8s cubic-bezier(0.1, 0.7, 0.2, 1) both;
+}
+
 /* Cart / wishlist confirmation cards */
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(14px) scale(0.97); }
