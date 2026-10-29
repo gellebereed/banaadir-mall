@@ -56,17 +56,38 @@ const PAGE_SIZE = 1000;
 async function fetchAllRows<T>(
   query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
 ): Promise<T[] | null> {
-  const rows: T[] = [];
-  for (let page = 0; ; page++) {
-    const from = page * PAGE_SIZE;
+  const page = async (n: number) => {
+    const from = n * PAGE_SIZE;
     const { data, error } = await query(from, from + PAGE_SIZE - 1);
-    if (error || !data) return null;
-    rows.push(...data);
-    if (data.length < PAGE_SIZE) return rows;
+    return error || !data ? null : data;
+  };
+
+  // Most tables fit in one page, so the first is asked for alone.
+  const first = await page(0);
+  if (!first) return null;
+  const rows: T[] = [...first];
+  if (first.length < PAGE_SIZE) return rows;
+
+  /*
+   * ── The rest in parallel, a few pages at a time ─────────────────────────
+   * Paging one request after another made the products table (3,000+ rows)
+   * cost four round trips in a row — about 1.3 s from the Netlify servers
+   * to the database, paid on every page that reads the catalogue. Asking
+   * for the next pages together makes it two. Pages are still appended in
+   * order, and the first short (or empty) page still ends the read.
+   */
+  const BATCH = 4;
+  for (let next = 1; ; next += BATCH) {
+    const batch = await Promise.all(Array.from({ length: BATCH }, (_, i) => page(next + i)));
+    for (const data of batch) {
+      if (!data) return null;
+      rows.push(...data);
+      if (data.length < PAGE_SIZE) return rows;
+    }
 
     // A table that never returns a short page would loop forever. Far more
     // rows than this marketplace will hold, and still a bounded loop.
-    if (page > 200) {
+    if (next > 200) {
       console.warn("[Supabase] stopped paging after 200 pages — is a table unbounded?");
       return rows;
     }
@@ -650,9 +671,9 @@ export const fetchCategoriesFromSupabase = cached(
  * is cross-request reuse, which had never once worked here.
  *
  * The smaller tables below keep the data cache; they are nowhere near the
- * limit. `revalidateTag(CACHE_TAGS.products)` stays harmless — it is a
- * no-op against a tag nothing stores under, and it keeps the refresh path
- * uniform for whenever this table is read a page at a time instead.
+ * limit. `revalidateTag(CACHE_TAGS.products)` is NOT a no-op: the small
+ * summaries derived from this table are cached under it (getStockedShelves
+ * in lib/api.ts, which the root layout reads on every page).
  */
 export const fetchProductsFromSupabase = perRequest(fetchProductsFromSupabaseRaw);
 

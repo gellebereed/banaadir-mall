@@ -20,6 +20,7 @@ import ShopChrome from "@/components/layout/ShopChrome";
 import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
+import NavigationProgress from "@/components/layout/NavigationProgress";
 import Toaster from "@/components/Toaster";
 import { isIndexableDeploy, siteOrigin } from "@/lib/request-origin";
 import "./globals.css";
@@ -152,6 +153,7 @@ export default async function RootLayout({
           {/* useSearchParams needs a Suspense boundary during prerender. */}
           <Suspense fallback={null}>
             <ScrollToTop />
+            <NavigationProgress />
           </Suspense>
           {onStoreSite ? (
             <StoreSiteHeader store={siteStore!} />
