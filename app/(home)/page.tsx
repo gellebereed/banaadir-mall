@@ -11,13 +11,11 @@ import SectionHeader from "@/components/SectionHeader";
 import StoreAvatar from "@/components/StoreAvatar";
 import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
-import HeroShowcase from "@/components/home/HeroShowcase";
 import CampaignTiles from "@/components/home/CampaignTiles";
 import { campaignPath, isScheduledLive, SALE_CAMPAIGN_ID, shopDay } from "@/lib/campaign-utils";
 import { PALETTES } from "@/lib/scenes";
 import { getCampaigns, homeEligible, MAX_TILES, planHero, planTiles, type Campaign } from "@/lib/campaigns";
 import { discountPct, money } from "@/lib/format";
-import { primaryImage } from "@/lib/product-utils";
 import { getSession } from "@/lib/session";
 import { getLang, getT } from "@/lib/prefs-server";
 import { localizeMarketing } from "@/lib/marketing-copy";
@@ -25,6 +23,7 @@ import { RAIL_CARD } from "@/lib/card-sizes";
 import type { T } from "@/lib/i18n";
 import {
   getBestsellers,
+  getCategories,
   getFlashDeal,
   getFlashProducts,
   getListedStores,
@@ -32,7 +31,6 @@ import {
   getMarketplaceProducts,
   getNewArrivals,
   getOrders,
-  getShopperCategories,
 } from "@/lib/api";
 import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib/types";
 import type { Metadata } from "next";
@@ -53,7 +51,7 @@ export const metadata: Metadata = { alternates: { canonical: "/" } };
 export default async function HomePage() {
   const [categories, flashProducts, flash, bestsellers, newArrivals, stores, rawMarketing, allProducts] =
     await Promise.all([
-      getShopperCategories(),
+      getCategories(),
       getFlashProducts(),
       getFlashDeal(),
       getBestsellers(),
@@ -92,8 +90,28 @@ export default async function HomePage() {
   const campaigns = homeEligible(await getCampaigns(t), marketing);
   const campaignTiles = planTiles(marketing, campaigns, activeTiles.length);
 
-  // The product wall on the hero's first slide (HeroShowcase).
-  const showcase = showcaseProducts(allProducts);
+  // Select 1 real product from each of 4 distinct stores for the Hero section
+  const heroProducts: Product[] = [];
+  const seenStores = new Set<string>();
+  const targetStores = ["karaca-home", "us-polo-assn", "altinyildiz-classics", "ozdilek-home"];
+
+  for (const slug of targetStores) {
+    const p = allProducts.find((item) => item.store === slug);
+    if (p) {
+      heroProducts.push(p);
+      seenStores.add(p.store);
+    }
+  }
+
+  if (heroProducts.length < 4) {
+    for (const p of allProducts) {
+      if (!seenStores.has(p.store)) {
+        heroProducts.push(p);
+        seenStores.add(p.store);
+        if (heroProducts.length === 4) break;
+      }
+    }
+  }
 
   /*
    * ── The hero's slides ────────────────────────────────────────────────
@@ -365,7 +383,7 @@ export default async function HomePage() {
 
       <HeroCarousel
         slides={heroSlides}
-        brandDecoration={<HeroShowcase products={showcase} />}
+        brandDecoration={<HeroProductCards products={heroProducts} />}
       />
       {marketing.campaign.active && (marketing.campaign.stores?.length ?? 0) > 0 && (
         <CampaignBanner campaign={marketing.campaign} />
@@ -500,33 +518,80 @@ function BrandWall({ brands }: { brands: Store[] }) {
   );
 }
 
-/**
- * Up to fifteen products for the hero's product wall: one per category
- * within a shop, featured first, and taken a shop at a time in turn so no
- * single shop's range fills the wall. Real photographs only — unless there
- * are too few of them, when the generated artwork tops the wall up.
- */
-function showcaseProducts(products: Product[], max = 15): Product[] {
-  const byStore = new Map<string, Product[]>();
-  const seen = new Set<string>();
-  const photographed = products.filter((p) => primaryImage(p));
-  const pool = photographed.length >= 10 ? photographed : [...photographed, ...products.filter((p) => !primaryImage(p))];
-  const ranked = [...pool].sort((x, y) => Number(Boolean(y.featured)) - Number(Boolean(x.featured)));
-  for (const p of ranked) {
-    const key = `${p.store}/${p.category}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    byStore.set(p.store, [...(byStore.get(p.store) ?? []), p]);
-  }
+function shortHeroTitle(name: string): string {
+  if (!name) return "";
+  // Remove duplicate words like "Slim Fit Slim Fit"
+  const clean = name.replace(/\b(\w+)\s+\1\b/gi, "$1").trim();
+  if (clean.toLowerCase().includes("hatır")) return "Hatır Coffee Maker";
+  if (clean.toLowerCase().includes("polo")) return "Classic Polo Shirt";
+  if (clean.toLowerCase().includes("suit")) return "Slim Fit Wool Suit";
+  if (clean.toLowerCase().includes("towel") || clean.toLowerCase().includes("rose") || clean.toLowerCase().includes("duvet"))
+    return "Rose Bamboo Duvet Set";
 
-  const picked: Product[] = [];
-  const queues = [...byStore.values()];
-  for (let round = 0; picked.length < max && queues.some((q) => q.length > round); round++) {
-    for (const queue of queues) {
-      if (queue[round] && picked.length < max) picked.push(queue[round]);
-    }
-  }
-  return picked;
+  const words = clean.split(/\s+/);
+  return words.slice(0, 3).join(" ");
+}
+
+function shortStoreName(store: string): string {
+  const s = store.toLowerCase();
+  if (s.includes("karaca")) return "KARACA";
+  if (s.includes("polo")) return "U.S. POLO";
+  if (s.includes("altinyildiz")) return "ALTINYILDIZ";
+  if (s.includes("ozdilek")) return "ÖZDILEK";
+  return store.replace(/-/g, " ").toUpperCase();
+}
+
+/**
+ * The floating product cards on the hero's brand slide.
+ *
+ * All that survives of the old standalone hero, and deliberately so: they
+ * are real products at real prices, drifting over the gradient, which does
+ * more for a marketplace's credibility than any stock photograph. They stay
+ * `lg` and up — on a phone they would sit on top of the headline, which is
+ * exactly why the reference app shows a photograph there instead.
+ */
+function HeroProductCards({ products }: { products: Product[] }) {
+  const cardPositions = [
+    { cls: "left-0 top-1", delay: "0s" },
+    { cls: "right-0 top-16", delay: "0.8s" },
+    { cls: "left-4 bottom-2", delay: "1.6s" },
+    { cls: "right-0 bottom-20", delay: "2.4s" },
+  ];
+
+  return (
+    <>
+      {products.map((p, idx) => {
+        const pos = cardPositions[idx % cardPositions.length];
+
+        return (
+          <Link
+            key={p.id}
+            href={`/product/${p.slug}`}
+            className={`animate-float absolute ${pos.cls} group z-10 flex w-52 items-center gap-3 rounded-2xl bg-white/95 p-2.5 shadow-2xl ring-1 ring-black/10 backdrop-blur-md transition duration-300 hover:scale-105 hover:bg-white hover:ring-mango-400/80`}
+            style={{ animationDelay: pos.delay }}
+          >
+            <ProductImage
+              product={p}
+              sizes="44px"
+              className="h-11 w-11 shrink-0 rounded-xl border border-sand-200 object-cover shadow-xs"
+            />
+            <div className="min-w-0 flex-1">
+              <span className="inline-block truncate rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-extrabold tracking-wider text-ocean-900">
+                {shortStoreName(p.store)}
+              </span>
+              <p className="truncate text-xs font-bold text-slate-800 group-hover:text-ocean-700">
+                {shortHeroTitle(p.name)}
+              </p>
+              <p className="font-display text-xs font-extrabold text-ocean-950">
+                {money(p.price)}
+              </p>
+            </div>
+          </Link>
+        );
+      })}
+      <div className="absolute inset-12 rounded-full bg-white/5 ring-1 ring-white/10" />
+    </>
+  );
 }
 
 /* ── Official brand stores ────────────────────────────────────────── */

@@ -281,54 +281,12 @@ body {
   animation: fade-up 0.6s ease-out both;
 }
 
-/* The product wall on the hero's first slide (components/home/HeroShowcase).
-   It fades into the scene where the headline sits: downwards on a phone,
-   leftwards on a computer. */
-.hero-wall {
-  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
-}
-@media (min-width: 640px) {
-  .hero-wall {
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 38%);
-    mask-image: linear-gradient(to right, transparent 0%, #000 38%);
-  }
-}
-/* Each column is its tiles three times over, so moving it by a third loops cleanly. */
-@keyframes hero-drift {
-  from { transform: translateY(0); }
-  to { transform: translateY(-33.3333%); }
-}
-.hero-drift {
-  animation: hero-drift 60s linear infinite;
-}
-.hero-drift-reverse {
-  animation-direction: reverse;
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-drift { animation: none; }
-}
-
 @keyframes marquee {
   0% { transform: translateX(0%); }
   100% { transform: translateX(-100%); }
 }
 .animate-marquee {
   animation: marquee 25s linear infinite;
-}
-
-/* The bar across the top while the next page loads
-   (components/layout/NavigationProgress). It races to a third at once — so
-   the tap visibly registered — then creeps, never quite reaching the end
-   until the page has actually arrived. */
-@keyframes nav-progress {
-  0% { width: 0%; }
-  10% { width: 35%; }
-  50% { width: 70%; }
-  100% { width: 92%; }
-}
-.animate-nav-progress {
-  animation: nav-progress 8s cubic-bezier(0.1, 0.7, 0.2, 1) both;
 }
 
 /* Cart / wishlist confirmation cards */

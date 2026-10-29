@@ -65,8 +65,8 @@ export interface HeroSlide {
   brand?: boolean;
   /**
    * A live-data slide's picture side — real products, brand logos — built
-   * on the server. It sits beside the copy (above it on phones), where the
-   * brand slide's product wall sits behind it.
+   * on the server. Unlike the brand decoration it shows on phones too, as a
+   * compact row above the copy.
    */
   visual?: ReactNode;
   /** Under the subtitle: the flash-deal countdown, in practice. */
@@ -77,7 +77,7 @@ const AUTOPLAY_MS = 6000;
 
 export default function HeroCarousel({
   slides,
-  /** Rendered full-bleed behind the brand slide's copy — the product wall (HeroShowcase). */
+  /** Rendered on the brand slide at lg and up — the floating product cards. */
   brandDecoration,
 }: {
   slides: HeroSlide[];
@@ -249,8 +249,6 @@ function HeroSlideView({
         </>
       )}
 
-      {decoration}
-
       {/*
         The scrim only exists to keep TEXT legible, so it only appears when
         there is text over artwork. A banner whose artwork already carries
@@ -280,12 +278,11 @@ function HeroSlideView({
           )}
 
           {slide.subtitle && (
-            // A slide with a picture side, a product wall or a countdown drops
-            // its subtitle on a phone — the frame there has room for one or
-            // the other.
+            // A slide with a picture side or a countdown drops its subtitle
+            // on a phone — the frame there has room for one or the other.
             <p
               className={`mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg ${
-                slide.below || slide.visual || decoration ? "hidden sm:block" : ""
+                slide.below || slide.visual ? "hidden sm:block" : ""
               }`}
             >
               {slide.subtitle}
@@ -315,6 +312,12 @@ function HeroSlideView({
 
         {slide.visual && (
           <div className="order-first lg:order-none">{slide.visual}</div>
+        )}
+
+        {decoration && (
+          <div className="relative mx-auto hidden h-[440px] w-full max-w-lg lg:block">
+            {decoration}
+          </div>
         )}
       </div>
 
