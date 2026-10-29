@@ -9,6 +9,8 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "./supabase/public-client";
 import { endedFlashProducts, flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal, type FlashPrice } from "./flash";
 import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
@@ -101,9 +103,49 @@ export async function getCategories(includeHidden = false): Promise<Category[]> 
  * getCategories() so a new, empty category can still be picked and filled.
  */
 export async function getShopperCategories(): Promise<Category[]> {
-  const [categories, products] = await Promise.all([getCategories(), getMarketplaceProducts()]);
-  return stockedCategories(categories, products);
+  const [categories, shelves, stores] = await Promise.all([
+    getCategories(),
+    getStockedShelves(),
+    getAllStores(),
+  ]);
+  const unlisted = new Set(
+    stores.filter((store) => !isListedOnMarketplace(store)).map((store) => store.slug),
+  );
+  return stockedCategories(categories, shelves.filter((shelf) => !unlisted.has(shelf.store)));
 }
+
+/**
+ * Which category each store has visible products in — one entry per
+ * (store, category) pair, a few hundred at most.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ * getShopperCategories() runs in the ROOT LAYOUT, so on every page and on
+ * every link prefetch. It used to call getMarketplaceProducts(), which reads
+ * the entire products table (3,000+ rows, four sequential round trips to
+ * Supabase) and prices every product — all to learn which categories have
+ * something in them. That was most of the 1.5–3 s a tap took to answer on
+ * the live site, on Cart and Account as much as on the shop.
+ *
+ * The answer only changes when a product is added, hidden or moved, so it
+ * is cached across requests like the other small tables. Every product
+ * write revalidates CACHE_TAGS.products (refresh() in app/actions.ts, the
+ * import and stock actions), and the 60 s window covers edits made straight
+ * in the Supabase dashboard. Whether a store is listed on the marketplace
+ * is applied by the caller from the (separately cached) stores, so turning
+ * the listing setting off still takes effect immediately.
+ */
+const getStockedShelves = unstable_cache(
+  async (): Promise<{ store: string; category: string }[]> => {
+    const shelves = new Map<string, { store: string; category: string }>();
+    for (const p of await getBaseProducts()) {
+      if (p.hidden) continue;
+      shelves.set(`${p.store}\u0000${p.category}`, { store: p.store, category: p.category });
+    }
+    return [...shelves.values()];
+  },
+  ["stocked-shelves"],
+  { tags: [CACHE_TAGS.products], revalidate: 60 },
+);
 
 export async function getCategory(slug: string): Promise<Category | undefined> {
   return (await getCategories(true)).find((c) => c.slug === slug);
