@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: category.name,
     description,
     alternates: { canonical: `/category/${category.slug}` },
-    openGraph: openGraph({ title: `${category.name} · Banaadir Mall`, description, url: `/category/${category.slug}` }),
+    openGraph: await openGraph({ title: `${category.name} · Banaadir Mall`, description, url: `/category/${category.slug}` }),
   };
 }
 

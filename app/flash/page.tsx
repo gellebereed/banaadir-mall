@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: "Flash Deals",
     description,
     alternates: { canonical: "/flash" },
-    openGraph: openGraph({ title, description, url: "/flash", images: [image] }),
+    openGraph: await openGraph({ title, description, url: "/flash", images: [image] }),
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }
