@@ -47,6 +47,8 @@ export interface HeroSlide {
   /** Small pill above the headline. */
   eyebrow?: string;
   title?: string;
+  /** The end of the headline, lit in the brand's mango. Brand slide only. */
+  highlight?: string;
   subtitle?: string;
   cta?: string;
   /** Secondary text link beside the CTA. Brand slide only, in practice. */
@@ -59,8 +61,8 @@ export interface HeroSlide {
   /** "contain" shows the whole artwork; "cover" fills the frame. */
   fit?: "cover" | "contain";
   /**
-   * The marketplace's own slide. Gets the gradient treatment and the
-   * decoration, and never renders a scrim it does not need.
+   * The marketplace's own slide. Gets the lit arcade behind it (see
+   * HeroBrandArt) and never renders a scrim it does not need.
    */
   brand?: boolean;
   /**
@@ -75,14 +77,7 @@ export interface HeroSlide {
 
 const AUTOPLAY_MS = 6000;
 
-export default function HeroCarousel({
-  slides,
-  /** Rendered on the brand slide at lg and up — the floating product cards. */
-  brandDecoration,
-}: {
-  slides: HeroSlide[];
-  brandDecoration?: ReactNode;
-}) {
+export default function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -171,7 +166,6 @@ export default function HeroCarousel({
             active={i === index}
             priority={i === 0}
             loadArt={wanted.has(i)}
-            decoration={slide.brand ? brandDecoration : undefined}
           />
         ))}
       </div>
@@ -212,13 +206,11 @@ function HeroSlideView({
   active,
   priority,
   loadArt,
-  decoration,
 }: {
   slide: HeroSlide;
   active: boolean;
   priority: boolean;
   loadArt: boolean;
-  decoration?: ReactNode;
 }) {
   const hasText = Boolean(slide.title || slide.subtitle || slide.cta);
   const contain = slide.fit === "contain";
@@ -228,6 +220,10 @@ function HeroSlideView({
   // banner with lettering on it, and 75 is where small type starts to
   // fringe. Photos that fill the frame hide it; they stay at the default.
   const quality = lite ? LITE_QUALITY : contain ? 90 : undefined;
+  // The brand slide's shop window stacks above the copy until the frame is
+  // wide enough for two columns; the badge and subtitle wait for that too,
+  // or the copy runs out of the 480px tablet frame.
+  const stacked = slide.brand && slide.visual ? "lg" : "sm";
 
   return (
     <div
@@ -241,10 +237,16 @@ function HeroSlideView({
       {/* Artwork. Portrait on phones when the admin supplied one. */}
       {hasArt && loadArt && <SlideArt slide={slide} quality={quality} priority={priority} />}
 
-      {/* Brand-slide atmosphere — the soft colour blooms behind the copy. */}
+      {/*
+        Brand-slide atmosphere: a market hall's arcade of arches, lit warm
+        from below like shop fronts at dusk, and the soft colour blooms.
+        All CSS — see the note at the top of HeroBrandArt.
+      */}
       {slide.brand && (
         <>
+          <div className="scene-arcade pointer-events-none absolute inset-0" />
           <div className="pointer-events-none absolute -left-24 -top-24 h-80 w-80 rounded-full bg-mango-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-40 left-1/2 h-72 w-[48rem] -translate-x-1/2 rounded-full bg-mango-400/20 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-ocean-400/25 blur-3xl" />
         </>
       )}
@@ -266,7 +268,7 @@ function HeroSlideView({
       <div className="relative mx-auto grid h-full max-w-7xl content-end items-end gap-3.5 px-5 pb-9 pt-5 sm:content-center sm:items-center sm:gap-8 sm:px-8 sm:pb-14 lg:grid-cols-2 lg:px-4">
         <div className={active ? "animate-fade-up" : ""}>
           {slide.eyebrow && (
-            <span className="hidden items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 sm:inline-flex text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm">
+            <span className={`hidden items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 ${stacked === "lg" ? "lg:inline-flex" : "sm:inline-flex"} text-xs font-semibold text-mango-200 ring-1 ring-white/25 backdrop-blur-sm`}>
               {slide.eyebrow}
             </span>
           )}
@@ -274,6 +276,14 @@ function HeroSlideView({
           {slide.title && (
             <h2 className="max-w-xl font-display text-[1.75rem] font-extrabold leading-[1.1] text-white sm:mt-4 sm:text-5xl lg:text-6xl">
               {slide.title}
+              {slide.highlight && (
+                <>
+                  {" "}
+                  <span className="bg-gradient-to-r from-mango-300 via-mango-400 to-coral-500 bg-clip-text text-transparent">
+                    {slide.highlight}
+                  </span>
+                </>
+              )}
             </h2>
           )}
 
@@ -281,9 +291,10 @@ function HeroSlideView({
             // A slide with a picture side or a countdown drops its subtitle
             // on a phone — the frame there has room for one or the other.
             <p
-              className={`mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:line-clamp-none sm:text-lg ${
-                slide.below || slide.visual ? "hidden sm:block" : ""
-              }`}
+              // (`line-clamp-none` sets display itself, so it moves with `block`.)
+              className={`mt-2 line-clamp-2 max-w-md text-sm text-white/85 sm:mt-3 sm:text-lg ${
+                stacked === "lg" ? "lg:line-clamp-none" : "sm:line-clamp-none"
+              } ${slide.below || slide.visual ? (stacked === "lg" ? "hidden lg:block" : "hidden sm:block") : ""}`}
             >
               {slide.subtitle}
             </p>
@@ -314,11 +325,6 @@ function HeroSlideView({
           <div className="order-first lg:order-none">{slide.visual}</div>
         )}
 
-        {decoration && (
-          <div className="relative mx-auto hidden h-[440px] w-full max-w-lg lg:block">
-            {decoration}
-          </div>
-        )}
       </div>
 
       {/*
