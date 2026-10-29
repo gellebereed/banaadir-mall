@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     alternates: { canonical: `/product/${product.slug}` },
     // The card drawn by ./opengraph-image.tsx (photo, name, price, store);
     // the title carries the price too — that is what gets a link tapped.
-    openGraph: openGraph({
+    openGraph: await openGraph({
       title: `${product.name} — ${money(product.price)}`,
       description,
       url: `/product/${product.slug}`,

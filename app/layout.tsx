@@ -23,6 +23,7 @@ import ScrollToTop from "@/components/ScrollToTop";
 import NavigationProgress from "@/components/layout/NavigationProgress";
 import Toaster from "@/components/Toaster";
 import { isIndexableDeploy, siteOrigin } from "@/lib/request-origin";
+import { previewImages, SITE_CARD } from "@/lib/seo";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -37,8 +38,11 @@ const SITE_DESCRIPTION =
  * WhatsApp. Open Graph needs ABSOLUTE urls, so `metadataBase` is this
  * site's own address as the visitor reached it (Netlify or a custom
  * domain alike); each page's opengraph-image then resolves against it.
+ * Preview pictures are the exception — see previewImages in lib/seo.ts.
  */
 export async function generateMetadata(): Promise<Metadata> {
+  // The site card (lib/seo.ts), for every page that has no picture of its own.
+  const previewCard = await previewImages([SITE_CARD]);
   return {
     // The production address (see siteOrigin), so every page's canonical
     // link names the one site Google should list.
@@ -77,12 +81,13 @@ export async function generateMetadata(): Promise<Metadata> {
       locale: "en_US",
       title: "Banaadir Mall | Your next favourite, all in one place",
       description: SITE_DESCRIPTION,
+      images: previewCard,
     },
     twitter: {
       card: "summary_large_image",
       title: "Banaadir Mall | Your next favourite, all in one place",
       description: SITE_DESCRIPTION,
-      images: [{ url: "/social/banaadir-mall.jpg", width: 1200, height: 630, alt: "Banaadir Mall — Your next favourite. All in one place." }],
+      images: previewCard,
     },
   };
 }

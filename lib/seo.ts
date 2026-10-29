@@ -9,6 +9,7 @@
  */
 
 import type { Metadata } from "next";
+import { requestOrigin } from "@/lib/request-origin";
 
 export const SITE_NAME = "Banaadir Mall";
 
@@ -29,16 +30,51 @@ export function socialName(url: string): string {
 }
 
 type OpenGraph = NonNullable<Metadata["openGraph"]>;
+type OgImage = { url: string; width?: number; height?: number; alt?: string; type?: string };
 
-export function openGraph(fields: { title: string; description?: string; url?: string; images?: OpenGraph["images"] }): OpenGraph {
+/**
+ * The marketplace's own card: a plain JPEG in public/, so it is served from
+ * the CDN with a Content-Length and no query string. WhatsApp quietly drops
+ * an og:image it does not like and shows the small square app icon instead —
+ * which is what the generated /opengraph-image (streamed, hashed URL) got.
+ */
+export const SITE_CARD = {
+  url: "/social/banaadir-mall.jpg",
+  width: 1200,
+  height: 630,
+  type: "image/jpeg",
+  alt: "Banaadir Mall — Your next favourite. All in one place.",
+} satisfies OgImage;
+
+/**
+ * Preview pictures as absolute URLs on the host the link was opened on.
+ *
+ * metadataBase is the canonical address (siteOrigin), and the shop answers
+ * on both banaadirmall.com and www.banaadirmall.com. A preview fetched from
+ * www that pointed its picture at the other host depended on that host,
+ * its certificate and any redirect between them — and a link previewer
+ * gives up on the picture at the first hiccup. The page's own host already
+ * answered, so the picture comes from there too.
+ */
+export async function previewImages(images: OgImage[]): Promise<OgImage[]> {
+  const origin = await requestOrigin();
+  return images.map((image) => (image.url.startsWith("/") ? { ...image, url: `${origin}${image.url}` } : image));
+}
+
+export async function openGraph(fields: {
+  title: string;
+  description?: string;
+  url?: string;
+  images?: OgImage[];
+}): Promise<OpenGraph> {
   return {
     type: "website",
     siteName: SITE_NAME,
     locale: "en_US",
-    // Setting openGraph on a page also drops the root's file-based image,
-    // so the site card is named explicitly unless the page has its own.
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Banaadir Mall" }],
     ...fields,
+    // Setting openGraph on a page also drops the root layout's image, so the
+    // site card is named explicitly unless the page has its own.
+    images: await previewImages(fields.images ?? [SITE_CARD]),
   };
 }
 

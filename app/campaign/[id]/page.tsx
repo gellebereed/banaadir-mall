@@ -58,7 +58,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title,
     description,
     alternates: { canonical: campaignPath(campaign) },
-    openGraph: openGraph({ title, description, url: campaignPath(campaign, sharer?.slug), images: [image] }),
+    openGraph: await openGraph({ title, description, url: campaignPath(campaign, sharer?.slug), images: [image] }),
     // The root layout names the site card for X; a campaign has its own.
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };

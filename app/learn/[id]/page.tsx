@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: story.title,
     description,
     alternates: { canonical: path },
-    openGraph: openGraph({ title: story.title, description, url: path }),
+    openGraph: await openGraph({ title: story.title, description, url: path }),
   };
 }
 
