@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/components/prefs/PrefsProvider";
+import { usePrefs } from "@/components/prefs/PrefsProvider";
+import { arrivalDate } from "@/lib/preorder";
 import type { MessageKey } from "@/lib/i18n";
 import Image from "next/image";
 import StatusBadge from "@/components/dashboard/StatusBadge";
@@ -45,7 +46,7 @@ export default function ParcelCard({
   payTo?: ShopPaymentMethod;
   storeWhatsapp?: string;
 }) {
-  const t = useT();
+  const { t, lang } = usePrefs();
   const journey = parcelJourney(order).map((step) => ({
     ...step,
     label: t(`journey.${step.status}` as MessageKey),
@@ -92,6 +93,12 @@ export default function ParcelCard({
                   </span>
                 )}
                 {item.offer && <span className="font-semibold text-emerald-700"> · 🎁 {item.offer}</span>}
+                {item.preorder && (
+                  <span className="font-semibold text-ocean-700">
+                    {" · 📦 "}
+                    {t("pre.line", { date: arrivalDate(item.preorder.arrivesAt, lang) })}
+                  </span>
+                )}
               </span>
               {typeof item.price === "number" && (
                 <span className="shrink-0 font-semibold text-slate-700">

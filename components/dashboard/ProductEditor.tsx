@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "@/components/dashboard/FormattedTextarea";
 import PhotoManager from "@/components/dashboard/PhotoManager";
 import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
+import PreorderFields from "@/components/dashboard/PreorderFields";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SearchableSelect, { type SelectOption } from "@/components/dashboard/SearchableSelect";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
@@ -462,6 +463,14 @@ export default function ProductEditor({
             </Section>
 
             <Section
+              id="preorder"
+              title="Pre-order"
+              hint="Selling stock that is still on its way? Let customers reserve it before it lands."
+            >
+              <PreorderFields product={product} price={snap.price} stock={stock} />
+            </Section>
+
+            <Section
               id="attributes"
               title="Attributes"
               hint="Standard details for this category. Shoppers filter by them across every store, so pick from the list rather than describing it in the text."
@@ -572,12 +581,23 @@ export default function ProductEditor({
                 <div className="grid grid-cols-2 gap-3">
                   {isEdit && (
                     <div>
-                      <label htmlFor="badge" className="label">Badge</label>
-                      <select id="badge" name="badge" defaultValue={product?.badge ?? ""} className="input !px-3">
-                        <option value="">None</option>
-                        <option value="New">New</option>
-                        <option value="Bestseller">Bestseller</option>
-                        <option value="Sale">Sale</option>
+                      <label
+                        htmlFor="badge"
+                        className="label"
+                        title="Automatic: New for 3 weeks, −% while on sale, “Only N left” at 5 or fewer, Bestseller when it tops its category, Pre-order and Just landed. Each one drops off by itself."
+                      >
+                        Badge
+                      </label>
+                      {/* Badges are earned, not typed (lib/badges.ts) — the
+                          only choice is whether this product shows them. */}
+                      <select
+                        id="badge"
+                        name="badge"
+                        defaultValue={product?.badge === "Off" ? "Off" : ""}
+                        className="input !px-3"
+                      >
+                        <option value="">Automatic</option>
+                        <option value="Off">Hidden</option>
                       </select>
                     </div>
                   )}

@@ -7,6 +7,7 @@ import { kindInfo, type ShopPaymentMethod } from "@/lib/shop-payments";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { telLink } from "@/lib/delivery";
 import { money, shortDate } from "@/lib/format";
+import { arrivalDate } from "@/lib/preorder";
 import { formatWhatsAppNumber, whatsappLink } from "@/lib/whatsapp";
 import type { Courier, Order } from "@/lib/types";
 
@@ -126,6 +127,12 @@ export default function VendorOrdersTable({
             <span className="text-slate-400"> · {[i.selectedColor, i.selectedSize].filter(Boolean).join(" · ")}</span>
           )}
           {i.offer && <span className="font-semibold text-emerald-700"> · 🎁 {i.offer}</span>}
+          {/* Not on the shelf yet — don't go looking for it. */}
+          {i.preorder && (
+            <span className="ml-1 whitespace-nowrap rounded-full bg-ocean-950 px-1.5 py-0.5 text-[10px] font-bold text-mango-300">
+              📦 Pre-order · arrives {arrivalDate(i.preorder.arrivesAt)}
+            </span>
+          )}
         </li>
       ))}
     </ul>

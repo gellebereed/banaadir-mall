@@ -20,6 +20,7 @@
  */
 
 import type { Category, Product, Store } from "../types";
+import { isNewProduct } from "../badges";
 import { totalStock } from "../product-utils";
 import type { AffinityGraph } from "./affinity";
 import { SHELF_CATALOGUE } from "./catalogue";
@@ -635,7 +636,7 @@ export const newFromYourStores: Strategy = {
       for (const id of ctx.index.byStore.get(slug) ?? []) {
         const product = ctx.byId.get(id);
         if (!product || ctx.taste.touched.has(id)) continue;
-        if (product.badge !== "New") continue;
+        if (!isNewProduct(product)) continue;
         candidates.push({
           id,
           score: 1 / (1 + rank),

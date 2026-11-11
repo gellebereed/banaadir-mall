@@ -139,7 +139,9 @@ export function buildProduct(
     rating: existing?.rating ?? 5,
     reviewCount: existing?.reviewCount ?? 0,
     sold: existing?.sold ?? 0,
-    badge: existing?.badge ?? "New",
+    // Badges are worked out on read now (lib/badges.ts); only a seller's
+    // "Off" is worth carrying across a re-import.
+    badge: existing?.badge === "Off" ? "Off" : undefined,
 
     // Photos are the one thing an import can never supply, and the one
     // thing a seller will have spent time on.

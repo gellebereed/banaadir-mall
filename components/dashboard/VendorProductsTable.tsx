@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
+import { arrivalDate, daysUntilArrival, isPreorder } from "@/lib/preorder";
 import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
 import { compact, money } from "@/lib/format";
 import { sellableUnits } from "@/lib/odoo/mapping";
@@ -1104,8 +1105,24 @@ function ProductRow({
               .filter(Boolean)
               .join(" · ")}
           </p>
-          {(noPhotos || !hasBarcode(p) || discount) && (
+          {(noPhotos || !hasBarcode(p) || discount || isPreorder(p)) && (
             <div className="mt-1 flex flex-wrap gap-1">
+              {/* Overdue is the one that needs the seller: the stock should
+                  be here, and only they can say that it is. */}
+              {isPreorder(p) && p.preorder && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                    daysUntilArrival(p.preorder.arrivesAt) < 0
+                      ? "bg-coral-100 text-coral-700"
+                      : "bg-ocean-950 text-mango-300"
+                  }`}
+                >
+                  📦 Pre-order ·{" "}
+                  {daysUntilArrival(p.preorder.arrivesAt) < 0
+                    ? "arrival date passed — has it arrived?"
+                    : `arrives ${arrivalDate(p.preorder.arrivesAt)}`}
+                </span>
+              )}
               {discount ? (
                 <span className="rounded-full bg-coral-100 px-1.5 py-0.5 text-[10px] font-bold text-coral-600">
                   −{discount}% promo
@@ -1227,6 +1244,9 @@ function ProductTile({
       <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
         {p.hidden && (
           <span className="rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-bold text-white">Hidden</span>
+        )}
+        {isPreorder(p) && (
+          <span className="rounded-full bg-ocean-950 px-2 py-0.5 text-[10px] font-bold text-mango-300">📦 Pre-order</span>
         )}
         {p.featured && (
           <span className="rounded-full bg-mango-500 px-2 py-0.5 text-[10px] font-bold text-white">★ Featured</span>

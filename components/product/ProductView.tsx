@@ -8,6 +8,9 @@ import ProductImage from "@/components/ProductImage";
 import Rating from "@/components/Rating";
 import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
+import PreorderPanel from "./PreorderPanel";
+import { isPreorder } from "@/lib/preorder";
+import type { MessageKey } from "@/lib/i18n";
 import { offerHeadline, offerHint, offerTerms } from "@/lib/offers";
 import { useReco } from "@/components/reco/RecoProvider";
 import { cartLineKey, useCart } from "@/lib/cart-context";
@@ -134,6 +137,9 @@ export default function ProductView({
   const wished = isWishlisted(product.id);
   const lowStock = stock > 0 && stock <= 15;
   const soldOut = withVariants ? stock === 0 : product.stock === 0;
+  // Sold ahead of its stock — the page says when it comes (PreorderPanel),
+  // and "stock" below means units still open to reserve.
+  const preorder = isPreorder(product) ? product.preorder : undefined;
 
   /*
    * On a phone the buy buttons sit below the photo, price, description and
@@ -174,6 +180,7 @@ export default function ProductView({
         // Per unit of the variant chosen, which can cost more or less than the product.
         compareAt: lineDeal(product, price).was,
         flashSale: product.flashSale,
+        preorder: preorder ? { arrivesAt: preorder.arrivesAt } : undefined,
       },
     }, {
       // Coupon offers are private to whoever has the code — no hint.
@@ -251,7 +258,11 @@ export default function ProductView({
             disabled={soldOut}
             className="btn-primary shrink-0 whitespace-nowrap !px-5 !py-2.5 text-sm disabled:opacity-50"
           >
-            {added ? "✓" : soldOut ? t("product.outOfStock") : t("product.addToCart")}
+            {added
+              ? "✓"
+              : soldOut
+                ? t(preorder ? "pre.fullyReserved" : "product.outOfStock")
+                : t(preorder ? "badge.Pre-order" : "product.addToCart")}
           </button>
         </div>
       </div>
@@ -292,9 +303,15 @@ export default function ProductView({
 
       {/* ── Details & buy box ──────────────────────────────────────── */}
       <div className="min-w-0">
-        {product.badge && (
-          <span className="mb-3 inline-block rounded-full bg-mango-100 px-3 py-1 text-xs font-bold text-mango-800">
-            {product.badge}
+        {/* "Low stock" is left to the stock line beside the quantity, which
+            says the same thing for the option actually selected. */}
+        {product.badge && product.badge !== "Low stock" && product.badge !== "Off" && (
+          <span
+            className={`mb-3 inline-block rounded-full px-3 py-1 text-xs font-bold ${
+              product.badge === "Pre-order" ? "bg-ocean-950 text-mango-300" : "bg-mango-100 text-mango-800"
+            }`}
+          >
+            {t(`badge.${product.badge}` as MessageKey)}
           </span>
         )}
         <div className="flex items-start justify-between gap-3">
@@ -338,7 +355,9 @@ export default function ProductView({
               {t("product.firstReview")}
             </a>
           )}
-          <span className="text-sm text-slate-400">{t("product.sold", { n: compact(product.sold) })}</span>
+          {/* A pre-order's count is its reservations (PreorderPanel) — "sold"
+              would be about an earlier shipment, or zero. */}
+          {!preorder && <span className="text-sm text-slate-400">{t("product.sold", { n: compact(product.sold) })}</span>}
         </div>
 
         {/*
@@ -376,6 +395,8 @@ export default function ProductView({
             <FlashEndsChip endsAt={product.flashEndsAt} />
           </div>
         )}
+
+        {preorder && <PreorderPanel product={product} was={lineDeal(product, price).was} />}
 
         {/* The shop's cart offer, with the conditions spelled out. */}
         {product.offer && (
@@ -479,7 +500,15 @@ export default function ProductView({
                 soldOut ? "text-slate-400" : lowStock ? "text-coral-600" : "text-emerald-600"
               }`}
             >
-              {soldOut
+              {preorder
+                ? soldOut
+                  ? t("pre.fullyReserved")
+                  : stock === 1
+                    ? t("pre.lastLeft")
+                    : lowStock
+                      ? t("pre.left", { n: stock })
+                      : t("pre.open", { n: stock })
+                : soldOut
                 ? t("product.soldOutOption")
                 : lowStock
                   ? t("product.lowStock", { n: stock })
@@ -489,25 +518,38 @@ export default function ProductView({
 
           {/* Actions */}
           <div ref={actionsRef} className="grid grid-cols-2 gap-3">
+            {/* A pre-order leads with the reservation itself — straight to
+                checkout — and keeps "add to cart" as the quieter second. */}
             <button
-              onClick={handleAdd}
+              type="button"
+              onClick={preorder ? handleBuyNow : handleAdd}
               disabled={soldOut}
               className="btn-primary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {added ? t("product.added") : soldOut ? t("product.soldOut") : t("product.addToCart")}
+              {preorder
+                ? soldOut
+                  ? t("pre.fullyReserved")
+                  : t("pre.cta")
+                : added
+                  ? t("product.added")
+                  : soldOut
+                    ? t("product.soldOut")
+                    : t("product.addToCart")}
             </button>
             <button
               type="button"
-              onClick={handleBuyNow}
+              onClick={preorder ? handleAdd : handleBuyNow}
               disabled={soldOut}
               className="btn-secondary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {t("product.buyNow")}
+              {preorder ? (added ? t("product.added") : t("product.addToCart")) : t("product.buyNow")}
             </button>
           </div>
         </div>
 
-        {delivery && <DeliveryPromise delivery={delivery} subtotal={price * qty} />}
+        {/* "Arrives in 2 days" is a promise about stock on the shelf; a
+            pre-order's date is the one in its own panel. */}
+        {delivery && !preorder && <DeliveryPromise delivery={delivery} subtotal={price * qty} />}
 
         {/* Store card (server-rendered) */}
         {children}

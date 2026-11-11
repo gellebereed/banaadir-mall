@@ -253,7 +253,8 @@ export default function ShopClient({
         break;
       }
       case "new":
-        out.sort((a, b) => (b.badge === "New" ? 1 : 0) - (a.badge === "New" ? 1 : 0));
+        // Newest listing first; products with no known date keep their order, after.
+        out.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
         break;
     }
     return out;

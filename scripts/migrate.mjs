@@ -127,7 +127,21 @@ async function productUpdatedAtPending() {
   return !probe.ok;
 }
 
+/** Does products.preorder exist yet? */
+async function preorderPending() {
+  const probe = await api("products?select=id,preorder&limit=1");
+  return !probe.ok;
+}
+
 const MIGRATIONS = [
+  {
+    file: "migration-preorder.sql",
+    title: "Let shops take pre-orders",
+    consequence:
+      "A seller who ticks “take pre-orders” on a product is told to run this " +
+      "first, and the pre-order is not saved.",
+    pending: preorderPending,
+  },
   {
     file: "migration-product-updated-at.sql",
     title: "Track when each product was last edited",

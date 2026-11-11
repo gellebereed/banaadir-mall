@@ -3,13 +3,14 @@
 import { useMemo } from "react";
 import FlashEndsChip from "@/components/FlashEndsChip";
 import OfferPicks, { nudgeProgress, useOfferPicks } from "@/components/cart/OfferPicks";
-import { useT } from "@/components/prefs/PrefsProvider";
+import { usePrefs, useT } from "@/components/prefs/PrefsProvider";
 import { useCart } from "@/lib/cart-context";
 import type { PromoStatus } from "@/lib/cart-pricing";
 import { money } from "@/lib/format";
 import { nudgeText, offerHeadline, type CartPricing, type LinePricing, type PricingLine, type StorePricing } from "@/lib/offers";
 import type { LineDeal } from "@/lib/product-utils";
-import type { Offer } from "@/lib/types";
+import { arrivalDate, daysUntilArrival, isPreorder } from "@/lib/preorder";
+import type { Offer, Product } from "@/lib/types";
 
 /**
  * A line's total — and everything that brought it down: the "was" price of
@@ -83,6 +84,25 @@ export function FlashTag({ deal }: { deal?: LineDeal }) {
   ) : (
     <span className="mt-1 inline-block rounded-full bg-coral-600/95 px-2 py-0.5 text-[10px] font-bold text-white">
       ⚡ {t("cart.flashPrice")}
+    </span>
+  );
+}
+
+/**
+ * "📦 Pre-order · arrives 25 Nov" under a basket line — so nobody reaches
+ * the pay step believing a pre-ordered item travels with the rest of the
+ * parcel this week.
+ */
+export function PreorderTag({ product }: { product: Pick<Product, "preorder"> }) {
+  const { t, lang } = usePrefs();
+  if (!isPreorder(product) || !product.preorder) return null;
+  const { arrivesAt } = product.preorder;
+  return (
+    <span className="mt-1 inline-block rounded-full bg-ocean-950 px-2 py-0.5 text-[10px] font-bold text-mango-300">
+      📦{" "}
+      {daysUntilArrival(arrivesAt) < 0
+        ? t("pre.lineAnyDay")
+        : t("pre.line", { date: arrivalDate(arrivesAt, lang) })}
     </span>
   );
 }
