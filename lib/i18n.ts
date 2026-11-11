@@ -219,6 +219,34 @@ const M = {
   "badge.Low stock": { en: "Only {n} left", so: "{n} kaliya ayaa haray" },
   "badge.lastOne": { en: "Last one", so: "Kii ugu dambeeyay" },
 
+  // ── Rewards (lib/rewards.ts) ──────────────────────────────────────────
+  "rewards.title": { en: "Banaadir Rewards", so: "Abaalmarinta Banaadir" },
+  "rewards.balance": { en: "Credit to spend", so: "Lacagta aad isticmaali karto" },
+  "rewards.pending": { en: "{amount} more on the way — released when your orders are delivered", so: "{amount} kale ayaa soo socota — waxaad heli doontaa marka dalabkaaga laguu keeno" },
+  "rewards.how": { en: "Earn {pct}% back at participating shops, and pay up to {max}% of your next order with it.", so: "Hel {pct}% dib dukaamada ka qayb qaata, kuna bixi ilaa {max}% dalabkaaga xiga." },
+  "rewards.empty": { en: "Order from a participating shop to start earning.", so: "Ka dalbo dukaan ka qayb qaata si aad u bilowdo." },
+  "rewards.use": { en: "Use my {amount} credit", so: "Isticmaal {amount} ee aan haysto" },
+  "rewards.row": { en: "Rewards credit", so: "Lacagta abaalmarinta" },
+  "rewards.earn": { en: "You'll earn {amount} credit on this order", so: "Dalabkan waxaad ka heli doontaa {amount}" },
+  "rewards.earned": { en: "You earned {amount} credit — yours to spend as soon as this order is delivered.", so: "Waxaad heshay {amount} — waad isticmaali kartaa marka dalabkan laguu keeno." },
+  "rewards.product": { en: "Earn {amount} credit when you buy this", so: "Hel {amount} markaad tan iibsato" },
+  "rewards.earnedOn": { en: "Earned", so: "La helay" },
+  "rewards.spentOn": { en: "Spent", so: "La isticmaalay" },
+  "rewards.onTheWay": { en: "on delivery", so: "marka la keeno" },
+
+  // ── Alerts (lib/alert-utils.ts) ───────────────────────────────────────
+  "alert.ask.stock": { en: "Tell me on WhatsApp when it's back", so: "WhatsApp iigu sheeg marka uu soo laabto" },
+  "alert.ask.arrival": { en: "Tell me on WhatsApp when it arrives", so: "WhatsApp iigu sheeg marka uu yimaado" },
+  "alert.ask.price": { en: "Tell me on WhatsApp if the price drops", so: "WhatsApp iigu sheeg haddii qiimuhu hoos u dhaco" },
+  "alert.promise": { en: "One message, only about this product. Your WhatsApp number:", so: "Hal fariin oo kaliya, alaabtan oo keliya ku saabsan. Lambarkaaga WhatsApp:" },
+  "alert.submit": { en: "Tell me", so: "Ii sheeg" },
+  "alert.done.stock": { en: "Done — we'll message you on WhatsApp the moment it's back in stock.", so: "Waa la qabtay — WhatsApp ayaan kuugu soo diri doonnaa marka uu soo laabto." },
+  "alert.done.arrival": { en: "Done — we'll message you on WhatsApp the day it arrives.", so: "Waa la qabtay — WhatsApp ayaan kuugu soo diri doonnaa maalinta uu yimaado." },
+  "alert.done.price": { en: "Done — we'll message you on WhatsApp if the price drops.", so: "Waa la qabtay — WhatsApp ayaan kuugu soo diri doonnaa haddii qiimuhu hoos u dhaco." },
+  "alert.err.phone": { en: "That doesn't look like a WhatsApp number. Try it with the country code, e.g. +252 61 234 5678.", so: "Taasi uma eka lambar WhatsApp. Ku qor koodka dalka, tusaale +252 61 234 5678." },
+  "alert.err.limit": { en: "You already have a lot of alerts set. We'll message you as they come up.", so: "Ogeysiisyo badan ayaad hore u dejisay. Waan kuu soo diri doonnaa marka ay yimaadaan." },
+  "alert.err.unavailable": { en: "We couldn't set that up just now. Please try again in a moment.", so: "Hadda ma suurtoobin. Fadlan mar kale isku day." },
+
   // ── Pre-orders (lib/preorder.ts) ──────────────────────────────────────
   "pre.eyebrow": { en: "Pre-order", so: "Dalbasho hore" },
   "pre.headline": { en: "Reserve yours before it lands", so: "Dalbo taada inta aanay iman" },

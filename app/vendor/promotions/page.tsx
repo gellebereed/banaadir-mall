@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { deleteOffer, deletePromotion, includeSaleItemsInOffer, toggleOffer, togglePromotion } from "@/app/actions";
 import CampaignShareButton from "@/components/CampaignShareButton";
 import MarketplaceOptIn from "@/components/dashboard/MarketplaceOptIn";
+import RewardsOptIn from "@/components/dashboard/RewardsOptIn";
+import { rewardSettings } from "@/lib/rewards";
 import OfferStudio from "@/components/dashboard/OfferStudio";
 import { suggestOffers } from "@/lib/offer-suggestions";
 import PromotionForm from "@/components/dashboard/PromotionForm";
@@ -87,6 +89,7 @@ export default async function VendorPromotionsPage() {
   const usageById = offerUsageFrom(orders);
   const promoJoined = (marketing.promo.stores ?? []).includes(storeSlug);
   const campaignJoined = (marketing.campaign.stores ?? []).includes(storeSlug);
+  const rewards = rewardSettings(marketing.rewards);
 
   const productName = (id: string) => products.find((p) => p.id === id)?.name ?? id;
 
@@ -296,6 +299,12 @@ export default async function VendorPromotionsPage() {
           Run by Banaadir Mall, paid by the shops that join. Leave any time.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <RewardsOptIn
+            joined={rewards.stores.includes(storeSlug)}
+            running={rewards.active}
+            earnPct={rewards.earnPct}
+            maxSpendPct={rewards.maxSpendPct}
+          />
           <MarketplaceOptIn
             kind="promo"
             joined={promoJoined}

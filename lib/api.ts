@@ -56,6 +56,8 @@ import { HOLDING_SLUG } from "./category-holding";
 import { isOfferLive, offerCovers } from "./offers";
 import { bestsellerIds, isNewProduct, smartBadge } from "./badges";
 import { isPreorder } from "./preorder";
+import { orderBelongsTo } from "./order-utils";
+import { rewardSettings, walletFrom, type Wallet } from "./rewards";
 import { inShopWindow } from "./shop-time";
 import type {
   Category,
@@ -67,6 +69,7 @@ import type {
   MarketingSettings,
   Order,
   PosSettings,
+  RewardSettings,
   Product,
   ProductionRun,
   ProductReview,
@@ -840,6 +843,17 @@ export async function getMarketingSettings(): Promise<MarketingSettings> {
     return supabaseMarketing;
   }
   return (await getDB()).marketing;
+}
+
+/** The rewards programme — off, with the default rates, until an admin starts it. */
+export async function getRewardSettings(): Promise<RewardSettings> {
+  return rewardSettings((await getMarketingSettings()).rewards);
+}
+
+/** One customer's wallet, from their own orders (lib/rewards.ts). */
+export async function getWallet(email: string): Promise<Wallet> {
+  const mine = (await getOrders()).filter((order) => orderBelongsTo(order, { email }));
+  return walletFrom(mine);
 }
 
 /**

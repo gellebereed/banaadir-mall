@@ -5,6 +5,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  BellRing,
   Boxes,
   BarChart3,
   ClipboardList,
@@ -88,7 +89,8 @@ export type ShellIcon =
   | "activity"
   | "collections"
   | "stock"
-  | "reviews";
+  | "reviews"
+  | "alerts";
 
 const ICONS: Record<ShellIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -110,6 +112,7 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   commission: Landmark,
   accounts: KeyRound,
   payouts: Wallet,
+  alerts: BellRing,
   activity: History,
   collections: Layers,
   stock: Boxes,

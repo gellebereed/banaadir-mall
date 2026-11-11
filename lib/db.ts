@@ -44,6 +44,7 @@ import type {
 import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
 import type { CategoryMapping } from "./category-mappings";
 import type { StoreCollection } from "./collections";
+import type { ProductAlert } from "./alert-utils";
 import type { RecoMetricEvent } from "./reco/metrics";
 import type { TasteProfile } from "./reco/types";
 
@@ -104,6 +105,8 @@ export interface DB {
   activity?: ActivityEntry[];
   /** Supplier grouping → category decisions (lib/category-mappings.ts). */
   categoryMappings?: CategoryMapping[];
+  /** "Tell me on WhatsApp" sign-ups (lib/alerts.ts). */
+  alerts?: ProductAlert[];
   /** Sellers' own product groupings (lib/collections.ts). */
   collections?: StoreCollection[];
   /** Recommendation shelf metrics, demo mode (lib/reco/metrics.ts). */

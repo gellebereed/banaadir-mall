@@ -133,7 +133,25 @@ async function preorderPending() {
   return !probe.ok;
 }
 
+/** Do the rewards columns and the alerts table exist yet? */
+async function rewardsPending() {
+  const probes = await Promise.all([
+    api("marketing_settings?select=id,rewards&limit=1"),
+    api("orders?select=id,reward&limit=1"),
+    api("product_alerts?select=id&limit=1"),
+  ]);
+  return probes.some((probe) => !probe.ok);
+}
+
 const MIGRATIONS = [
+  {
+    file: "migration-rewards.sql",
+    title: "Reward credit and WhatsApp alerts",
+    consequence:
+      "Rewards cannot be switched on, and “Tell me on WhatsApp” sign-ups " +
+      "are not saved.",
+    pending: rewardsPending,
+  },
   {
     file: "migration-preorder.sql",
     title: "Let shops take pre-orders",

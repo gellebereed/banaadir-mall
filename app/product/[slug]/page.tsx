@@ -1,3 +1,4 @@
+import { inRewards, rewardSettings } from "@/lib/rewards";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -74,6 +75,7 @@ export default async function ProductPage({ params }: Props) {
     getMarketingSettings(),
     getT(),
   ]);
+  const rewards = rewardSettings(marketing.rewards);
 
   /*
    * schema.org Product: what lets Google show the price, stock and rating
@@ -151,7 +153,13 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       {/* Gallery + buy box (client) with the store card passed through */}
-      <ProductView product={product} details={describeAttributes(product.attributes)} delivery={marketing.delivery}>
+      <ProductView
+        product={product}
+        details={describeAttributes(product.attributes)}
+        delivery={marketing.delivery}
+        // What buying it earns, when its shop is in the rewards programme.
+        rewardPct={inRewards(rewards, product.store) ? rewards.earnPct : 0}
+      >
         {store && (
           <div className="card mt-5 p-4">
             <Link href={`/store/${store.slug}`} className="group flex items-center gap-4">

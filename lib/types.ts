@@ -493,6 +493,8 @@ export interface Order {
   delivery?: ParcelDelivery;
   /** Stamped status history, oldest first. */
   timeline?: ParcelEvent[];
+  /** Reward credit earned and spent on this parcel (lib/rewards.ts). */
+  reward?: OrderReward;
   /**
    * When the seller first opened this parcel. `undefined` means NEW — it is
    * what the unread badge counts.
@@ -799,6 +801,30 @@ export interface CampaignFeed {
   hidden?: string[];
 }
 
+/**
+ * The rewards programme (lib/rewards.ts): what an order earns, how much of
+ * one can be paid with credit, and the shops that pay for it by joining.
+ */
+export interface RewardSettings {
+  active: boolean;
+  /** % of what was paid that comes back as credit. */
+  earnPct: number;
+  /** The most of one parcel that credit can cover, in %. */
+  maxSpendPct: number;
+  /** Shops that joined — credit is earned and spent only at these. */
+  stores: string[];
+  /** Shops that said "no thanks" — not invited again. */
+  declined?: string[];
+}
+
+/** Credit stamped on an order when it is placed (lib/rewards.ts). */
+export interface OrderReward {
+  /** Credit this order earns — the customer's once it is delivered. */
+  earn?: number;
+  /** Credit paid towards this order, already taken off `total`. */
+  spent?: number;
+}
+
 /** Home-page sections, in the order the admin arranges them. */
 export type SectionKey =
   | "banners"
@@ -911,6 +937,8 @@ export interface MarketingSettings {
     localTime?: string;
     nationalTime?: string;
   };
+  /** Shopper credit — lib/rewards.ts. Absent means the programme is off. */
+  rewards?: RewardSettings;
   /** Single promo code accepted at checkout. Empty disables the field. */
   promo: {
     code: string;

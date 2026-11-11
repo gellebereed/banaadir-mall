@@ -401,6 +401,8 @@ async function fetchOrdersFromSupabaseRaw(): Promise<Order[] | null> {
       // Added by supabase/migration-order-delivery.sql.
       delivery: o.delivery || undefined,
       timeline: Array.isArray(o.timeline) ? o.timeline : [],
+      // supabase/migration-rewards.sql.
+      reward: o.reward || undefined,
       // Added by supabase/migration-order-notifications.sql.
       //   column present, NULL   → new, badge it
       //   column present, a date → seen
@@ -611,6 +613,8 @@ async function fetchMarketingFromSupabaseRaw(): Promise<MarketingSettings | null
         nationalTime: "2–4 days",
       },
       promo: data.promo || { code: "BANAADIR10", pct: 10 },
+      // supabase/migration-rewards.sql — absent means the programme is off.
+      rewards: data.rewards ?? undefined,
       /*
        * Absent until supabase/migration-commission.sql has been run, and
        * absent must mean "charging nothing" rather than "charging the

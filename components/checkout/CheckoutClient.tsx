@@ -41,7 +41,8 @@ import {
 import type { CheckoutDefaults } from "@/app/checkout/page";
 import { groupByStore, newOrderId, vendorOrderIds } from "@/lib/order-utils";
 import { defaultVariant, findVariant, variantLabel } from "@/lib/product-utils";
-import type { MarketingSettings, Offer, Store } from "@/lib/types";
+import { earnFor, planSpend } from "@/lib/rewards";
+import type { MarketingSettings, Offer, RewardSettings, Store } from "@/lib/types";
 import { COUNTRIES, GLOBAL_CITIES, SOMALI_REGIONS_CITIES } from "@/lib/data/locations";
 import { detectUserLocation } from "@/lib/detect-location";
 import type { MessageKey } from "@/lib/i18n";
@@ -69,6 +70,7 @@ export default function CheckoutClient({
   stores,
   defaults,
   offers,
+  rewards,
 }: {
   settings: MarketingSettings;
   stores: Store[];
@@ -76,6 +78,8 @@ export default function CheckoutClient({
   defaults?: CheckoutDefaults;
   /** Live shop offers, to price the basket here at once. */
   offers: Offer[];
+  /** The rewards programme and this customer's spendable credit (0 for a guest). */
+  rewards?: { settings: RewardSettings; available: number };
 }) {
   const { fee, freeThreshold, estimate } = settings.delivery;
   const promo = settings.promo;
@@ -354,7 +358,28 @@ export default function CheckoutClient({
   const discount = pricing ? pricing.offerDiscount + pricing.promoDiscount : 0;
   const itemsTotal = subtotal - discount;
   const delivery = freeThreshold > 0 && itemsTotal >= freeThreshold ? 0 : fee;
-  const total = itemsTotal + delivery;
+
+  /*
+   * Reward credit. The same planSpend the server runs (lib/rewards.ts), on
+   * the same per-shop totals — so the figure shown is the figure taken off.
+   * The server still decides: this is a preview, and the order is recorded
+   * with whatever it works out from the balance at that moment.
+   */
+  const [useCredit, setUseCredit] = useState(true);
+  const shopTotals = Object.entries(pricing?.stores ?? {}).map(([store, s]) => ({ store, total: s.total }));
+  const creditPlan =
+    rewards && rewards.available > 0 ? planSpend(rewards.settings, rewards.available, shopTotals) : {};
+  const creditOffered = Math.round(Object.values(creditPlan).reduce((sum, n) => sum + n, 0) * 100) / 100;
+  const credit = useCredit ? creditOffered : 0;
+  const creditToEarn = rewards
+    ? Math.round(
+        shopTotals.reduce(
+          (sum, s) => sum + earnFor(rewards.settings, s.store, s.total - (useCredit ? (creditPlan[s.store] ?? 0) : 0)),
+          0,
+        ) * 100,
+      ) / 100
+    : 0;
+  const total = Math.round((itemsTotal + delivery - credit) * 100) / 100;
 
   const destination = city === "Other" ? customCity : city;
   const arrival = localiseTime(deliveryTimeFor(settings.delivery, city, countryCode), lang);
@@ -511,6 +536,7 @@ export default function CheckoutClient({
     let serverParcels: PlacedParcel[] | undefined;
     // What the server actually took off; the cart's figure until it answers.
     let savedOnServer = discount;
+    let earnedOnServer = 0;
 
     try {
       const { submitOrderAction } = await import("@/app/actions");
@@ -543,6 +569,7 @@ export default function CheckoutClient({
         total,
         paymentMethod: chosenPay,
         promoCode: appliedPromo ?? undefined,
+        useRewards: credit > 0,
       });
       /*
        * The shelf ran short while this basket waited (another buyer, or the
@@ -581,6 +608,7 @@ export default function CheckoutClient({
       orderId = result.orderId || orderId;
       if (result?.parcels?.length) serverParcels = result.parcels;
       if (typeof result?.discount === "number") savedOnServer = result.discount;
+      earnedOnServer = result?.reward?.earn ?? 0;
     } catch (err) {
       /*
        * The order did NOT reach the server. This used to log a warning and
@@ -617,6 +645,7 @@ export default function CheckoutClient({
       paymentMethod: chosenPay,
       subtotal: Math.round((placedItems + savedOnServer) * 100) / 100,
       discount: savedOnServer,
+      rewardEarn: earnedOnServer || undefined,
       saleDiscount,
       delivery,
       total: Math.round((placedItems + delivery) * 100) / 100,
@@ -879,11 +908,32 @@ export default function CheckoutClient({
             {delivery === 0 ? <span className="text-emerald-600">{t("cart.free")}</span> : money(delivery)}
           </dd>
         </div>
+        {creditOffered > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-mango-50 px-3 py-2">
+            <dt>
+              <label className="flex cursor-pointer items-center gap-2 font-semibold text-ocean-950">
+                <input
+                  type="checkbox"
+                  checked={useCredit}
+                  onChange={(e) => setUseCredit(e.target.checked)}
+                  className="h-4 w-4 accent-mango-500"
+                />
+                🎁 {t("rewards.use", { amount: money(creditOffered) })}
+              </label>
+            </dt>
+            {credit > 0 && <dd className="font-semibold tabular-nums text-emerald-700">−{money(credit)}</dd>}
+          </div>
+        )}
         <div className="flex items-baseline justify-between border-t border-sand-200 pt-3">
           <dt className="font-bold text-ocean-950">{t("cart.total")}</dt>
           <dd className="font-display text-2xl font-extrabold tabular-nums text-ocean-950">{money(total)}</dd>
         </div>
       </dl>
+      {creditToEarn > 0 && (
+        <p className="mt-3 rounded-xl bg-mango-50 px-3 py-2 text-center text-sm font-bold text-mango-900">
+          🎁 {t("rewards.earn", { amount: money(creditToEarn) })}
+        </p>
+      )}
       {totalSaved > 0 && (
         <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-center text-sm font-bold text-emerald-700">
           🎉 {t("offer.saved", { amount: money(totalSaved) })}
