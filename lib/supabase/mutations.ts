@@ -112,8 +112,13 @@ export async function upsertProductWithError(
     // Only when known: a re-import builds products without attributes, and
     // must not wipe the ones a seller filled in by hand.
     if (product.attributes !== undefined) row.attributes = product.attributes;
+    // Same rule: only a product that IS a pre-order writes the column, so
+    // an import never clears one and a database without it is untouched.
+    if (product.preorder !== undefined) row.preorder = product.preorder;
 
     let { error } = await supabase.from("products").upsert(row, { onConflict: "id" });
+
+    if (error && isMissingPreorderColumn(error)) throw new PreorderColumnError();
 
     if (error && isMissingAttributesColumn(error)) {
       delete row.attributes;
@@ -138,7 +143,7 @@ export async function upsertProductWithError(
   } catch (err) {
     // A duplicate code is the seller's to fix — let the message reach them
     // instead of being flattened into "could not save".
-    if (err instanceof CatalogCodeError) throw err;
+    if (err instanceof CatalogCodeError || err instanceof PreorderColumnError) throw err;
     console.error("[Supabase Mutations] upsertProduct exception:", err);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -230,6 +235,28 @@ function isMissingAttributesColumn(error: { code?: string; message?: string }): 
   return true;
 }
 
+/**
+ * products.preorder (migration-preorder.sql) is missing.
+ *
+ * Unlike attributes this is NOT quietly dropped. Saving a pre-order without
+ * its arrival date would publish stock that has not arrived as ready to
+ * ship today — the one outcome worse than not saving. So the write stops
+ * and the seller is told what to run.
+ */
+export class PreorderColumnError extends Error {
+  constructor() {
+    super(
+      "Pre-orders need one database update first: run supabase/migration-preorder.sql " +
+        "in the Supabase SQL editor, then save again. Nothing was changed.",
+    );
+    this.name = "PreorderColumnError";
+  }
+}
+
+function isMissingPreorderColumn(error: { code?: string; message?: string }): boolean {
+  return isMissingColumnError(error) && /preorder/.test(error.message ?? "");
+}
+
 /** PostgREST reports an unknown column as PGRST204 / "column ... does not exist". */
 function isMissingColumnError(error: { code?: string; message?: string }): boolean {
   return (
@@ -313,7 +340,9 @@ export async function updateProductFields(
     if (fields.compareAt !== undefined) row.compare_at = fields.compareAt ?? null;
     if (fields.category !== undefined) row.category = fields.category;
     if (fields.subcategory !== undefined) row.subcategory = fields.subcategory || null;
-    if (fields.badge !== undefined) row.badge = fields.badge ?? null;
+    // `in`: "no badge" arrives as an explicit undefined and must CLEAR the
+    // column. Skipping it is part of how a stored "New" could never be removed.
+    if ("badge" in fields) row.badge = fields.badge ?? null;
     if (fields.description !== undefined) row.description = fields.description;
     if (fields.hidden !== undefined) row.hidden = fields.hidden;
     if (fields.featured !== undefined) row.featured = fields.featured;
@@ -341,6 +370,10 @@ export async function updateProductFields(
       row.default_variant_id = fields.defaultVariantId ?? null;
     }
     if (fields.features !== undefined) row.features = fields.features;
+    // `in`, not `!== undefined`: turning pre-order OFF arrives as an
+    // explicit undefined and has to clear the column.
+    const touchesPreorder = "preorder" in fields;
+    if (touchesPreorder) row.preorder = fields.preorder ?? null;
 
     if (Object.keys(row).length === 0) return true;
 
@@ -360,6 +393,15 @@ export async function updateProductFields(
     };
 
     let { data, error } = await runUpdate(row);
+
+    if (error && touchesPreorder && isMissingPreorderColumn(error)) {
+      // Clearing a column that does not exist is already done; setting one
+      // must not be dropped silently (see PreorderColumnError).
+      if (fields.preorder) throw new PreorderColumnError();
+      delete row.preorder;
+      if (Object.keys(row).length === 0) return true;
+      ({ data, error } = await runUpdate(row));
+    }
 
     if (error && isMissingAttributesColumn(error)) {
       delete row.attributes;
@@ -390,7 +432,7 @@ export async function updateProductFields(
     }
     return true;
   } catch (err) {
-    if (err instanceof CatalogCodeError) throw err;
+    if (err instanceof CatalogCodeError || err instanceof PreorderColumnError) throw err;
     console.error("[Supabase Mutations] updateProductFields exception:", err);
     return false;
   }

@@ -8,7 +8,7 @@ import DeliveryCity from "@/components/layout/DeliveryCity";
 import { useT } from "@/components/prefs/PrefsProvider";
 import FreeDeliveryMeter from "@/components/reco/FreeDeliveryMeter";
 import RecoStack from "@/components/reco/RecoStack";
-import { DiscountRows, FlashTag, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { DiscountRows, FlashTag, LinePrice, ParcelOffers, PreorderTag } from "@/components/cart/OfferBits";
 import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { cartLineKey, useCart } from "@/lib/cart-context";
 import { money } from "@/lib/format";
@@ -207,6 +207,7 @@ export default function CartClient({
                                 </p>
                               )}
                               <FlashTag deal={dealOf(cartLineKey(line))} />
+                              <PreorderTag product={line.product} />
                             </div>
                             <LinePrice
                               deal={dealOf(cartLineKey(line))}

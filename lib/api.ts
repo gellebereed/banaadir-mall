@@ -54,6 +54,8 @@ import {
 } from "./category-tree";
 import { HOLDING_SLUG } from "./category-holding";
 import { isOfferLive, offerCovers } from "./offers";
+import { bestsellerIds, isNewProduct, smartBadge } from "./badges";
+import { isPreorder } from "./preorder";
 import { inShopWindow } from "./shop-time";
 import type {
   Category,
@@ -389,7 +391,10 @@ function discountPctFor(
     )
     .reduce((max, p) => Math.max(max, p.pct), 0);
   const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
-  return Math.max(promo, campaignPct, flash.get(product.id)?.pct ?? 0);
+  // The early price of a pre-order — it ends the moment the shop marks the
+  // stock arrived (lib/preorder.ts), which is what makes its deadline true.
+  const earlyPct = isPreorder(product) ? (product.preorder?.earlyPct ?? 0) : 0;
+  return Math.max(promo, campaignPct, flash.get(product.id)?.pct ?? 0, earlyPct);
 }
 
 /** The flash discounts in force right now (lib/flash.ts). */
@@ -441,6 +446,8 @@ export async function getAllProducts(): Promise<Product[]> {
     flashPct(),
   ]);
   const live = offers.filter((o) => isOfferLive(o));
+  const bestsellers = bestsellerIds(base);
+  const now = Date.now();
 
   return base.map((p) => {
     const pct = discountPctFor(p, promotions, campaign, flash);
@@ -454,7 +461,6 @@ export async function getAllProducts(): Promise<Product[]> {
               ...p,
               price: round(p.price),
               compareAt: p.compareAt ?? p.price,
-              badge: "Sale" as const,
               variants: p.variants?.map((v) =>
                 v.price === undefined ? v : { ...v, price: round(v.price) },
               ),
@@ -473,6 +479,9 @@ export async function getAllProducts(): Promise<Product[]> {
     const isFlashPrice = pct > 0 && pct === (flashPrice?.pct ?? 0);
     const withFlash = {
       ...priced,
+      // Worked out from today's price, stock, age and sales — whatever word
+      // the row has stored is ignored (lib/badges.ts says why).
+      badge: smartBadge(priced, bestsellers, now),
       ...(flashWins ? { flashEndsAt } : {}),
       ...(isFlashPrice ? { flashSale: { until: flashPrice?.until } } : {}),
     };
@@ -689,8 +698,30 @@ export async function getBestsellers(limit = 8): Promise<Product[]> {
   return (await getMarketplaceProducts()).sort((a, b) => b.sold - a.sold).slice(0, limit);
 }
 
+/**
+ * Newest first, and only what is actually new (lib/badges.ts) — not
+ * `badge === "New"`, because a new product that is also on sale wears the
+ * Sale badge and would drop out of its own rail.
+ */
 export async function getNewArrivals(limit = 8): Promise<Product[]> {
-  return (await getMarketplaceProducts()).filter((p) => p.badge === "New").slice(0, limit);
+  return (await getMarketplaceProducts())
+    .filter((p) => isNewProduct(p) && !isPreorder(p))
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+    .slice(0, limit);
+}
+
+/**
+ * What can be reserved before it lands, soonest arrival first. `store`
+ * narrows it to one shop — the link a seller sends their own customers,
+ * which therefore includes shops that are not listed on the marketplace.
+ */
+export async function getPreorderProducts(store?: string): Promise<Product[]> {
+  const products = store
+    ? (await getProducts()).filter((p) => p.store === store)
+    : await getMarketplaceProducts();
+  return products
+    .filter(isPreorder)
+    .sort((a, b) => (a.preorder?.arrivesAt ?? "").localeCompare(b.preorder?.arrivesAt ?? ""));
 }
 
 export async function getRelatedProducts(product: Product, limit = 4): Promise<Product[]> {

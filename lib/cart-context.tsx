@@ -250,6 +250,11 @@ export function CartProvider({
         images: item.snapshot.image ? [item.snapshot.image] : base.images,
         compareAt: item.snapshot.compareAt ?? base.compareAt,
         flashSale: item.snapshot.flashSale ?? base.flashSale,
+        // Still a pre-order when it was added — the basket says when it arrives.
+        // From the snapshot: `catalog` here is the bundled seed data, which
+        // knows nothing about a pre-order opened in the dashboard. The order
+        // itself is stamped from the live catalogue (submitOrderAction).
+        preorder: item.snapshot.preorder ?? base.preorder,
         // A synthesized product must not carry variants, or the cart would
         // try to resolve a variant photo that isn't there.
         variants: undefined,

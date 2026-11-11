@@ -19,7 +19,7 @@ import OrderConfirmation, {
 } from "@/components/checkout/OrderConfirmation";
 import ProductImage from "@/components/ProductImage";
 import { CartSkeleton } from "@/components/cart/CartClient";
-import { DiscountRows, FlashTag, LinePrice, ParcelOffers } from "@/components/cart/OfferBits";
+import { DiscountRows, FlashTag, LinePrice, ParcelOffers, PreorderTag } from "@/components/cart/OfferBits";
 import { toPricingLines, useCartPricing, verifyCode } from "@/components/cart/useCartPricing";
 import { useReco } from "@/components/reco/RecoProvider";
 import { cartLineKey, useCart } from "@/lib/cart-context";
@@ -771,6 +771,7 @@ export default function CheckoutClient({
                       </span>
                     )}
                     <FlashTag deal={dealOf(cartLineKey(line))} />
+                              <PreorderTag product={line.product} />
                   </span>
                   <LinePrice
                     deal={dealOf(cartLineKey(line))}

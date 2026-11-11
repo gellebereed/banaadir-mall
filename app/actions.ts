@@ -84,6 +84,7 @@ import {
   deleteFlashRequestFromSupabase,
   useSupabaseMutations,
   upsertProduct,
+  PreorderColumnError,
   fetchProductPhotoState,
   updateProductFields,
   deleteProductFromSupabase,
@@ -111,6 +112,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import { formatShopTime, normaliseShopTime, parseShopTime } from "@/lib/shop-time";
 import { logActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
+import { arrivalDate, isPreorder, mergePreorder, readPreorder } from "@/lib/preorder";
 import { campaignPath, isUsableLink } from "@/lib/campaign-utils";
 
 /**
@@ -499,12 +501,49 @@ function pickDefaultVariantId(
   return variants.some((v) => v.id === submitted) ? submitted : variants[0].id;
 }
 
-export async function updateProduct(formData: FormData): Promise<void> {
+/** Today's date in the shop's time zone (Mogadishu, UTC+3) — "2026-11-11". */
+function shopToday(): string {
+  return new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * What the editor's Pre-order section asked for.
+ *
+ *   undefined          the form has no pre-order controls — change nothing
+ *   { clear: true }    switched off
+ *   { fields }         switched on, validated
+ *   { error }          switched on, and something about it is wrong
+ */
+function readPreorderForm(
+  formData: FormData,
+):
+  | undefined
+  | { clear: true }
+  | { fields: Pick<NonNullable<Product["preorder"]>, "arrivesAt" | "earlyPct" | "note"> }
+  | { error: string } {
+  if (formData.get("preorderControl") === null) return undefined;
+  if (String(formData.get("preorder") ?? "") !== "on") return { clear: true };
+  const parsed = readPreorder(
+    {
+      arrivesAt: String(formData.get("preorderArrivesAt") ?? ""),
+      earlyPct: String(formData.get("preorderEarlyPct") ?? ""),
+      note: String(formData.get("preorderNote") ?? ""),
+    },
+    shopToday(),
+  );
+  return "error" in parsed ? parsed : { fields: parsed.preorder };
+}
+
+export async function updateProduct(formData: FormData): Promise<void | { error: string }> {
   const session = await requireAccess("products");
   const id = String(formData.get("id"));
   const product = await getBaseProduct(id);
   if (!product) throw new Error("Product not found.");
   assertOwnsStore(session, product.store);
+
+  // Checked before any photo is uploaded, so a wrong date costs nothing.
+  const preorderForm = readPreorderForm(formData);
+  if (preorderForm && "error" in preorderForm) return { error: preorderForm.error };
 
   // Photos: the manager submits the kept photos in their new order; any
   // newly picked files are appended after upload.
@@ -541,7 +580,6 @@ export async function updateProduct(formData: FormData): Promise<void> {
   ].filter((url) => !stillUsed.has(url));
 
   const compareAtRaw = String(formData.get("compareAt") ?? "").trim();
-  const badgeRaw = String(formData.get("badge") ?? "");
   const codes = readProductCodes(formData);
 
   const category = await resolveCategory(String(formData.get("category")));
@@ -566,7 +604,6 @@ export async function updateProduct(formData: FormData): Promise<void> {
     barcode: codes.barcode,
     uom: codes.uom,
     icon: String(formData.get("icon") ?? "").trim() || product.icon,
-    badge: (badgeRaw || undefined) as Product["badge"],
     description: String(formData.get("description")),
     features: lines(formData.get("features")),
     colors: variants?.length ? undefined : commaList(formData.get("colors")),
@@ -587,6 +624,24 @@ export async function updateProduct(formData: FormData): Promise<void> {
   if (visibility !== null) {
     updatedFields.hidden = String(visibility) === "hidden";
   }
+  // Badges are worked out on read (lib/badges.ts). All a seller stores is
+  // "Off"; anything else clears whatever old word the row still holds.
+  const badgeChoice = formData.get("badge");
+  if (badgeChoice !== null) {
+    updatedFields.badge = String(badgeChoice) === "Off" ? "Off" : undefined;
+  }
+  if (preorderForm && "fields" in preorderForm) {
+    updatedFields.preorder = mergePreorder(
+      product,
+      preorderForm.fields,
+      updatedFields.stock ?? 0,
+      new Date().toISOString(),
+    );
+  } else if (preorderForm && isPreorder(product)) {
+    // Switched off. A product whose stock already LANDED keeps its record —
+    // that is what "Just landed" is counted from.
+    updatedFields.preorder = undefined;
+  }
   const attributes = await readAttributes(formData, category);
   if (attributes !== undefined) updatedFields.attributes = attributes;
 
@@ -596,7 +651,15 @@ export async function updateProduct(formData: FormData): Promise<void> {
   // than letting a duplicate barcode into the catalogue.
   await assertCodesAreFree({ ...product, ...updatedFields });
 
-  const supabaseOk = await updateProductFields(id, updatedFields);
+  let supabaseOk: boolean;
+  try {
+    supabaseOk = await updateProductFields(id, updatedFields);
+  } catch (err) {
+    // The one failure with a sentence the seller can act on — returned, not
+    // thrown, because a production build hides thrown messages.
+    if (err instanceof PreorderColumnError) return { error: err.message };
+    throw err;
+  }
   if (!supabaseOk) {
     if (useSupabaseMutations()) {
       // Supabase is the source of truth here, and the read layer ignores the
@@ -762,7 +825,47 @@ export async function deleteProduct(id: string, returnTo?: string): Promise<void
   );
 }
 
-export async function createProduct(formData: FormData): Promise<void> {
+/**
+ * "The stock is here." Ends a pre-order: the early price stops, the product
+ * sells as an ordinary one, and it wears "Just landed" for two weeks.
+ *
+ * A button rather than something the arrival date does by itself, because
+ * shipments are late. A product that quietly started promising same-week
+ * delivery on the day a container was SUPPOSED to dock would be lying to
+ * every customer who ordered it that week.
+ */
+export async function markPreorderArrived(id: string): Promise<{ ok: boolean; message: string }> {
+  const session = await requireAccess("products");
+  const product = await getBaseProduct(id);
+  if (!product) return { ok: false, message: "Product not found." };
+  assertOwnsStore(session, product.store);
+  if (!isPreorder(product) || !product.preorder) {
+    return { ok: false, message: "This product is not on pre-order." };
+  }
+
+  const preorder = { ...product.preorder, arrivedAt: new Date().toISOString() };
+  let supabaseOk = false;
+  try {
+    supabaseOk = await updateProductFields(id, { preorder });
+  } catch (err) {
+    if (err instanceof PreorderColumnError) return { ok: false, message: err.message };
+    throw err;
+  }
+  if (!supabaseOk) {
+    if (useSupabaseMutations()) return { ok: false, message: "Could not save. Please try again." };
+    await mutateDB((db) => {
+      db.productOverrides[id] = { ...db.productOverrides[id], preorder };
+    });
+  }
+  await logActivity(product.store, "product.preorder.arrived", `Marked "${product.name}" as arrived — pre-order closed`, id);
+  refresh();
+  return {
+    ok: true,
+    message: "Marked as arrived. It now sells as a normal product, with a “Just landed” badge for two weeks.",
+  };
+}
+
+export async function createProduct(formData: FormData): Promise<void | { error: string }> {
   const session = await requireAccess("products");
   const storeSlug =
     session.role === "seller" && session.store ? session.store : "sahra-fashion";
@@ -771,6 +874,8 @@ export async function createProduct(formData: FormData): Promise<void> {
   const slug =
     name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") +
     "-" + Date.now().toString(36);
+  const preorderForm = readPreorderForm(formData);
+  if (preorderForm && "error" in preorderForm) return { error: preorderForm.error };
   const compareAtRaw = String(formData.get("compareAt") ?? "").trim();
   const images = await saveImages(filesFrom(formData, "photos"), "products");
   const features = lines(formData.get("features"));
@@ -806,7 +911,9 @@ export async function createProduct(formData: FormData): Promise<void> {
     stock: variants && variants.length > 0
       ? variants.reduce((sum, v) => sum + v.stock, 0)
       : Math.max(0, Number(formData.get("stock") || 0)),
-    badge: "New",
+    // No badge is stored: "New" is worked out from this date and lapses by
+    // itself (lib/badges.ts). Supabase stamps its own created_at.
+    createdAt: new Date().toISOString(),
     colors: variants?.length ? undefined : commaList(formData.get("colors")),
     sizes: variants?.length ? undefined : commaList(formData.get("sizes")),
     attributes: await readAttributes(formData, category),
@@ -817,9 +924,19 @@ export async function createProduct(formData: FormData): Promise<void> {
     defaultVariantId: pickDefaultVariantId(formData, variants),
   };
 
+  if (preorderForm && "fields" in preorderForm) {
+    product.preorder = mergePreorder(product, preorderForm.fields, product.stock, product.createdAt ?? "");
+  }
+
   await assertCodesAreFree(product);
 
-  const supabaseOk = await upsertProduct(product);
+  let supabaseOk: boolean;
+  try {
+    supabaseOk = await upsertProduct(product);
+  } catch (err) {
+    if (err instanceof PreorderColumnError) return { error: err.message };
+    throw err;
+  }
   if (!supabaseOk) {
     await mutateDB((db) => {
       db.newProducts.push(product);
@@ -2882,6 +2999,12 @@ export async function submitOrderAction(payload: {
       image: item.image || product?.images?.[0],
       reference: item.reference || product?.internalReference,
       storeName: storesBySlug.get(store)?.name || store.replace(/-/g, " "),
+      // Bought ahead of its stock: the date promised, from the catalogue —
+      // it goes on the order so the shop does not try to pack it today.
+      preorder:
+        product && isPreorder(product) && product.preorder
+          ? { arrivesAt: product.preorder.arrivesAt }
+          : undefined,
     };
   });
 
@@ -2942,6 +3065,7 @@ export async function submitOrderAction(payload: {
           storeName: i.storeName,
           selectedColor: i.selectedColor,
           selectedSize: i.selectedSize,
+          ...(i.preorder ? { preorder: i.preorder } : {}),
         })),
       ),
       status: "pending",
@@ -2972,7 +3096,16 @@ export async function submitOrderAction(payload: {
           qty: c.qty,
           price: c.price,
           ...(c.price !== c.listPrice ? { listPrice: c.listPrice, offer: c.offerName, offerId: c.offerId } : {}),
-          options: [i.selectedColor, i.selectedSize].filter(Boolean).join(" · ") || undefined,
+          // The arrival date rides in the options text, so it reaches the
+          // confirmation screen AND the WhatsApp message the shop packs from.
+          options:
+            [
+              i.selectedColor,
+              i.selectedSize,
+              i.preorder ? `PRE-ORDER, arrives ${arrivalDate(i.preorder.arrivesAt)}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined,
           reference: i.reference,
           image: i.image,
         })),

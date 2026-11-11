@@ -89,5 +89,8 @@ DROP POLICY IF EXISTS "banaadir_uploads_delete" ON storage.objects;
 --  review — and to re-run on their own — than another 200 lines here.
 -- ═════════════════════════════════════════════════════════════════════════
 
+-- Pre-orders (supabase/migration-preorder.sql explains the column).
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS preorder JSONB;
+
 -- VERIFICATION
 SELECT 'Migration completed successfully!' AS result;

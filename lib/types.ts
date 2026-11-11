@@ -251,7 +251,20 @@ compareAt?: number;
   reviewCount: number;
   sold: number;
   stock: number;
-  badge?: "Sale" | "Bestseller" | "New";
+  /**
+   * On the storefront: the ONE badge this product wears today, worked out
+   * by lib/badges.ts from its price, stock, age and sales — never typed.
+   *
+   * On the stored record it is only ever "Off" (the seller switched badges
+   * off for this product) or empty. Older rows still hold "New" or
+   * "Bestseller" from when a badge was a saved word that never expired;
+   * those are ignored and re-derived.
+   */
+  badge?: ProductBadge;
+  /** ISO timestamp it was first listed — what "New" is measured from. */
+  createdAt?: string;
+  /** Set while (and after) the shop sells it ahead of its stock — lib/preorder.ts. */
+  preorder?: Preorder;
   colors?: string[];
   sizes?: string[];
   /**
@@ -281,6 +294,42 @@ compareAt?: number;
    * product in catalogue listings. Falls back to the first variant.
    */
   defaultVariantId?: string;
+}
+
+/** See lib/badges.ts for what earns each one, and when it lapses. */
+export type ProductBadge =
+  | "Pre-order"
+  | "Sale"
+  | "Low stock"
+  | "Just landed"
+  | "New"
+  | "Bestseller"
+  /** Stored only: the seller turned badges off for this product. */
+  | "Off";
+
+/**
+ * A product on sale before its stock has arrived (lib/preorder.ts).
+ * One JSON column — supabase/migration-preorder.sql.
+ */
+export interface Preorder {
+  /** The date the shop expects the stock, "2026-11-25". */
+  arrivesAt: string;
+  /**
+   * Units opened for pre-order. Maintained by the server on save (what is
+   * open now + what is already reserved) so "18 of 40 reserved" stays true.
+   */
+  total?: number;
+  /** Early price: this % off until the stock lands. */
+  earlyPct?: number;
+  /** One line from the shop — "Autumn collection, direct from Istanbul". */
+  note?: string;
+  /** When pre-orders opened. */
+  startedAt?: string;
+  /**
+   * When the shop confirmed the stock is here. From then on it is an
+   * ordinary product again, wearing "Just landed" for two weeks.
+   */
+  arrivedAt?: string;
 }
 
 /**
@@ -376,6 +425,11 @@ export interface OrderItem {
   image?: string;
   selectedColor?: string;
   selectedSize?: string;
+  /**
+   * Bought ahead of its stock: the arrival date the customer was promised.
+   * The shop packs this line when the shipment lands, not today.
+   */
+  preorder?: { arrivesAt: string };
 }
 
 /**
@@ -512,6 +566,8 @@ export interface CartItem {
     compareAt?: number;
     /** It was added at its flash price — the basket says so. */
     flashSale?: { until?: string };
+    /** A pre-order — the basket says when it arrives. */
+    preorder?: { arrivesAt: string };
   };
   /** Variant id when the product has variants. */
   variantId?: string;

@@ -18,13 +18,18 @@ import {
   totalStock,
   variantSizes,
 } from "@/lib/product-utils";
+import { arrivalDate, daysUntilArrival, isPreorder, preorderProgress } from "@/lib/preorder";
 import type { Product } from "@/lib/types";
 import FlashEndsChip from "./FlashEndsChip";
 import ProductImage from "./ProductImage";
 import Rating from "./Rating";
 
+/** One colour per badge (lib/badges.ts decides which one a product wears). */
 const BADGE_STYLES: Record<string, string> = {
+  "Pre-order": "bg-ocean-950 text-mango-300",
   Sale: "bg-coral-500 text-white",
+  "Low stock": "bg-white text-coral-600 ring-1 ring-coral-200",
+  "Just landed": "bg-emerald-600 text-white",
   Bestseller: "bg-ocean-800 text-white",
   New: "bg-mango-400 text-ocean-950",
 };
@@ -64,13 +69,24 @@ export default function ProductCard({
 }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const t = useT();
-  const { lite } = usePrefs();
+  const { lite, lang } = usePrefs();
   const wished = isWishlisted(product.id);
 
   // With variants the card shows the cheapest option ("from $X").
   const price = displayPrice(product);
   const showFrom = hasPriceRange(product);
-  const soldOut = totalStock(product) === 0;
+  const stockLeft = totalStock(product);
+  const soldOut = stockLeft === 0;
+
+  // Sold ahead of its stock: the card says when it comes instead of how
+  // many have sold, and "sold out" means every unit has been reserved.
+  const preorder = isPreorder(product) ? product.preorder : undefined;
+  const reserved = preorder ? preorderProgress(product)?.reserved : undefined;
+  const arrivesLabel = preorder
+    ? daysUntilArrival(preorder.arrivesAt) < 0
+      ? t("pre.anyDay")
+      : t("pre.arrives", { date: arrivalDate(preorder.arrivesAt, lang) })
+    : undefined;
 
   const colors = colorOptions(product);
   const sizes = variantSizes(product);
@@ -171,8 +187,13 @@ export default function ProductCard({
 
         {/* The shop's cart offer — "Buy 1, get the next for $1". Over the
             photo so a card with an offer is the same height as one without. */}
-        {(product.offer || product.flashEndsAt) && !(canSlide && hovering) && (
+        {(product.offer || product.flashEndsAt || arrivesLabel) && !(canSlide && hovering) && (
           <span className="pointer-events-none absolute bottom-2 left-2 right-2 flex flex-col items-start gap-1">
+            {arrivesLabel && (
+              <span className="max-w-full truncate rounded-full bg-ocean-950/90 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
+                📦 {arrivesLabel}
+              </span>
+            )}
             {/* This product's flash price ends before the campaign's. */}
             {product.flashEndsAt && <FlashEndsChip endsAt={product.flashEndsAt} className="max-w-full truncate" />}
             {product.offer && (
@@ -202,7 +223,11 @@ export default function ProductCard({
             >
               {product.badge === "Sale" && product.compareAt
                 ? `-${discountPct(price, product.compareAt)}%`
-                : t(`badge.${product.badge}` as MessageKey)}
+                : product.badge === "Low stock"
+                  ? stockLeft === 1
+                    ? t("badge.lastOne")
+                    : t("badge.Low stock", { n: stockLeft })
+                  : t(`badge.${product.badge}` as MessageKey)}
             </span>
           )}
         </div>
@@ -302,9 +327,15 @@ export default function ProductCard({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="min-h-4 text-[11px] text-slate-400">
               {soldOut ? (
-                <span className="font-semibold text-coral-600">{t("product.outOfStock")}</span>
+                <span className="font-semibold text-coral-600">
+                  {preorder ? t("pre.fullyReserved") : t("product.outOfStock")}
+                </span>
+              ) : preorder ? (
+                // Nothing at all rather than "0 reserved" — or its catalogue
+                // "sold" count, which is about a shipment that came before.
+                reserved ? <span className="font-semibold text-ocean-700">{t("pre.cardReserved", { n: reserved })}</span> : null
               ) : (
                 t("product.sold", { n: compact(product.sold) })
               )}
@@ -322,7 +353,7 @@ export default function ProductCard({
             </Link>
           ) : (
             <button
-              aria-label={`Add ${product.name} to cart`}
+              aria-label={`${preorder ? "Pre-order" : "Add"} ${product.name}${preorder ? "" : " to cart"}`}
               disabled={soldOut}
               onClick={() =>
                 addToCart({
@@ -338,6 +369,7 @@ export default function ProductCard({
                     image: mainImage,
                     compareAt: product.compareAt,
                     flashSale: product.flashSale,
+                    preorder: preorder ? { arrivesAt: preorder.arrivesAt } : undefined,
                   },
                 }, {
                   offer: product.offer && !product.offer.code ? offerHint(product.offer, price, t, money) : undefined,
