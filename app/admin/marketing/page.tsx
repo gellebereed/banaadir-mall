@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import MarketingBasicsForm from "@/components/dashboard/MarketingBasicsForm";
+import RewardsSettingsForm from "@/components/dashboard/RewardsSettingsForm";
 import SectionArranger from "@/components/dashboard/SectionArranger";
+import { rewardSettings } from "@/lib/rewards";
 import { getMarketingSettings, getStores } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Marketing" };
@@ -14,6 +16,7 @@ export const metadata: Metadata = { title: "Marketing" };
  */
 export default async function AdminMarketingPage() {
   const [m, stores] = await Promise.all([getMarketingSettings(), getStores()]);
+  const rewards = rewardSettings(m.rewards);
 
   return (
     <div>
@@ -71,6 +74,14 @@ export default async function AdminMarketingPage() {
           { label: m.promo.code ? `🏷️ Promo code ${m.promo.code} (${m.promo.pct}%)` : "🏷️ Promo code", running: Boolean(m.promo.code), deal: m.promo },
         ]}
       />
+
+      {/* ── Rewards ──────────────────────────────────────────────── */}
+      <div className="mt-5">
+        <RewardsSettingsForm
+          rewards={rewards}
+          storeNames={stores.filter((s) => rewards.stores.includes(s.slug)).map((s) => s.name)}
+        />
+      </div>
 
       {/* ── Hero, announcement & campaign ────────────────────────── */}
       <div className="mt-5">

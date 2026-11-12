@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import CheckoutClient from "@/components/checkout/CheckoutClient";
 import { getMarketingSettings, getOrders, getPublicOffers, getStores } from "@/lib/api";
+import { rewardSettings, walletFrom } from "@/lib/rewards";
 import { getSession } from "@/lib/session";
 import { orderBelongsTo } from "@/lib/order-utils";
 import { splitPhone } from "@/lib/data/locations";
@@ -57,8 +58,15 @@ export default async function CheckoutPage() {
     district: "",
   };
 
+  // Reward credit: the programme's rules for everyone (so the page can say
+  // what this order will earn), and the balance for a signed-in customer.
+  const rewards = { settings: rewardSettings(settings.rewards), available: 0 };
+
   if (session) {
     const orders = await getOrders();
+    if (session.role === "customer" && rewards.settings.active) {
+      rewards.available = walletFrom(orders.filter((order) => orderBelongsTo(order, session))).available;
+    }
     // Their orders by email only — matching on the name filled this form
     // with a stranger's phone and address whenever two people shared one.
     const latest = orders
@@ -78,5 +86,5 @@ export default async function CheckoutPage() {
     }
   }
 
-  return <CheckoutClient settings={settings} stores={stores} defaults={defaults} offers={offers} />;
+  return <CheckoutClient settings={settings} stores={stores} defaults={defaults} offers={offers} rewards={rewards} />;
 }

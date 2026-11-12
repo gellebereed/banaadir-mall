@@ -40,6 +40,7 @@ import type {
   Store,
   Supply,
   SupplyPurchase,
+  RewardSettings,
   Variant,
 } from "../types";
 
@@ -590,6 +591,9 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
     if (order.channel) row.channel = order.channel;
     if (order.payment) row.payment = order.payment;
     if (order.paymentStatus) row.payment_status = order.paymentStatus;
+    // Rewards cannot be switched on without this column (updateRewardsInSupabase
+    // writes its sibling from the same migration), so it is there when it matters.
+    if (order.reward) row.reward = order.reward;
 
     let { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
 
@@ -609,6 +613,7 @@ export async function createOrderInSupabase(order: Order): Promise<boolean> {
       delete row.channel;
       delete row.payment;
       delete row.payment_status;
+      delete row.reward;
       ({ error } = await supabase.from("orders").upsert(row, { onConflict: "id" }));
     }
 
@@ -1216,6 +1221,31 @@ export async function updateMarketingInSupabase(
   } catch (err) {
     console.error("[Supabase Mutations] updateMarketing exception:", err);
     return false;
+  }
+}
+
+/**
+ * Save the rewards settings, and ONLY those — for the same two reasons as
+ * the commission writer below: another screen's save must not write back a
+ * stale copy of who has joined, and a missing column has to be reported
+ * rather than retried without it. "Rewards are on" that went nowhere would
+ * have shops promising credit nobody is recording.
+ */
+export async function updateRewardsInSupabase(
+  rewards: RewardSettings,
+): Promise<{ ok: boolean; migrationRequired: boolean }> {
+  if (!useSupabaseMutations()) return { ok: false, migrationRequired: false };
+  try {
+    const { error } = await getDataClient()
+      .from("marketing_settings")
+      .upsert({ id: 1, rewards }, { onConflict: "id" });
+    if (!error) return { ok: true, migrationRequired: false };
+    if (isMissingColumnError(error)) return { ok: false, migrationRequired: true };
+    console.error("[Supabase Mutations] updateRewards error:", error.message);
+    return { ok: false, migrationRequired: false };
+  } catch (err) {
+    console.error("[Supabase Mutations] updateRewards exception:", err);
+    return { ok: false, migrationRequired: false };
   }
 }
 

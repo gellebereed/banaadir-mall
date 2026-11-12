@@ -59,6 +59,8 @@ export interface PlacedOrder {
   discount?: number;
   /** Saved by sale and flash prices, before any offer — as the basket showed it. */
   saleDiscount?: number;
+  /** Reward credit this order earns, released on delivery (lib/rewards.ts). */
+  rewardEarn?: number;
   delivery: number;
   total: number;
   parcels: PlacedParcel[];
@@ -275,6 +277,11 @@ export default function OrderConfirmation({
             </dd>
           </div>
         </dl>
+        {(order.rewardEarn ?? 0) > 0 && (
+          <p className="mt-3 rounded-xl bg-mango-50 px-3 py-2 text-center text-sm font-bold text-mango-900">
+            🎁 {t("rewards.earned", { amount: money(order.rewardEarn ?? 0) })}
+          </p>
+        )}
 
         <div className="mt-5 grid gap-4 border-t border-sand-200 pt-5 text-sm sm:grid-cols-2">
           <div>

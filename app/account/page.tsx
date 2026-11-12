@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getBaseProducts, getOrders, getStore, getVendorStats } from "@/lib/api";
+import { getAllStores, getBaseProducts, getOrders, getRewardSettings, getStore, getVendorStats } from "@/lib/api";
+import WalletCard from "@/components/account/WalletCard";
+import { walletFrom } from "@/lib/rewards";
+import { getT } from "@/lib/prefs-server";
 import { money } from "@/lib/format";
 import { orderBelongsTo } from "@/lib/order-utils";
 import { getSession } from "@/lib/session";
@@ -63,6 +66,7 @@ export default async function AccountPage() {
   // Same rule as everywhere else: an order with an email is matched on it
   // alone, so two customers with the same name never see each other's.
   const serverOrders = allOrders.filter((o) => orderBelongsTo(o, session));
+  const [rewards, allStores] = await Promise.all([getRewardSettings(), getAllStores()]);
 
   // Cancelled orders are excluded from spend — money that came back is not
   // money spent, and a lifetime total that counts it is simply wrong.
@@ -147,6 +151,15 @@ export default async function AccountPage() {
           it the header painted over the top half of the first card. */}
       <div className="relative mx-auto -mt-16 max-w-5xl space-y-4 px-4">
         {appliedStore && <StoreApplicationStatus store={appliedStore} />}
+        {/* ── Reward credit — the reason to come back, so it comes first. */}
+        {!isSeller && (
+          <WalletCard
+            wallet={walletFrom(serverOrders)}
+            settings={rewards}
+            storeNames={Object.fromEntries(allStores.map((s) => [s.slug, s.name]))}
+            t={await getT()}
+          />
+        )}
         {/* ── My orders ────────────────────────────────────────────── */}
         <section className="card p-5">
           <div className="flex items-center justify-between gap-2">

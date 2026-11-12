@@ -688,6 +688,8 @@ export async function updateProduct(formData: FormData): Promise<void | { error:
 
   await logActivity(product.store, "product.update", describeProductChange(product, updatedFields), id);
   refresh();
+  // A save is when stock comes back and prices drop — tell whoever asked.
+  await (await import("@/lib/alert-dispatch")).dispatchQuietly(product.store);
   // Back to the list as it was left — same filters, same page.
   redirect(
     productsReturnPath(
@@ -859,6 +861,10 @@ export async function markPreorderArrived(id: string): Promise<{ ok: boolean; me
   }
   await logActivity(product.store, "product.preorder.arrived", `Marked "${product.name}" as arrived — pre-order closed`, id);
   refresh();
+  // The customers who asked to be told it had arrived: now is when. Sends
+  // only if the WhatsApp Cloud API is set up; otherwise they are waiting in
+  // /vendor/alerts for the shop to send by hand.
+  await (await import("@/lib/alert-dispatch")).dispatchQuietly(product.store);
   return {
     ok: true,
     message: "Marked as arrived. It now sells as a normal product, with a “Just landed” badge for two weeks.",
@@ -2565,6 +2571,82 @@ export async function setMarketplaceOptIn(
   };
 }
 
+/**
+ * Join or leave the rewards programme. Its own action rather than a third
+ * `kind` above: it writes one column (see updateRewardsInSupabase) and has
+ * to be able to say "the database is not ready" instead of pretending.
+ */
+export async function setRewardsOptIn(join: boolean): Promise<SaveState> {
+  const session = await requirePermission("promotions.manage");
+  const store = session.role === "seller" ? session.store : undefined;
+  if (!store) return { ok: false, message: "Open your store's dashboard to choose this." };
+
+  const { getRewardSettings } = await import("@/lib/api");
+  const current = await getRewardSettings();
+  const stores = new Set(current.stores);
+  const declined = new Set(current.declined ?? []);
+  if (join) {
+    stores.add(store);
+    declined.delete(store);
+  } else {
+    stores.delete(store);
+    declined.add(store);
+  }
+  const saved = await saveRewards({ ...current, stores: [...stores], declined: [...declined] });
+  if (!saved.ok) return saved;
+
+  await logActivity(store, `marketplace.rewards.${join ? "join" : "leave"}`, `${join ? "Joined" : "Left"} Banaadir Rewards`, "rewards");
+  refresh();
+  return {
+    ok: true,
+    message: join
+      ? `You're in — your customers earn ${current.earnPct}% back, and can pay up to ${current.maxSpendPct}% of an order with credit.`
+      : "You have left Banaadir Rewards. Credit can no longer be earned or spent at your shop.",
+  };
+}
+
+/** Admin: switch the programme on or off and set its two rates. */
+export async function updateRewardSettings(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  await requireAccess("marketing");
+  const { getRewardSettings } = await import("@/lib/api");
+  const { MAX_EARN_PCT, MAX_SPEND_PCT } = await import("@/lib/rewards");
+  const current = await getRewardSettings();
+
+  const earnPct = Number(formData.get("earnPct"));
+  const maxSpendPct = Number(formData.get("maxSpendPct"));
+  if (!Number.isFinite(earnPct) || earnPct <= 0 || earnPct > MAX_EARN_PCT) {
+    return { ok: false, message: `Credit earned must be between 0.5% and ${MAX_EARN_PCT}%.` };
+  }
+  if (!Number.isFinite(maxSpendPct) || maxSpendPct < 1 || maxSpendPct > MAX_SPEND_PCT) {
+    return { ok: false, message: `The share of an order payable with credit must be between 1% and ${MAX_SPEND_PCT}%.` };
+  }
+  const active = formData.get("active") === "on";
+  const saved = await saveRewards({ ...current, active, earnPct, maxSpendPct });
+  if (!saved.ok) return saved;
+  refresh();
+  return {
+    ok: true,
+    message: active
+      ? `Rewards are on: ${earnPct}% back at ${current.stores.length} participating shop${current.stores.length === 1 ? "" : "s"}.`
+      : "Rewards are off. Nobody earns or spends credit; existing balances are kept.",
+  };
+}
+
+async function saveRewards(next: import("@/lib/types").RewardSettings): Promise<SaveState> {
+  if (useSupabaseMutations()) {
+    const { updateRewardsInSupabase } = await import("@/lib/supabase/mutations");
+    const result = await updateRewardsInSupabase(next);
+    if (result.migrationRequired) {
+      return { ok: false, message: "Rewards need one database update first: run supabase/migration-rewards.sql in Supabase." };
+    }
+    if (!result.ok) return { ok: false, message: "Could not save — please try again." };
+  }
+  await mutateDB((db) => {
+    db.marketing = { ...db.marketing, rewards: next };
+  });
+  return { ok: true, message: "" };
+}
+
 /** Section order + visibility, submitted by the section arranger. */
 export async function updateSections(
   _prev: SaveState,
@@ -2810,7 +2892,10 @@ export interface ResolvedParcel {
   whatsapp?: string;
   /** The vendor's own order id, e.g. "BM-12345-KARA". */
   orderId: string;
+  /** What this shop collects — after offers, the promo code and reward credit. */
   subtotal: number;
+  /** Reward credit the customer paid this shop with; it collects that much less. */
+  creditSpent?: number;
   /** Which of this shop's methods the customer pays it with (lib/shop-payments.ts). */
   payTo?: ShopPaymentMethod;
   lines: {
@@ -2881,12 +2966,16 @@ export async function submitOrderAction(payload: {
   paymentMethod: string;
   /** The code the customer applied in the cart, if any. Checked here. */
   promoCode?: string;
+  /** Pay part of it with reward credit. How much is decided here, never by the browser. */
+  useRewards?: boolean;
 }): Promise<{
   ok: boolean;
   message: string;
   orderId: string;
-  /** Everything the customer saved — shop offers and promo code. */
+  /** Everything the customer saved — shop offers, promo code and credit spent. */
   discount: number;
+  /** Reward credit paid towards this order, and what it will earn (lib/rewards.ts). */
+  reward?: { spent: number; earn: number };
   /**
    * The parcels as the SERVER resolved them. The confirmation screen uses
    * these rather than its own copy, because the browser's cart may carry a
@@ -3017,13 +3106,43 @@ export async function submitOrderAction(payload: {
 
   const { createOrderInSupabase } = await import("@/lib/supabase/mutations");
 
+  /*
+   * Reward credit (lib/rewards.ts). The balance is read from the customer's
+   * own orders HERE, at the moment of ordering, and the split across shops
+   * is worked out here too — the browser only says "use it".
+   */
+  const { getRewardSettings, getWallet } = await import("@/lib/api");
+  const { earnFor, planSpend } = await import("@/lib/rewards");
+  const rewards = await getRewardSettings();
+  const cents = (n: number) => Math.round(n * 100) / 100;
+  const parcelTotal = (slug: string, lines: typeof items) =>
+    priced.pricing.stores[slug]?.total ??
+    lines.reduce((acc, i) => acc + i.charged.reduce((t, c) => t + c.price * c.qty, 0), 0);
+  const spendPlan =
+    payload.useRewards && rewards.active && session?.role === "customer"
+      ? planSpend(
+          rewards,
+          (await getWallet(session.email)).available,
+          [...itemsByStore.entries()].map(([slug, lines]) => ({ store: slug, total: parcelTotal(slug, lines) })),
+        )
+      : {};
+  let creditSpent = 0;
+  let creditEarned = 0;
+
   const parcels: ResolvedParcel[] = [];
 
   for (const [storeSlug, storeItems] of itemsByStore.entries()) {
     // What this shop's courier collects: its items after its own offers
     // and, if it accepted it, the promo code.
-    const storeSubtotal = priced.pricing.stores[storeSlug]?.total ??
-      storeItems.reduce((acc, i) => acc + i.charged.reduce((t, c) => t + c.price * c.qty, 0), 0);
+    // …less any reward credit this shop accepts, which it has agreed to
+    // absorb by joining the programme.
+    const spent = spendPlan[storeSlug] ?? 0;
+    const storeSubtotal = cents(parcelTotal(storeSlug, storeItems) - spent);
+    // Earned on what is actually paid, and only where there is an email to
+    // credit it to. A guest's credit waits for them under that email.
+    const earn = customerEmail ? earnFor(rewards, storeSlug, storeSubtotal) : 0;
+    creditSpent = cents(creditSpent + spent);
+    creditEarned = cents(creditEarned + earn);
     const store = storesBySlug.get(storeSlug);
     const parcelId = orderIds.get(storeSlug) ?? id;
     // The customer picked one way to pay for the basket; this shop is paid
@@ -3071,6 +3190,9 @@ export async function submitOrderAction(payload: {
       status: "pending",
       payment: payTo.kind,
       paymentStatus: initialStatus(payTo),
+      ...(spent > 0 || earn > 0
+        ? { reward: { ...(earn > 0 ? { earn } : {}), ...(spent > 0 ? { spent } : {}) } }
+        : {}),
     };
 
     if (useSupabaseMutations()) {
@@ -3089,6 +3211,7 @@ export async function submitOrderAction(payload: {
       whatsapp: store?.whatsapp,
       orderId: parcelId,
       subtotal: storeSubtotal,
+      creditSpent: spent || undefined,
       payTo,
       lines: storeItems.flatMap((i) =>
         i.charged.map((c) => ({
@@ -3152,8 +3275,17 @@ export async function submitOrderAction(payload: {
     }
   }
 
-  const discount = Math.round((priced.pricing.offerDiscount + priced.pricing.promoDiscount) * 100) / 100;
-  return { ok: true, message: "Order placed successfully!", orderId: id, discount, parcels };
+  // Credit counts as a saving: the parcels' totals are already net of it,
+  // and the confirmation adds this back to show what the basket was worth.
+  const discount = cents(priced.pricing.offerDiscount + priced.pricing.promoDiscount + creditSpent);
+  return {
+    ok: true,
+    message: "Order placed successfully!",
+    orderId: id,
+    discount,
+    parcels,
+    ...(creditSpent > 0 || creditEarned > 0 ? { reward: { spent: creditSpent, earn: creditEarned } } : {}),
+  };
 }
 
 /**

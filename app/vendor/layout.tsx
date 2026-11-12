@@ -160,6 +160,8 @@ export default async function VendorLayout({
     ...(may(session, "promotions.manage")
       ? [
           { href: "/vendor/promotions", icon: "promotions" as const, label: "Promotions", tab: !store?.pos?.enabled },
+          // Customers who asked to be told on WhatsApp (lib/alert-utils.ts).
+          { href: "/vendor/alerts", icon: "alerts" as const, label: "Customer alerts" },
           { href: "/vendor/flash", icon: "flash" as const, label: "Flash deals" },
         ]
       : []),

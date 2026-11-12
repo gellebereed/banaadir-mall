@@ -9,6 +9,8 @@ import Rating from "@/components/Rating";
 import ShareButton from "@/components/ShareButton";
 import DeliveryPromise from "./DeliveryPromise";
 import PreorderPanel from "./PreorderPanel";
+import AlertButton from "./AlertButton";
+import { alertKindFor } from "@/lib/alert-utils";
 import { isPreorder } from "@/lib/preorder";
 import type { MessageKey } from "@/lib/i18n";
 import { offerHeadline, offerHint, offerTerms } from "@/lib/offers";
@@ -42,6 +44,7 @@ export default function ProductView({
   product,
   details = [],
   delivery,
+  rewardPct = 0,
   children,
 }: {
   product: Product;
@@ -49,6 +52,8 @@ export default function ProductView({
   details?: { name: string; value: string }[];
   /** Marketing → Delivery, for the promise under the buy buttons. */
   delivery?: MarketingSettings["delivery"];
+  /** % of the price that comes back as reward credit; 0 when the shop is not in the programme. */
+  rewardPct?: number;
   children?: ReactNode;
 }) {
   const { addToCart, toggleWishlist, isWishlisted, lines } = useCart();
@@ -546,6 +551,15 @@ export default function ProductView({
             </button>
           </div>
         </div>
+
+        <AlertButton productId={product.id} kind={alertKindFor(product)} />
+
+        {/* What this purchase puts in the wallet — at the moment of deciding. */}
+        {rewardPct > 0 && !soldOut && Math.floor(price * qty * rewardPct) >= 1 && (
+          <p className="mt-4 rounded-xl bg-mango-50 px-4 py-2.5 text-sm font-semibold text-mango-900">
+            🎁 {t("rewards.product", { amount: money(Math.floor(price * qty * rewardPct) / 100) })}
+          </p>
+        )}
 
         {/* "Arrives in 2 days" is a promise about stock on the shelf; a
             pre-order's date is the one in its own panel. */}
