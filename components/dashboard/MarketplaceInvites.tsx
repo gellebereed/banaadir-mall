@@ -31,7 +31,9 @@ export default function MarketplaceInvites({ invites }: { invites: MarketplaceIn
             className="flex flex-wrap items-center gap-4 rounded-2xl bg-gradient-to-r from-ocean-800 to-ocean-700 p-4 text-white shadow-sm sm:p-5"
           >
             <span className="text-3xl" aria-hidden>🏬</span>
-            <div className="min-w-0 flex-1">
+            {/* basis-60, not min-w-0: with min-w-0 the text gave all its
+                width to the buttons on phones and wrapped one word a line. */}
+            <div className="min-w-0 flex-1 basis-60">
               <p className="text-[11px] font-bold uppercase tracking-wide text-mango-300">Invitation from Banaadir Mall</p>
               <p className="font-display text-lg font-extrabold">{invite.title}</p>
               <p className="text-sm text-ocean-100">{reply ?? invite.detail}</p>

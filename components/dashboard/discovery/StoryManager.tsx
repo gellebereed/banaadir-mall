@@ -136,7 +136,7 @@ export default function StoryManager({
                       </PendingButton>
                     </form>
                     <form action={deleteStory.bind(null, story.id)}>
-                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
+                      <PendingButton confirm="Delete this story? This can't be undone." className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
                         Delete
                       </PendingButton>
                     </form>
