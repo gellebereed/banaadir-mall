@@ -198,6 +198,8 @@ async function fetchStoresFromSupabaseRaw(): Promise<Store[] | null> {
       // Absent until migration-pos.sql runs, and absent means OFF — no shop
       // is handed a branded site because a column is missing.
       ownSite: s.own_site ?? false,
+      // Added by supabase/migration-store-hidden.sql; absent means visible.
+      hidden: s.hidden ?? false,
     }));
   } catch {
     return null;

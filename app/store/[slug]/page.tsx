@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const store = await getStore((await params).slug);
-  if (!store) notFound();
+  if (!store || store.status !== "active" || store.hidden) notFound();
   const description = metaDescription(
     store.tagline,
     `Shop ${store.name} on Banaadir Mall — delivered across Somalia.`,
@@ -49,7 +49,9 @@ export default async function StorePage({ params, searchParams }: Props) {
   const t = await getT();
   const { c: activeSlug } = await searchParams;
   const store = await getStore(slug);
-  if (!store || store.status !== "active") notFound();
+  // Hidden while it is set up (Store.hidden): not found, like a store that
+  // doesn't exist yet — no name, no banner, no half-finished catalogue.
+  if (!store || store.status !== "active" || store.hidden) notFound();
 
   const [products, allCollections] = await Promise.all([getProductsByStore(slug), getCollections(slug)]);
 

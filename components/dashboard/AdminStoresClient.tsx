@@ -294,6 +294,14 @@ export default function AdminStoresClient({
                             {/* Flagged here so "why is this shop not in
                                 search?" has an answer on the page where it
                                 gets asked, rather than looking like a bug. */}
+                            {store.hidden && (
+                              <span
+                                title="Hidden from shoppers while it is set up — see “Who shoppers can see” above."
+                                className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700"
+                              >
+                                🙈 Hidden
+                              </span>
+                            )}
                             {store.listing === "own-store-only" && (
                               <span
                                 title="This store chose to stay off marketplace search, categories and suggestions. Its own page still works."

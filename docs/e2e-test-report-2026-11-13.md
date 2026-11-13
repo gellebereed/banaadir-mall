@@ -55,7 +55,7 @@ it) silently. The seller's own order screen already asked first.
 above now ask first, and say what will happen. Re-tested: tapping
 **Delete product** and answering *Cancel* keeps the product live.
 
-### 2. Sign-up promises 10% off with BANAADIR10, but no shop accepts it
+### 2. Sign-up promises 10% off with BANAADIR10, but no shop accepts it ✅ line removed in this PR (owner's choice, 13 Nov)
 `/register` says *"get 10% off your first order with code BANAADIR10"*. On the
 live site **no store has joined** that promotion
 (`marketing_settings.promo.stores` is empty, U.S. Polo Assn. declined), so a new
@@ -135,6 +135,20 @@ but they describe how customers pay, so they need the owner's wording first.
     Opening on *All time* until there's 30 days of history would help.
 
 ---
+
+## Owner's decisions (13 Nov)
+
+- **#2:** hide the sign-up line for now. Done in this PR.
+- **#3:** keep the payment wording as it is while stores finish setting up.
+- **#5:** the 9 live orders were tests; cancel them.
+- **New:** the admin can hide a store that isn't fully set up, so the site can
+  go live without it. Built in this PR: `/admin/stores` → *Who shoppers can
+  see*, with a set-up checklist per store (products with photos, WhatsApp,
+  logo; a mobile money number is optional). A hidden store's page, products,
+  search results, categories and campaigns disappear for shoppers, checkout
+  refuses its items from an old basket, and its owner keeps the dashboard
+  with a notice saying the store is hidden. Needs
+  `supabase/migration-store-hidden.sql` on the live database.
 
 ## Journeys tested
 

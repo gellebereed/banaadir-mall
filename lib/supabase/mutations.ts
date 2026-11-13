@@ -551,6 +551,35 @@ export async function updateStorePaymentMethodsInSupabase(
   }
 }
 
+/**
+ * Hide a store from shoppers, or make it live (Store.hidden).
+ *
+ * Its own function rather than a field of updateStoreFields: that one
+ * quietly drops columns a database doesn't have yet and still reports
+ * success, which here would tell the admin a store is hidden while every
+ * shopper can still see it. A missing column is reported instead, so the
+ * admin is told to run supabase/migration-store-hidden.sql.
+ */
+export async function setStoreHiddenInSupabase(
+  slug: string,
+  hidden: boolean,
+): Promise<"ok" | "missing-column" | "error" | "not-configured"> {
+  if (!useSupabaseMutations()) return "not-configured";
+  try {
+    const { data, error } = await getDataClient()
+      .from("stores").update({ hidden }).eq("slug", slug).select("slug");
+    if (error) {
+      if (isMissingColumnError(error)) return "missing-column";
+      console.error("[Supabase Mutations] setStoreHidden error:", error.message);
+      return "error";
+    }
+    return (data?.length ?? 0) > 0 ? "ok" : "error";
+  } catch (err) {
+    console.error("[Supabase Mutations] setStoreHidden failed:", err);
+    return "error";
+  }
+}
+
 export async function setStoreStatusInSupabase(
   slug: string,
   status: Store["status"]

@@ -205,11 +205,29 @@ export default async function VendorLayout({
       // ONE bell for every breakpoint — see the note in DashboardShell.
       bell={<OrderNotifications storeSlug={storeSlug} initialNewOrders={newOrders} />}
       items={items}
-      viewStoreHref={store ? `/store/${store.slug}` : undefined}
+      // A hidden store's page is "not found" to everyone, so no link to it.
+      viewStoreHref={store && !store.hidden ? `/store/${store.slug}` : undefined}
       user={{ name: session.name, email: session.email, role: subtitle }}
       notice={
-        // Owners still on a retired generated login — see lib/accounts.ts.
-        !session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed() ? (
+        store?.hidden || (!session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed()) ? (
+          <>
+            {/* Hidden while it is set up (Store.hidden): the owner has to
+                know shoppers can't see the shop, or a quiet week reads as
+                "nobody wants my products". */}
+            {store?.hidden && (
+              <div className="mb-5 rounded-2xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-800">
+                <p>
+                  <strong>🙈 Shoppers can&apos;t see your store yet.</strong> Banaadir Mall has hidden it
+                  while it is being set up. Add products with photos, your WhatsApp number and your logo
+                  in{" "}
+                  <Link href="/vendor/settings" className="font-semibold underline">
+                    Store settings
+                  </Link>
+                  , and the team will make it live.
+                </p>
+              </div>
+            )}
+            {!session.access && isRetiredStoreLogin(session.email) && !sharedPasswordsAllowed() && (
           <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-mango-200 bg-mango-50 p-4 text-sm text-mango-900 sm:flex-row sm:items-center sm:justify-between">
             <p>
               <strong>Switch to your own email.</strong> You&apos;re signed in with{" "}
@@ -223,6 +241,8 @@ export default async function VendorLayout({
               Change my email
             </Link>
           </div>
+            )}
+          </>
         ) : undefined
       }
     >
