@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import AdminStoresClient from "@/components/dashboard/AdminStoresClient";
-import { getAllStores, getVendorStats } from "@/lib/api";
+import StoreVisibilityPanel from "@/components/dashboard/StoreVisibilityPanel";
+import { getAllProducts, getAllStores, getVendorStats } from "@/lib/api";
+import { storeSetupChecks } from "@/lib/store-setup";
 
 export const metadata: Metadata = { title: "Stores Control Panel" };
 
@@ -8,7 +10,7 @@ export const metadata: Metadata = { title: "Stores Control Panel" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminStoresPage() {
-  const stores = await getAllStores();
+  const [stores, products] = await Promise.all([getAllStores(), getAllProducts()]);
 
   const pending = stores.filter((s) => s.status === "pending");
   const active = stores.filter((s) => s.status === "active");
@@ -30,6 +32,15 @@ export default async function AdminStoresPage() {
             Control merchant stores, approve applications, and toggle official brand status.
           </p>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <StoreVisibilityPanel
+          stores={active.map((store) => ({
+            store,
+            setup: storeSetupChecks(store, products.filter((p) => p.store === store.slug)),
+          }))}
+        />
       </div>
 
       <AdminStoresClient

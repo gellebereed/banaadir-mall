@@ -14,16 +14,31 @@ export default function PendingButton({
   children,
   className = "",
   iconOnly = false,
+  confirm: question,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   /** A small icon button: show only the ring while busy. */
   iconOnly?: boolean;
+  /**
+   * Ask this first, and do nothing unless the person says yes. For actions
+   * that can't be undone (Delete product, Remove pin…): on a phone the
+   * Delete button sits a thumb's width from the end of a long form, and a
+   * single stray tap used to erase a product for good.
+   */
+  confirm?: string;
 }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       {...rest}
+      onClick={(e) => {
+        if (question && !window.confirm(question)) {
+          e.preventDefault();
+          return;
+        }
+        rest.onClick?.(e);
+      }}
       disabled={pending || rest.disabled}
       aria-busy={pending}
       className={`${className} disabled:cursor-wait disabled:opacity-70`}

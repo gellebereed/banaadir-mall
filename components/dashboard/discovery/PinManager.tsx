@@ -278,7 +278,7 @@ export default function PinManager({
                       </form>
                     )}
                     <form action={deleteRecoPin.bind(null, pin.id)}>
-                      <PendingButton className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
+                      <PendingButton confirm="Remove this push? It stops showing on the storefront straight away." className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-bold text-slate-400 hover:border-coral-400 hover:text-coral-600">
                         Remove
                       </PendingButton>
                     </form>

@@ -167,6 +167,21 @@ export interface Store {
    * exactly as it has always been.
    */
   ownSite?: boolean;
+  /**
+   * Hidden from shoppers while the shop is being set up — an ADMIN switch.
+   *
+   * ── Not the same as suspended ────────────────────────────────────────
+   * A suspended store is locked out: its owner can't sign in to the
+   * dashboard. A hidden one is the opposite case — a shop that is welcome
+   * but not ready (no photos, no payment number, no WhatsApp yet). Its owner
+   * keeps full use of the dashboard to finish setting up, while shoppers
+   * see nothing of it: no store page, no products, no search results, no
+   * campaigns. The marketplace can go live without half-built shops in it.
+   *
+   * Absent (or a database without the column) means visible, so no store
+   * disappears because a migration hasn't run.
+   */
+  hidden?: boolean;
 }
 
 export interface Product {

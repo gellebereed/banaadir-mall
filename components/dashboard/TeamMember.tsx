@@ -1,6 +1,7 @@
 import { removeEmployee, resetInviteLink, updateEmployeeAccess } from "@/app/actions";
 import InviteLink from "./InviteLink";
 import SafeForm from "./SafeForm";
+import PendingButton from "./PendingButton";
 import PermissionPicker from "./PermissionPicker";
 import { PERMISSIONS_BY_KEY, permissionsFor } from "@/lib/auth";
 import type { Employee, EmployeeRole } from "@/lib/types";
@@ -110,9 +111,11 @@ export default function TeamMember({
             </SafeForm>
           )}
           <SafeForm action={removeEmployee.bind(null, employee.id)}>
-            <button className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+            <PendingButton
+              confirm={`Remove ${employee.name || employee.email} from the team? They lose access straight away.`}
+              className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Remove from team
-            </button>
+            </PendingButton>
           </SafeForm>
         </div>
       </div>

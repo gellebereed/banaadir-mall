@@ -2093,6 +2093,49 @@ export async function toggleStoreOwnSite(slug: string): Promise<void> {
   refresh();
 }
 
+/**
+ * Hide a store from shoppers while it is set up, or make it live
+ * (Store.hidden). Admin only. Its owner keeps the dashboard either way.
+ *
+ * Returns the outcome instead of redirecting, because the failure that
+ * matters is specific: the database hasn't had the column added yet, and
+ * the admin has to be told that rather than see a button that did nothing.
+ */
+export async function setStoreHidden(
+  slug: string,
+  hidden: boolean,
+): Promise<{ ok: true } | { error: string }> {
+  const session = await getSession();
+  if (session?.role !== "admin") return { error: "Only the marketplace admin can do this." };
+
+  const { getStore } = await import("@/lib/api");
+  const store = await getStore(slug);
+  if (!store) return { error: "That store no longer exists." };
+
+  const { setStoreHiddenInSupabase } = await import("@/lib/supabase/mutations");
+  const result = await setStoreHiddenInSupabase(slug, hidden);
+  if (result === "missing-column") {
+    return {
+      error:
+        "The database needs one update first: run supabase/migration-store-hidden.sql in Supabase → SQL Editor, then try again.",
+    };
+  }
+  if (result === "error") return { error: `Couldn't save ${store.name}. Please try again.` };
+  if (result === "not-configured") {
+    await mutateDB((db) => {
+      db.storeOverrides[slug] = { ...db.storeOverrides[slug], hidden };
+    });
+  }
+  await logActivity(
+    slug,
+    "store.visibility",
+    hidden ? "Hid the store from shoppers while it is set up" : "Made the store live for shoppers",
+    slug,
+  );
+  refresh();
+  return { ok: true };
+}
+
 export async function toggleStoreOfficial(slug: string): Promise<void> {
   const session = await getSession();
   if (!isFullAdmin(session)) redirect("/login");
@@ -3022,6 +3065,31 @@ export async function submitOrderAction(payload: {
    */
   const session = await getSession();
   const customerEmail = session?.role === "customer" ? session.email : payload.customerEmail;
+
+  /*
+   * A shop the admin has hidden while it is set up (Store.hidden) sells
+   * nothing — including from a basket filled before it was hidden, which
+   * lives on in the shopper's browser. Judged by the product's real store,
+   * never the store name the browser sent.
+   */
+  {
+    const { getAllProducts: allProducts, getAllStores: allStores } = await import("@/lib/api");
+    const [products, stores] = await Promise.all([allProducts(), allStores()]);
+    const hiddenStores = new Set(stores.filter((s) => s.hidden).map((s) => s.slug));
+    if (hiddenStores.size > 0) {
+      const storeOf = new Map(products.map((p) => [p.id, p.store]));
+      const blocked = payload.items.filter((i) => hiddenStores.has(storeOf.get(i.productId) ?? ""));
+      if (blocked.length > 0) {
+        return {
+          ok: false,
+          message: `${blocked.map((i) => i.name).join(", ")} ${blocked.length === 1 ? "isn't" : "aren't"} available right now. Please remove ${blocked.length === 1 ? "it" : "them"} from your cart.`,
+          orderId: id,
+          discount: 0,
+          parcels: [],
+        };
+      }
+    }
+  }
 
   // Refuse before anything is written — see findShortages.
   const { findShortages } = await import("@/lib/stock-write");

@@ -29,13 +29,15 @@ export default function RegisterPage() {
   return (
     <div className="mx-auto max-w-md px-4 py-14">
       <div className="card p-6 sm:p-8">
-        <span className="text-4xl">🎁</span>
+        <span className="text-4xl">🛍️</span>
         <h1 className="mt-3 font-display text-2xl font-extrabold text-ocean-950">
           Create your account
         </h1>
+        {/* The "10% off with BANAADIR10" line is gone on purpose: no shop
+            had joined that code, so the first thing a new customer tried
+            was refused at the cart. Bring it back once shops accept it. */}
         <p className="mt-1 text-sm text-slate-500">
-          Join thousands of shoppers — and get 10% off your first order with
-          code <strong className="text-mango-600">BANAADIR10</strong>.
+          Keep your orders, saved items and addresses in one place.
         </p>
 
         <p className="mt-4 text-xs text-slate-400">

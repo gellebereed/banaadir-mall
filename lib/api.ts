@@ -229,9 +229,17 @@ export async function getStores(): Promise<Store[]> {
   return (await getAllStores()).filter((s) => s.status === "active");
 }
 
-/** True unless the store has asked to be left out of the marketplace. */
-export function isListedOnMarketplace(store: Pick<Store, "listing">): boolean {
-  return (store.listing ?? "marketplace") === "marketplace";
+/**
+ * True unless the store has asked to be left out of the marketplace, or the
+ * admin has hidden it while it is being set up (Store.hidden).
+ */
+export function isListedOnMarketplace(store: Pick<Store, "listing" | "hidden">): boolean {
+  return !store.hidden && (store.listing ?? "marketplace") === "marketplace";
+}
+
+/** Shoppers may see this store at all — its page, its products, its link. */
+export function isVisibleToShoppers(store: Pick<Store, "hidden">): boolean {
+  return !store.hidden;
 }
 
 /**
@@ -508,7 +516,12 @@ export async function getAllProducts(): Promise<Product[]> {
  */
 export async function getProducts(): Promise<Product[]> {
   const [all, stores] = await Promise.all([getAllProducts(), getAllStores()]);
-  const visible = all.filter((p) => !p.hidden);
+  // A store the admin has hidden while it is set up (Store.hidden) shows
+  // shoppers nothing — not even by direct link — unlike "own-store-only",
+  // which only leaves discovery. Its owner still sees everything in the
+  // dashboard, which reads getAllProducts().
+  const hiddenStores = new Set(stores.filter((s) => !isVisibleToShoppers(s)).map((s) => s.slug));
+  const visible = all.filter((p) => !p.hidden && !hiddenStores.has(p.store));
 
   // A shop's optional safety buffer (Stock page): online, show N fewer than
   // it has, so the last unit on the shop floor isn't sold twice. Off (0)

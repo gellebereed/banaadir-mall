@@ -281,7 +281,7 @@ export default async function VendorPromotionsPage() {
                     </PendingButton>
                   </form>
                   <form action={deleteOffer.bind(null, offer.id)}>
-                    <PendingButton className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+                    <PendingButton confirm={`Delete the offer "${offer.name}"? This can't be undone.`} className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
                       Delete
                     </PendingButton>
                   </form>
@@ -422,7 +422,7 @@ export default async function VendorPromotionsPage() {
                   </PendingButton>
                 </form>
                 <form action={deletePromotion.bind(null, promo.id)}>
-                  <PendingButton className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+                  <PendingButton confirm={`Delete the promotion "${promo.name}"? This can't be undone.`} className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
                     Delete
                   </PendingButton>
                 </form>

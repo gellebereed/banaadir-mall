@@ -79,7 +79,9 @@ export default async function EditProductPage({
             </p>
           </div>
           <form action={deleteProduct.bind(null, product.id, backHref)}>
-            <PendingButton className="rounded-full border border-coral-500 px-4 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
+            <PendingButton
+              confirm={`Delete "${product.name}" for good? This can't be undone. To take it down for a while, set it to Hidden instead.`}
+              className="rounded-full border border-coral-500 px-4 py-2 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
               Delete product
             </PendingButton>
           </form>

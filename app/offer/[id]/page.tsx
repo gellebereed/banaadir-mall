@@ -64,6 +64,8 @@ export default async function OfferPage({
   if (!offer) notFound();
 
   const [store, products] = await Promise.all([getStore(offer.store), getProducts()]);
+  // A store hidden while it is set up (Store.hidden) shows shoppers nothing.
+  if (store?.hidden) notFound();
   const upTo = Number(rawUpTo) > 0 ? Number(rawUpTo) : undefined;
   const reached = rankPicks(products.filter((p) => offerReaches(offer, p)));
   const shown = upTo ? reached.filter((p) => p.price <= upTo + 0.005) : reached;

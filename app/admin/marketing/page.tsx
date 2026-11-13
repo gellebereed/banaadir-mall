@@ -45,7 +45,7 @@ export default async function AdminMarketingPage() {
         <span aria-hidden className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ocean-50 text-2xl">
           🖼️
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-60">
           <h2 className="font-display font-bold text-ocean-950">Banners, campaigns &amp; tiles</h2>
           <p className="mt-0.5 text-xs text-slate-500">
             {m.banners.filter((b) => b.active).length} banner{m.banners.filter((b) => b.active).length === 1 ? "" : "s"} on ·{" "}

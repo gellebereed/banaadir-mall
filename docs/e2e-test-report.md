@@ -1,5 +1,7 @@
 # End-to-end test report: customer & store-owner journeys
 
+> **Newer round:** 13 Nov 2026, see [`e2e-test-report-2026-11-13.md`](e2e-test-report-2026-11-13.md).
+
 **Date:** 22 Oct 2026 · **Build:** `npm run build` + `next start` (production mode)
 **Data:** local JSON mode (no Supabase configured in the test sandbox)
 **Method:** real browser sessions (Playwright + Chromium), mostly at phone size
