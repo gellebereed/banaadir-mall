@@ -15,6 +15,7 @@ import { categoryKey } from "@/lib/import/categories";
 import { classifyProduct } from "@/lib/product-classify";
 import { primaryImage } from "@/lib/product-utils";
 import { getSession } from "@/lib/session";
+import { isFullAdmin } from "@/lib/auth";
 import { updateProductFields } from "@/lib/supabase/mutations";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
 
@@ -29,7 +30,7 @@ export async function fileHeldProducts(
   category: string,
 ): Promise<FileState> {
   const session = await getSession();
-  if (session?.role !== "admin") return { error: "Only the marketplace team can file these." };
+  if (!isFullAdmin(session)) return { error: "Only the marketplace team can file these." };
 
   const target = (await getCategories(true)).find((c) => c.slug === category);
   if (!target || target.slug === HOLDING_SLUG) return { error: "Choose a category to file them in." };
@@ -86,7 +87,7 @@ export interface HeldSuggestion {
  */
 export async function suggestHeldCategory(store: string, grouping: string): Promise<HeldSuggestion> {
   const session = await getSession();
-  if (session?.role !== "admin") return { error: "Only the marketplace team can do this." };
+  if (!isFullAdmin(session)) return { error: "Only the marketplace team can do this." };
 
   const held = (await getBaseProducts()).filter(
     (p) => p.category === HOLDING_SLUG && p.store === store && (p.supplier?.grouping ?? "") === grouping,

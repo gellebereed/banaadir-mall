@@ -61,6 +61,32 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  /*
+   * Baseline browser protections, on every response:
+   *  · frame-ancestors / X-Frame-Options — no other site may load these
+   *    pages in a hidden frame and trick a signed-in seller or the admin
+   *    into clicking "Delete" (clickjacking)
+   *  · HSTS — browsers only ever reach the site over https
+   *  · nosniff, Referrer-Policy, Permissions-Policy — the usual hygiene
+   * A full Content-Security-Policy for scripts is left for later: it needs
+   * testing against every third-party embed first.
+   */
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

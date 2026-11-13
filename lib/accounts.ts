@@ -289,8 +289,14 @@ export async function authenticate(email: string, password: string): Promise<Res
         });
         if (created.error) console.warn("[Auth] Could not create account:", created.error.message);
       } catch (err) {
-        // A lookup failure must not lock the owner out of their own shop.
-        console.warn("[Auth] Account lookup failed, allowing built-in login:", err);
+        /*
+         * Fail CLOSED. This used to let the built-in password through when
+         * the lookup failed, so a Supabase hiccup turned the public default
+         * admin password (it is in this repository) back into a working
+         * key to /admin. A brief lock-out is the safer failure.
+         */
+        console.warn("[Auth] Account lookup failed, refusing built-in login:", err);
+        return INVALID;
       }
     }
   }

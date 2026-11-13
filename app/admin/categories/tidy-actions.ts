@@ -30,6 +30,7 @@ import { redirect } from "next/navigation";
 import { getBaseProducts, getCategories } from "@/lib/api";
 import { mutateDB } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { isFullAdmin } from "@/lib/auth";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
 import {
   deleteCategoryFromSupabase,
@@ -55,7 +56,7 @@ interface Decision {
 
 async function requireAdmin() {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
   return session;
 }
 

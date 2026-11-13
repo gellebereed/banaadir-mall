@@ -13,6 +13,7 @@ import { getBaseProducts, getCategories } from "@/lib/api";
 import { HOLDING_SLUG } from "@/lib/category-holding";
 import { mutateDB } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { isFullAdmin } from "@/lib/auth";
 import { ALL_CACHE_TAGS } from "@/lib/supabase/public-client";
 import {
   categoriesHaveStandardColumn,
@@ -25,7 +26,7 @@ import { aiMatchCategories, aiMatchingAvailable } from "@/lib/taxonomy-ai";
 
 async function isAdmin(): Promise<boolean> {
   const session = await getSession();
-  return session?.role === "admin";
+  return isFullAdmin(session);
 }
 
 export interface StandardOption {

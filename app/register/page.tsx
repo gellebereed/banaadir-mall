@@ -77,6 +77,11 @@ export default function RegisterPage() {
               {state.error}
             </p>
           )}
+          {state.message && !state.error && (
+            <p className="rounded-xl bg-ocean-50 px-4 py-2.5 text-sm font-semibold text-ocean-700">
+              {state.message}
+            </p>
+          )}
           <label className="flex items-start gap-2 text-xs text-slate-500">
             <input required type="checkbox" className="mt-0.5 h-4 w-4 accent-ocean-700" />
             I agree to the Terms of Service and Privacy Policy
