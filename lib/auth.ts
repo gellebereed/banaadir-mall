@@ -340,6 +340,20 @@ export function can(session: Session, area: AccessArea): boolean {
   return may(session, AREA_PERMISSION[area]);
 }
 
+/**
+ * The marketplace administrator — or a platform staffer made a MANAGER.
+ *
+ * Platform staff sign in with `role: "admin"` plus an `access` level, so
+ * a bare `role === "admin"` check also waved through an orders-only or
+ * view-only staffer: they could suspend or delete stores, change the
+ * commission, rewrite categories and moderate reviews. Use this for every
+ * marketplace-wide control that has no finer permission of its own.
+ */
+export function isFullAdmin(session: Session | null | undefined): session is Session {
+  if (session?.role !== "admin") return false;
+  return !session.access || session.access === "manager";
+}
+
 /** Human-readable description per employee role (shown on Team pages). */
 export const ROLE_DESCRIPTIONS: Record<EmployeeRole, string> = {
   manager: "Full access — products, orders, promotions and team",

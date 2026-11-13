@@ -38,6 +38,7 @@ import { recordEvent, sameCourier } from "@/lib/delivery";
 import { acceptedMethods, initialStatus, resolvePayment, type ShopPaymentMethod } from "@/lib/shop-payments";
 import {
   can,
+  isFullAdmin,
   may,
   parsePermissions,
   PERMISSIONS_BY_KEY,
@@ -2045,7 +2046,7 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
 
 export async function setStoreStatus(slug: string, status: Store["status"]): Promise<void> {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
 
   const supabaseOk = await setStoreStatusInSupabase(slug, status);
   if (!supabaseOk) {
@@ -2076,7 +2077,7 @@ export async function setStoreStatus(slug: string, status: Store["status"]): Pro
  */
 export async function toggleStoreOwnSite(slug: string): Promise<void> {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
 
   const { getStore } = await import("@/lib/api");
   const store = await getStore(slug);
@@ -2094,7 +2095,7 @@ export async function toggleStoreOwnSite(slug: string): Promise<void> {
 
 export async function toggleStoreOfficial(slug: string): Promise<void> {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
 
   const { getStore } = await import("@/lib/api");
   const store = await getStore(slug);
@@ -2349,7 +2350,7 @@ export async function updateCommissionSettings(
   formData: FormData,
 ): Promise<SaveState> {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
   if (!may(session, "settings.manage")) {
     return { ok: false, message: "Your account is not allowed to change platform settings." };
   }
@@ -2989,6 +2990,20 @@ export async function submitOrderAction(payload: {
   const { customerName, customerPhone, address, city } = payload;
 
   /*
+   * A server action is a public endpoint, so the basket is checked here,
+   * not only in the cart: whole quantities from 1 to 999, at most 100
+   * lines. A negative or fractional quantity would make a negative total.
+   */
+  const badBasket =
+    !Array.isArray(payload.items) ||
+    payload.items.length === 0 ||
+    payload.items.length > 100 ||
+    payload.items.some((i) => !Number.isInteger(i?.qty) || i.qty < 1 || i.qty > 999);
+  if (badBasket) {
+    return { ok: false, message: "Your basket could not be read. Please refresh and try again.", orderId: "", discount: 0, parcels: [] };
+  }
+
+  /*
    * The number is the browser's suggestion, not a fact: a number already on
    * an order would file two customers' parcels under one id. Issue a fresh
    * one instead; the confirmation screen uses whatever comes back.
@@ -3066,6 +3081,23 @@ export async function submitOrderAction(payload: {
     ),
   ]);
   const storesBySlug = new Map(allStores.map((store) => [store.slug, store]));
+
+  /*
+   * Every line must be a product that is in the catalogue now. The pricing
+   * falls back to the browser's price and shop for a product it cannot
+   * find (so a cart can still show it), which on an ORDER let anyone file
+   * an order for a made-up product, at a made-up price, with any shop.
+   */
+  const missing = payload.items.filter((_, index) => !priced.products[index]);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      message: `No longer available: ${missing.map((i) => String(i.name ?? "").slice(0, 60) || "an item").join(", ")}. Please remove it from your cart.`,
+      orderId: "",
+      discount: 0,
+      parcels: [],
+    };
+  }
 
   const items = payload.items.map((item, index) => {
     const product = priced.products[index];
@@ -3800,7 +3832,7 @@ export async function withdrawFlashRequest(id: string): Promise<void> {
 
 async function requireAdminSession(): Promise<Session> {
   const session = await getSession();
-  if (!session || session.role !== "admin") redirect("/login");
+  if (!isFullAdmin(session)) redirect("/login");
   return session;
 }
 
@@ -4030,7 +4062,7 @@ export async function deleteCategory(slug: string): Promise<void> {
 
 /** Read-modify-write for the recommender settings. */
 async function mutateReco(fn: (settings: RecoSettings) => void): Promise<void> {
-  await requireAdminSession();
+  await requireMarketing();
 
   const { getRecoSettings } = await import("@/lib/api");
   const settings = structuredClone(await getRecoSettings());
@@ -4111,7 +4143,7 @@ export async function updateAutoTune(formData: FormData): Promise<void> {
  * nothing.
  */
 export async function addRecoPin(formData: FormData): Promise<{ error?: string } | void> {
-  await requireAdminSession();
+  await requireMarketing();
   // One or several products — the composer pushes a selection at once.
   const productIds = [
     ...new Set(formData.getAll("productId").map((v) => String(v).trim()).filter(Boolean)),
@@ -4183,7 +4215,7 @@ export async function updateRecoPin(
   id: string,
   changes: { shelf?: string; position?: number | null; note?: string; startsAt?: string; endsAt?: string },
 ): Promise<{ error?: string } | void> {
-  await requireAdminSession();
+  await requireMarketing();
   const { getRecoSettings } = await import("@/lib/api");
   const { SHELF_CATALOGUE } = await import("@/lib/reco/catalogue");
   const current = (await getRecoSettings()).pins.find((pin) => pin.id === id);
@@ -4283,7 +4315,7 @@ export async function unblockFromReco(productId: string): Promise<void> {
  * so spare empty slots in the form never become empty steps on the page.
  */
 export async function saveStory(formData: FormData): Promise<void> {
-  await requireAdminSession();
+  await requireMarketing();
 
   const id =
     String(formData.get("id") ?? "").trim() ||
@@ -4351,7 +4383,7 @@ export async function saveStory(formData: FormData): Promise<void> {
 }
 
 export async function toggleStoryPublished(id: string): Promise<void> {
-  await requireAdminSession();
+  await requireMarketing();
 
   const { getStory } = await import("@/lib/api");
   const story = await getStory(id);
@@ -4374,7 +4406,7 @@ export async function toggleStoryPublished(id: string): Promise<void> {
 }
 
 export async function deleteStory(id: string): Promise<void> {
-  await requireAdminSession();
+  await requireMarketing();
 
   const { deleteStoryFromSupabase } = await import("@/lib/supabase/mutations");
   const removed = await deleteStoryFromSupabase(id);

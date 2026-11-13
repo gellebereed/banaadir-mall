@@ -70,11 +70,16 @@ export default function RegisterPage() {
               Password
               <RequiredMark />
             </label>
-            <input id="password" name="password" required type="password" placeholder="At least 6 characters" className="input" />
+            <input id="password" name="password" required type="password" placeholder="At least 8 characters" className="input" />
           </div>
           {state.error && (
             <p className="rounded-xl bg-coral-100 px-4 py-2.5 text-sm font-semibold text-coral-700">
               {state.error}
+            </p>
+          )}
+          {state.message && !state.error && (
+            <p className="rounded-xl bg-ocean-50 px-4 py-2.5 text-sm font-semibold text-ocean-700">
+              {state.message}
             </p>
           )}
           <label className="flex items-start gap-2 text-xs text-slate-500">

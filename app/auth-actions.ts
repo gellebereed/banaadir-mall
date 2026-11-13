@@ -7,7 +7,7 @@
 
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/safe-next";
-import { authenticate, isReservedEmail } from "@/lib/accounts";
+import { authenticate, isReservedEmail, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
 import { homeForRole, type Session } from "@/lib/auth";
 import { clearSessionCookie, setSessionCookie } from "@/lib/session";
 import { sessionForEmployee } from "@/lib/employees";
@@ -82,8 +82,8 @@ export async function signUpCustomer(
   if (!name || !email || !password) {
     return { error: "Please fill in all required fields." };
   }
-  if (password.length < 6) {
-    return { error: "Password must be at least 6 characters long." };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` };
   }
   if (await isReservedEmail(email)) {
     return { error: RESERVED_EMAIL_ERROR };
@@ -108,6 +108,26 @@ export async function signUpCustomer(
         return { error: error.message };
       }
 
+      /*
+       * ── Only a real Supabase session proves the email is theirs ──────
+       * This used to sign the visitor in whenever `data.user` came back.
+       * But Supabase hands back a user object without a session in two
+       * cases: the address needs confirming first, and — deliberately, so
+       * nobody can tell which emails are registered — when the email
+       * ALREADY has an account. Signing in on `data.user` therefore let
+       * anyone "register" somebody else's address and be handed that
+       * person's order history (name, phone, delivery address).
+       *
+       * A session means Supabase created the account and signed it in;
+       * anything less means the person must confirm the email first.
+       */
+      if (!data.session) {
+        return {
+          message:
+            "Almost there — we've sent a confirmation link to your email. Open it, then sign in.",
+        };
+      }
+
       if (data.user) {
         const session: Session = {
           name,
@@ -124,9 +144,11 @@ export async function signUpCustomer(
       }
       return { error: (err as Error).message || "Registration failed." };
     }
+    // Never fall through to the demo sign-in below on a live site.
+    return { error: "Registration failed. Please try again." };
   }
 
-  // Local demo session creation
+  // Local demo session creation (no Supabase at all)
   const session: Session = {
     name,
     email,
@@ -154,8 +176,8 @@ export async function signUpSeller(
   if (!storeName || !ownerName || !email || !password) {
     return { error: "Please fill in all required store and contact details." };
   }
-  if (password.length < 6) {
-    return { error: "Password must be at least 6 characters long." };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` };
   }
   if (await isReservedEmail(email)) {
     return { error: RESERVED_EMAIL_ERROR };

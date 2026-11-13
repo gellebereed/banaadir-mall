@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/activity";
 import { getBaseProducts } from "@/lib/api";
 import { deleteReview, getReview, REPORTS_TO_HIDE, updateReview } from "@/lib/review-moderation";
 import { getSession } from "@/lib/session";
+import { isFullAdmin, may } from "@/lib/auth";
 import { scopeFor } from "@/lib/storage-scope";
 import { CACHE_TAGS } from "@/lib/supabase/public-client";
 import { deleteUpload } from "@/lib/uploads";
@@ -59,7 +60,9 @@ export async function reportReviewAction(id: string): Promise<ModerationResult> 
 
 async function requireModerator() {
   const session = await getSession();
-  return session?.role === "admin" ? session : null;
+  // The admin, a platform manager, or staff trusted with the storefront.
+  if (session?.role !== "admin") return null;
+  return isFullAdmin(session) || may(session, "marketing.manage") ? session : null;
 }
 
 export async function moderateReviewAction(
