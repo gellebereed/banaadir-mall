@@ -64,7 +64,7 @@ export default function StoreApplicationForm() {
           Password
           <RequiredMark />
         </label>
-        <input id="password" name="password" required type="password" placeholder="At least 6 characters" className="input" />
+        <input id="password" name="password" required type="password" placeholder="At least 8 characters" className="input" />
       </div>
       <div>
         <label htmlFor="phone" className="label">

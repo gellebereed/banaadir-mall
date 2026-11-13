@@ -7,7 +7,7 @@
 
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/safe-next";
-import { authenticate, isReservedEmail } from "@/lib/accounts";
+import { authenticate, isReservedEmail, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
 import { homeForRole, type Session } from "@/lib/auth";
 import { clearSessionCookie, setSessionCookie } from "@/lib/session";
 import { sessionForEmployee } from "@/lib/employees";
@@ -82,8 +82,8 @@ export async function signUpCustomer(
   if (!name || !email || !password) {
     return { error: "Please fill in all required fields." };
   }
-  if (password.length < 6) {
-    return { error: "Password must be at least 6 characters long." };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` };
   }
   if (await isReservedEmail(email)) {
     return { error: RESERVED_EMAIL_ERROR };
@@ -176,8 +176,8 @@ export async function signUpSeller(
   if (!storeName || !ownerName || !email || !password) {
     return { error: "Please fill in all required store and contact details." };
   }
-  if (password.length < 6) {
-    return { error: "Password must be at least 6 characters long." };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` };
   }
   if (await isReservedEmail(email)) {
     return { error: RESERVED_EMAIL_ERROR };
