@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   LogOut,
   GalleryHorizontal,
+  Gift,
   Megaphone,
   Menu,
   MoreHorizontal,
@@ -90,7 +91,8 @@ export type ShellIcon =
   | "collections"
   | "stock"
   | "reviews"
-  | "alerts";
+  | "alerts"
+  | "rewards";
 
 const ICONS: Record<ShellIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -117,6 +119,7 @@ const ICONS: Record<ShellIcon, LucideIcon> = {
   collections: Layers,
   stock: Boxes,
   reviews: MessageSquareWarning,
+  rewards: Gift,
 };
 
 export interface ShellItem {

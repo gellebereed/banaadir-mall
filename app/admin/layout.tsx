@@ -43,6 +43,7 @@ export default async function AdminLayout({
     { href: "/admin/reviews", icon: "reviews", label: "Reviews", badge: reportedReviews },
     { href: "/admin/banners", icon: "banners", label: "Home banners" },
     { href: "/admin/marketing", icon: "marketing", label: "Marketing" },
+    { href: "/admin/rewards", icon: "rewards", label: "Rewards" },
     { href: "/admin/discovery", icon: "discovery", label: "Discovery" },
     { href: "/admin/flash", icon: "flash", label: "Flash deals", badge: pendingFlash },
     // Behind settings.manage, like the page itself — a staff member who
