@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import MarketingBasicsForm from "@/components/dashboard/MarketingBasicsForm";
-import RewardsSettingsForm from "@/components/dashboard/RewardsSettingsForm";
 import SectionArranger from "@/components/dashboard/SectionArranger";
 import { rewardSettings } from "@/lib/rewards";
 import { getMarketingSettings, getStores } from "@/lib/api";
@@ -75,13 +74,24 @@ export default async function AdminMarketingPage() {
         ]}
       />
 
-      {/* ── Rewards ──────────────────────────────────────────────── */}
-      <div className="mt-5">
-        <RewardsSettingsForm
-          rewards={rewards}
-          storeNames={stores.filter((s) => rewards.stores.includes(s.slug)).map((s) => s.name)}
-        />
-      </div>
+      {/* ── Rewards moved to its own page ─────────────────────────── */}
+      <Link
+        href="/admin/rewards"
+        className="card mt-5 flex flex-wrap items-center gap-4 p-5 transition hover:ring-2 hover:ring-ocean-200 sm:p-6"
+      >
+        <span aria-hidden className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ocean-50 text-2xl">
+          🎁
+        </span>
+        <div className="min-w-0 flex-1 basis-60">
+          <h2 className="font-display font-bold text-ocean-950">Banaadir Rewards</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {rewards.active ? `On · ${rewards.earnPct}% back` : "Off"} · {rewards.stores.length} shop
+            {rewards.stores.length === 1 ? "" : "s"} joined. Switch it on, set the rates and see the credit
+            customers hold in Rewards.
+          </p>
+        </div>
+        <span className="btn-secondary !px-4 !py-2 text-sm">Open Rewards →</span>
+      </Link>
 
       {/* ── Hero, announcement & campaign ────────────────────────── */}
       <div className="mt-5">
