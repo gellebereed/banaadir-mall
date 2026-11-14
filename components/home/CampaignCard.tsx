@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
+import BrandLogo from "./BrandLogo";
 import { isLight, sceneBackground } from "@/lib/scenes";
 import type { Product } from "@/lib/types";
 
@@ -101,13 +102,20 @@ export default function CampaignCard({
       {/* Offer */}
       <div className={`relative flex min-w-0 flex-1 flex-col items-center px-3 text-center ${ink}`}>
         {brand && (
-          <div className="flex flex-col items-center">
-            <div className="flex h-11 min-w-[6rem] max-w-full items-center justify-center rounded-b-lg bg-white px-3 shadow-sm @min-[24rem]:h-12 @min-[24rem]:min-w-[7rem]">
+          <div className="flex w-full flex-col items-center">
+            {/* The logo is what a shopper scans the strip for, so it gets most
+                of the tab: a wide box with only a hair of padding, taller as
+                the card grows, and BrandLogo trims the empty margin most
+                uploaded logos carry so the mark itself fills it. */}
+            <div
+              className={`flex h-14 max-w-full items-center justify-center rounded-b-xl bg-white shadow-sm @min-[24rem]:h-16 @min-[30rem]:h-[4.5rem] ${
+                brand.logo ? "w-[10rem] px-2.5 py-2" : "min-w-[7rem] px-3"
+              }`}
+            >
               {brand.logo ? (
-                // eslint-disable-next-line @next/next/no-img-element -- store logos come from many hosts
-                <img src={brand.logo} alt={brand.name} className="max-h-7 max-w-[6.5rem] object-contain @min-[24rem]:max-h-9" />
+                <BrandLogo src={brand.logo} alt={brand.name} className="h-full w-full object-contain" />
               ) : (
-                <span className="truncate font-display text-base font-extrabold tracking-tight text-ocean-950 sm:text-lg">
+                <span className="truncate font-display text-lg font-extrabold tracking-tight text-ocean-950 @min-[30rem]:text-xl">
                   {brand.name}
                 </span>
               )}
