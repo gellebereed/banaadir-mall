@@ -163,6 +163,7 @@ const M = {
   "look.reward": { en: "+{pct}% extra Banaadir Rewards credit for buying the whole look", so: "+{pct}% abaalmarin Banaadir Rewards dheeraad ah markaad iibsato labiska oo dhan" },
   "look.empty": { en: "No looks here yet — check back soon.", so: "Halkan weli labis ma jiro — dib u soo eeg dhawaan." },
   "look.share": { en: "Share this look", so: "La wadaag labiskan" },
+  "look.viewOutfit": { en: "View the full outfit", so: "Eeg labiska oo dhan" },
   "look.total": { en: "Total", so: "Wadarta" },
   "section.campaigns": { en: "Today's Campaigns", so: "Ololayaasha Maanta" },
   "section.campaigns.sub": { en: "Handpicked offers across the mall", so: "Dalabyo la xushay oo suuqa oo dhan ah" },
