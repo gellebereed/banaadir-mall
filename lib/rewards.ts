@@ -69,6 +69,20 @@ export function earnFor(settings: RewardSettings, store: string, paid: number): 
   return floor2((paid * settings.earnPct) / 100);
 }
 
+/** The most extra % an admin can give on a whole look. */
+export const MAX_LOOK_BONUS_PCT = 20;
+
+/**
+ * Extra credit for buying a whole shop-the-look outfit (lib/look-utils.ts):
+ * `lookBonusPct` of what this shop's pieces of completed looks cost, on
+ * top of earnFor(). Same rule as all credit — only at shops that joined.
+ */
+export function lookBonusFor(settings: RewardSettings, store: string, lookPieces: number): number {
+  const pct = Math.min(MAX_LOOK_BONUS_PCT, settings.lookBonusPct ?? 0);
+  if (!inRewards(settings, store) || pct <= 0 || lookPieces <= 0) return 0;
+  return floor2((lookPieces * pct) / 100);
+}
+
 /**
  * How a balance is spread over a basket's parcels.
  *

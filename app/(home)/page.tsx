@@ -39,6 +39,8 @@ import type { MarketingSettings, Order, Product, SectionKey, Store } from "@/lib
 import type { Metadata } from "next";
 import { siteOrigin } from "@/lib/request-origin";
 import { jsonLd, organizationLd, websiteLd } from "@/lib/seo";
+import LooksRail from "@/components/looks/LooksRail";
+import { getLookFeed } from "@/lib/looks";
 
 /**
  * Home page. The admin controls the content and the ORDER of every section
@@ -67,7 +69,7 @@ export default async function HomePage() {
 
   // Department artwork: the admin's chosen cover, or the best-selling
   // product's photo from inside that department. See categoryCovers().
-  const [session, t, lang] = await Promise.all([getSession(), getT(), getLang()]);
+  const [session, t, lang, lookFeed] = await Promise.all([getSession(), getT(), getLang(), getLookFeed(allProducts)]);
   // The hero copy in the shopper's language — lib/marketing-copy.ts.
   const marketing = localizeMarketing(rawMarketing, lang);
   const myOrder = session?.role === "customer" ? await activeOrderFor(session.email) : null;
@@ -310,6 +312,7 @@ export default async function HomePage() {
     trending: () => <Bestsellers products={bestsellers} t={t} />,
     stores: () => (localStores.length > 0 ? <StoreSpotlight stores={localStores} t={t} /> : null),
     new: () => (newArrivals.length > 0 ? <NewArrivals products={newArrivals} t={t} /> : null),
+    looks: () => <LooksRail looks={lookFeed.cards} t={t} />,
   };
 
   const isVisible = (key: SectionKey) => marketing.sections.some((s) => s.key === key && s.visible);

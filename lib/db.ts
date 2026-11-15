@@ -44,6 +44,7 @@ import type {
 import type { ActivityEntry, PayoutAccount, PayoutRecord } from "./ledger-types";
 import type { CategoryMapping } from "./category-mappings";
 import type { StoreCollection } from "./collections";
+import type { Look } from "./look-utils";
 import type { ProductAlert } from "./alert-utils";
 import type { RecoMetricEvent } from "./reco/metrics";
 import type { TasteProfile } from "./reco/types";
@@ -109,6 +110,8 @@ export interface DB {
   alerts?: ProductAlert[];
   /** Sellers' own product groupings (lib/collections.ts). */
   collections?: StoreCollection[];
+  /** Shop-the-look outfits (lib/looks.ts). */
+  looks?: Look[];
   /** Recommendation shelf metrics, demo mode (lib/reco/metrics.ts). */
   recoEvents?: RecoMetricEvent[];
   /** Opted-in synced taste profiles, demo mode (lib/reco/sync.ts). */
@@ -164,6 +167,7 @@ const DEFAULT_DB: DB = {
     sections: [
       { key: "banners", visible: true },
       { key: "promoTiles", visible: true },
+      { key: "looks", visible: true },
       { key: "categories", visible: true },
       { key: "brands", visible: true },
       { key: "flash", visible: true },

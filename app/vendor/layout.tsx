@@ -143,6 +143,7 @@ export default async function VendorLayout({
       ? [
           { href: "/vendor/products", icon: "products" as const, label: "Products", tab: true },
           { href: "/vendor/collections", icon: "collections" as const, label: "Collections" },
+          { href: "/vendor/looks", icon: "looks" as const, label: "Shop the look" },
         ]
       : []),
     // Bringing the shop's own till counts onto the website, daily.

@@ -82,6 +82,7 @@ import type {
   Store,
   Supply,
   SupplyPurchase,
+  SectionKey,
 } from "./types";
 
 // ── Categories ─────────────────────────────────────────────────────────
@@ -851,11 +852,32 @@ export async function getEmployeeByInviteToken(token: string): Promise<Employee 
 }
 
 export async function getMarketingSettings(): Promise<MarketingSettings> {
-  const supabaseMarketing = await fetchMarketingFromSupabase();
-  if (supabaseMarketing) {
-    return supabaseMarketing;
+  const marketing = (await fetchMarketingFromSupabase()) ?? (await getDB()).marketing;
+  return withNewSections(marketing);
+}
+
+/**
+ * Home sections added after a marketplace saved its layout.
+ *
+ * The saved layout is a list of the sections that existed when the admin
+ * last arranged them, so a section shipped later (Shop the look) would
+ * never render and never appear in the arranger to be switched on. Each
+ * one missing is slotted in at its intended place, switched on — the admin
+ * can move or hide it from /admin/marketing like any other.
+ */
+const LATER_SECTIONS: { key: SectionKey; after: SectionKey }[] = [{ key: "looks", after: "promoTiles" }];
+
+function withNewSections(marketing: MarketingSettings): MarketingSettings {
+  const sections = [...(marketing.sections ?? [])];
+  if (sections.length === 0) return marketing;
+  let changed = false;
+  for (const { key, after } of LATER_SECTIONS) {
+    if (sections.some((s) => s.key === key)) continue;
+    const at = sections.findIndex((s) => s.key === after);
+    sections.splice(at >= 0 ? at + 1 : sections.length, 0, { key, visible: true });
+    changed = true;
   }
-  return (await getDB()).marketing;
+  return changed ? { ...marketing, sections } : marketing;
 }
 
 /** The rewards programme — off, with the default rates, until an admin starts it. */

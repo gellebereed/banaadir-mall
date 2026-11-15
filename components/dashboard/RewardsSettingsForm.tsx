@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { updateRewardSettings, type SaveState } from "@/app/actions";
-import { MAX_EARN_PCT, MAX_SPEND_PCT } from "@/lib/rewards";
+import { MAX_EARN_PCT, MAX_LOOK_BONUS_PCT, MAX_SPEND_PCT } from "@/lib/rewards";
 import type { RewardSettings } from "@/lib/types";
 
 /**
@@ -73,6 +73,22 @@ export default function RewardsSettingsForm({
             className="input"
           />
           <p className="mt-1 text-xs text-slate-400">Protects shops: at 20%, a $50 order always brings in at least $40.</p>
+        </div>
+        <div>
+          <label htmlFor="lookBonusPct" className="label">Extra credit for a whole outfit (%)</label>
+          <input
+            id="lookBonusPct"
+            name="lookBonusPct"
+            type="number"
+            min="0"
+            max={MAX_LOOK_BONUS_PCT}
+            step="0.5"
+            defaultValue={rewards.lookBonusPct ?? 0}
+            className="input"
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            On top of the usual rate, when every piece of a &ldquo;Shop the look&rdquo; outfit is in one order. 0 turns it off.
+          </p>
         </div>
       </div>
 
