@@ -1,13 +1,13 @@
 import Link from "next/link";
 import SectionHeader from "@/components/SectionHeader";
-import LookCard from "@/components/looks/LookCard";
+import LooksCarousel from "@/components/looks/LooksCarousel";
 import { LOOK_OCCASIONS, type LookCardData } from "@/lib/look-utils";
 import type { T } from "@/lib/i18n";
 
 /**
- * The home page's "Shop the look" row: occasion chips, then the looks as
- * tall cards — swiped through on a phone like a stories row, a grid from
- * a laptop up. Each chip opens /looks already filtered.
+ * The home page's "Shop the look" row: occasion chips, then the looks in
+ * a carousel. Each card's "+" dots open the piece right on the home page
+ * (components/looks/LookCard.tsx). Each chip opens /looks already filtered.
  */
 export default function LooksRail({ looks, t }: { looks: LookCardData[]; t: T }) {
   if (looks.length === 0) return null;
@@ -28,13 +28,7 @@ export default function LooksRail({ looks, t }: { looks: LookCardData[]; t: T })
           ))}
         </div>
       )}
-      <div className="rail-scroll -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:gap-5 lg:overflow-visible lg:px-0">
-        {looks.slice(0, 8).map((look) => (
-          <div key={look.id} className="w-[72%] shrink-0 snap-start sm:w-[40%] lg:w-auto">
-            <LookCard look={look} t={t} />
-          </div>
-        ))}
-      </div>
+      <LooksCarousel looks={looks.slice(0, 10)} />
     </section>
   );
 }

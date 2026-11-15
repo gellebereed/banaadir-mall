@@ -142,12 +142,27 @@ export function lookView(look: Look, catalogue: Map<string, Product>, offers: Of
 }
 
 /** What a look card needs — small enough to send to the browser in a rail. */
+/** A tappable dot on a look card, with what its little popup shows. */
+export interface LookSpot {
+  x: number;
+  y: number;
+  productId: string;
+  name: string;
+  slug: string;
+  price: number;
+  image?: string;
+  icon: string;
+  store: string;
+  available: boolean;
+}
+
 export interface LookCardData {
   id: string;
   title: string;
   image: string;
   occasions: LookOccasion[];
-  dots: { x: number; y: number }[];
+  /** One per piece, at its dot — the home card opens these in place. */
+  spots: LookSpot[];
   pieces: number;
   soldOut: number;
   total: number;
@@ -162,7 +177,18 @@ export function lookCard(view: LookView, storeNames: Map<string, string>): LookC
     title: view.look.title,
     image: view.look.image,
     occasions: view.look.occasions,
-    dots: view.pieces.map((p) => ({ x: p.item.x, y: p.item.y })),
+    spots: view.pieces.map((p) => ({
+      x: p.item.x,
+      y: p.item.y,
+      productId: p.product.id,
+      name: p.product.name,
+      slug: p.product.slug,
+      price: p.product.price,
+      image: primaryImage(p.product),
+      icon: p.product.icon,
+      store: storeNames.get(p.product.store) ?? p.product.store.replace(/-/g, " "),
+      available: p.available,
+    })),
     pieces: view.pieces.length,
     soldOut: view.soldOut,
     total: view.total,
