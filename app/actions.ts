@@ -2658,6 +2658,11 @@ export async function updateRewardSettings(_prev: SaveState, formData: FormData)
 
   const earnPct = Number(formData.get("earnPct"));
   const maxSpendPct = Number(formData.get("maxSpendPct"));
+  const { MAX_LOOK_BONUS_PCT } = await import("@/lib/rewards");
+  const lookBonusPct = Number(formData.get("lookBonusPct") ?? current.lookBonusPct ?? 0);
+  if (!Number.isFinite(lookBonusPct) || lookBonusPct < 0 || lookBonusPct > MAX_LOOK_BONUS_PCT) {
+    return { ok: false, message: `The whole-look bonus must be between 0% and ${MAX_LOOK_BONUS_PCT}%.` };
+  }
   if (!Number.isFinite(earnPct) || earnPct <= 0 || earnPct > MAX_EARN_PCT) {
     return { ok: false, message: `Credit earned must be between 0.5% and ${MAX_EARN_PCT}%.` };
   }
@@ -2665,7 +2670,7 @@ export async function updateRewardSettings(_prev: SaveState, formData: FormData)
     return { ok: false, message: `The share of an order payable with credit must be between 1% and ${MAX_SPEND_PCT}%.` };
   }
   const active = formData.get("active") === "on";
-  const saved = await saveRewards({ ...current, active, earnPct, maxSpendPct });
+  const saved = await saveRewards({ ...current, active, earnPct, maxSpendPct, lookBonusPct });
   if (!saved.ok) return saved;
   refresh();
   return {
@@ -3212,8 +3217,25 @@ export async function submitOrderAction(payload: {
    * is worked out here too — the browser only says "use it".
    */
   const { getRewardSettings, getWallet } = await import("@/lib/api");
-  const { earnFor, planSpend } = await import("@/lib/rewards");
+  const { earnFor, lookBonusFor, planSpend } = await import("@/lib/rewards");
   const rewards = await getRewardSettings();
+  /*
+   * Shop the look: what each shop's pieces of a COMPLETED look cost — every
+   * piece of the look is in this basket. Those earn the admin's extra
+   * whole-look credit (lookBonusPct) on top of the usual rate. Worked out
+   * from what is charged, so the bonus follows the same prices as the order.
+   */
+  const lookPiecesByStore = new Map<string, number>();
+  if (customerEmail && (rewards.lookBonusPct ?? 0) > 0 && rewards.active) {
+    const [{ getLooks }, { completedLooks }] = await Promise.all([import("@/lib/looks"), import("@/lib/look-utils")]);
+    const done = completedLooks(await getLooks(), items.map((i) => i.productId));
+    const lookProducts = new Set(done.flatMap((l) => l.items.map((i) => i.productId)));
+    for (const item of items) {
+      if (!lookProducts.has(item.productId)) continue;
+      const paid = item.charged.reduce((t, c) => t + c.price * c.qty, 0);
+      lookPiecesByStore.set(item.store, (lookPiecesByStore.get(item.store) ?? 0) + paid);
+    }
+  }
   const cents = (n: number) => Math.round(n * 100) / 100;
   const parcelTotal = (slug: string, lines: typeof items) =>
     priced.pricing.stores[slug]?.total ??
@@ -3240,7 +3262,12 @@ export async function submitOrderAction(payload: {
     const storeSubtotal = cents(parcelTotal(storeSlug, storeItems) - spent);
     // Earned on what is actually paid, and only where there is an email to
     // credit it to. A guest's credit waits for them under that email.
-    const earn = customerEmail ? earnFor(rewards, storeSlug, storeSubtotal) : 0;
+    const earn = customerEmail
+      ? cents(
+          earnFor(rewards, storeSlug, storeSubtotal) +
+            lookBonusFor(rewards, storeSlug, Math.min(storeSubtotal, lookPiecesByStore.get(storeSlug) ?? 0)),
+        )
+      : 0;
     creditSpent = cents(creditSpent + spent);
     creditEarned = cents(creditEarned + earn);
     const store = storesBySlug.get(storeSlug);

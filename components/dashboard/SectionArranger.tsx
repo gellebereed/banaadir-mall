@@ -16,6 +16,7 @@ const LABELS: Record<SectionKey, { name: string; hint: string }> = {
   trending: { name: "🔥 Trending now", hint: "Bestselling products" },
   stores: { name: "🏪 Featured stores", hint: "Local seller spotlight" },
   new: { name: "✨ Just landed", hint: "Newest products" },
+  looks: { name: "👗 Shop the look", hint: "Whole outfits shoppers can buy in one tap" },
 };
 
 const INITIAL: SaveState = { ok: false, message: "" };

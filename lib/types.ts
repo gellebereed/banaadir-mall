@@ -830,6 +830,12 @@ export interface RewardSettings {
   stores: string[];
   /** Shops that said "no thanks" — not invited again. */
   declined?: string[];
+  /**
+   * EXTRA % back on the pieces of a shop-the-look outfit (lib/looks.ts)
+   * when the whole look is in one order — on top of `earnPct`. 0 or absent:
+   * no bonus. Paid by the same shops as the rest of the credit.
+   */
+  lookBonusPct?: number;
 }
 
 /** Credit stamped on an order when it is placed (lib/rewards.ts). */
@@ -850,7 +856,9 @@ export type SectionKey =
   | "value"
   | "trending"
   | "stores"
-  | "new";
+  | "new"
+  /** Shop-the-look outfits (lib/looks.ts). */
+  | "looks";
 
 export interface HomeSection {
   key: SectionKey;
