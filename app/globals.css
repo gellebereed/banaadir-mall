@@ -372,3 +372,17 @@ body {
   .animate-hotspot { animation: none; opacity: 0.35; transform: scale(1.5); }
   .animate-spot-in { animation: none; }
 }
+
+/* The pre-order showcase's "Pre-order now" buttons: a slow sheen that
+   crosses the button every few seconds — enough to say "this is live",
+   not enough to read as an ad. Off for reduced motion. */
+@keyframes pre-shine {
+  0%, 70% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+.animate-pre-shine {
+  animation: pre-shine 3.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pre-shine { animation: none; display: none; }
+}
