@@ -5,6 +5,9 @@ import { useActionState, useEffect, useState } from "react";
 import { loginHref, safeNext } from "@/lib/safe-next";
 import { signUpCustomer, type AuthActionState } from "@/app/auth-actions";
 import RequiredMark from "@/components/RequiredMark";
+import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
+import { splitPhone } from "@/lib/data/locations";
+import { PHONE_COUNTRIES } from "@/lib/phone-auth";
 
 const INITIAL_STATE: AuthActionState = { error: null };
 
@@ -16,6 +19,12 @@ export default function RegisterPage() {
   // Details the shopper already typed at checkout ("Save this order to an
   // account" on the confirmation screen) — so signing up is one password.
   const [prefill, setPrefill] = useState({ name: "", email: "", phone: "" });
+  /*
+   * Sign up with a phone number and an SMS code by default — no email or
+   * password to invent. Email sign-up stays for those who prefer it.
+   */
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setNext(safeNext(params.get("next")) ?? "");
@@ -24,7 +33,14 @@ export default function RegisterPage() {
       email: params.get("email") ?? "",
       phone: params.get("phone") ?? "",
     });
+    if (params.get("with") === "email") setMethod("email");
+    setReady(true);
   }, []);
+
+  // A number handed over from checkout, split for the country picker.
+  const split = prefill.phone ? splitPhone(prefill.phone) : null;
+  const prefillCountry =
+    PHONE_COUNTRIES.find((c) => c.code === split?.countryCode)?.phoneCode ?? "+252";
 
   return (
     <div className="mx-auto max-w-md px-4 py-14">
@@ -40,6 +56,30 @@ export default function RegisterPage() {
           Keep your orders, saved items and addresses in one place.
         </p>
 
+        {method === "phone" ? (
+          <div className="mt-6">
+            {ready && (
+              <PhoneAuthForm
+                mode="signup"
+                next={next || undefined}
+                defaultName={prefill.name}
+                defaultCountry={prefillCountry}
+                defaultNumber={split?.local ?? ""}
+              />
+            )}
+            <p className="mt-5 text-center text-sm text-slate-500">
+              Prefer email?{" "}
+              <button
+                type="button"
+                onClick={() => setMethod("email")}
+                className="font-bold text-ocean-700 hover:underline"
+              >
+                Sign up with email instead
+              </button>
+            </p>
+          </div>
+        ) : (
+        <>
         <p className="mt-4 text-xs text-slate-400">
           Fields marked <RequiredMark /> are required.
         </p>
@@ -92,6 +132,17 @@ export default function RegisterPage() {
             {pending ? "Creating account…" : "Create Account"}
           </button>
         </form>
+        <p className="mt-5 text-center text-sm text-slate-500">
+          <button
+            type="button"
+            onClick={() => setMethod("phone")}
+            className="font-bold text-ocean-700 hover:underline"
+          >
+            Sign up with your phone number instead
+          </button>
+        </p>
+        </>
+        )}
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}

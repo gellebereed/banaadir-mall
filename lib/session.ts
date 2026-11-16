@@ -111,7 +111,7 @@ export async function clearSessionCookie(): Promise<void> {
  */
 export async function requireVendor(): Promise<{ session: Session; storeSlug: string }> {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/login?with=email");
   const { getStore, getStores } = await import("./api");
 
   if (session.role === "customer") {

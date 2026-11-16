@@ -174,7 +174,7 @@ export default async function SellPage({
 
           <p className="mt-4 text-center text-xs text-slate-400">
             Already a seller?{" "}
-            <Link href="/login" className="font-bold text-ocean-700 hover:underline">
+            <Link href="/login?with=email" className="font-bold text-ocean-700 hover:underline">
               Sign in to your dashboard →
             </Link>
           </p>

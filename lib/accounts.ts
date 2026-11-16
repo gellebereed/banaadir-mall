@@ -57,6 +57,7 @@ import { markInviteAccepted, sessionForEmployee } from "./employees";
 import { createClient } from "./supabase/server";
 import { getServiceClient, hasServiceRole } from "./supabase/service";
 import { isSupabaseConfigured } from "./supabase/storage";
+import { isPhoneLoginEmail, phoneLoginEmail } from "./phone-auth";
 
 /** Shortest password the admin page or the reset page will accept. */
 export const MIN_PASSWORD_LENGTH = 8;
@@ -234,6 +235,9 @@ function displayName(email: string, user: User | null): string {
 export async function isReservedEmail(email: string): Promise<boolean> {
   const clean = email.trim().toLowerCase();
   if (isAdminEmail(clean) || clean.endsWith(SELLER_EMAIL_SUFFIX)) return true;
+  // The stand-in addresses of phone sign-ups: registering one with a
+  // password would hand over that shopper's orders.
+  if (isPhoneLoginEmail(clean)) return true;
   return (await getEmployeeMemberships(clean)).length > 0;
 }
 
@@ -360,6 +364,12 @@ export async function listAccounts(): Promise<AccountRow[]> {
 
   for (const user of users) {
     if (user.email) rows.set(user.email.toLowerCase(), describe(user.email, user));
+    // Shoppers who signed up by SMS have a phone and no email — listed
+    // under their stand-in address (lib/phone-auth.ts) so the admin sees them.
+    else if (user.phone) {
+      const email = phoneLoginEmail(`+${user.phone}`);
+      rows.set(email, { ...describe(email, user), label: "Customer · phone" });
+    }
   }
 
   // The generated `<store>@seller…` logins are retired on a live site

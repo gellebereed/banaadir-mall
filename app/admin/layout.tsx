@@ -21,7 +21,7 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const session = await getSession();
-  if (session?.role !== "admin") redirect("/login");
+  if (session?.role !== "admin") redirect("/login?with=email");
 
   // Badges surface work that needs a decision without hunting for it.
   const [flashRequests, stores, reviews] = await Promise.all([

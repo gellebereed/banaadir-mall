@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { accountLabel } from "@/lib/phone-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAllStores, getBaseProducts, getOrders, getRewardSettings, getStore, getVendorStats } from "@/lib/api";
@@ -123,7 +124,7 @@ export default async function AccountPage() {
                 <h1 className="truncate font-display text-2xl font-extrabold text-white">
                   {session.name}
                 </h1>
-                <p className="truncate text-sm text-ocean-100">{session.email}</p>
+                <p className="truncate text-sm text-ocean-100">{accountLabel(session)}</p>
                 <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-mango-200 ring-1 ring-white/20">
                   {isAdmin
                     ? `🛡️ Administrator${session.access ? ` · ${session.access}` : ""}`

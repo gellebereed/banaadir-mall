@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { accountLabel, isPhoneLoginEmail } from "@/lib/phone-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import SignOutButton from "@/components/SignOutButton";
@@ -46,7 +47,7 @@ export default async function SecurityPage({
       <div className="card mt-5 flex flex-wrap items-center justify-between gap-3 p-5">
         <div className="min-w-0">
           <p className="truncate font-bold text-slate-900">{session.name}</p>
-          <p className="truncate text-sm text-slate-500">{session.email}</p>
+          <p className="truncate text-sm text-slate-500">{accountLabel(session)}</p>
           <span className="mt-1 inline-block rounded-full bg-sand-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">
             {roleLabel}
           </span>
@@ -75,7 +76,12 @@ export default async function SecurityPage({
         </div>
       )}
 
-      {!live ? (
+      {isPhoneLoginEmail(session.email) ? (
+        <p className="mt-5 rounded-2xl bg-ocean-50 p-4 text-sm text-ocean-800">
+          You sign in with your phone number and a code we text you, so there is no password
+          or email to manage here.
+        </p>
+      ) : !live ? (
         <p className="mt-5 rounded-2xl bg-mango-50 p-4 text-sm text-mango-800">
           This is a demo install with shared demo passwords, so there is nothing to change here.
         </p>

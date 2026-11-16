@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isPhoneLoginEmail } from "@/lib/phone-auth";
 import CheckoutClient from "@/components/checkout/CheckoutClient";
 import { getMarketingSettings, getOrders, getPublicOffers, getStores } from "@/lib/api";
 import { rewardSettings, walletFrom } from "@/lib/rewards";
@@ -51,7 +52,8 @@ export default async function CheckoutPage() {
   const registered = session?.phone ? splitPhone(session.phone) : undefined;
   let defaults: CheckoutDefaults = {
     name: session?.name ?? "",
-    email: session?.email ?? "",
+    // A phone sign-up's stand-in address is not one to put on an order form.
+    email: session && !isPhoneLoginEmail(session.email) ? session.email : "",
     phone: registered?.local ?? "",
     countryCode: registered?.countryCode ?? "SO",
     city: "",

@@ -19,17 +19,30 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
 import { loginHref, safeNext } from "@/lib/safe-next";
+import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
 
 const INITIAL_STATE: SignInState = { error: null };
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  /*
+   * Phone first: most shoppers here have a phone number long before they
+   * have an email they check. Email stays one tap away for every account
+   * made before phone sign-in, and for sellers, staff and the admin.
+   * `?with=email` opens on email (links from seller pages use it).
+   */
+  const [method, setMethod] = useState<"phone" | "email">("phone");
   const [state, formAction, pending] = useActionState(signIn, INITIAL_STATE);
   // Where to return after signing in (?next=, checked by safeNext). Read
   // after mount: useSearchParams would make this page need a Suspense shell.
   const [next, setNext] = useState("");
   useEffect(() => {
-    setNext(safeNext(new URLSearchParams(window.location.search).get("next")) ?? "");
+    const params = new URLSearchParams(window.location.search);
+    setNext(safeNext(params.get("next")) ?? "");
+    const back = params.get("next") ?? "";
+    if (params.get("with") === "email" || back.startsWith("/vendor") || back.startsWith("/admin")) {
+      setMethod("email");
+    }
   }, []);
 
   return (
@@ -45,7 +58,29 @@ export default function LoginPage() {
             where you left off.
           </p>
 
-          <form action={formAction} className="mt-8 space-y-4">
+          <div role="tablist" aria-label="Sign in with" className="mt-8 grid grid-cols-2 rounded-xl bg-sand-100 p-1 text-sm font-bold">
+            {(["phone", "email"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={method === m}
+                onClick={() => setMethod(m)}
+                className={`rounded-lg py-2 transition ${
+                  method === m ? "bg-white text-ocean-900 shadow-sm" : "text-slate-500 hover:text-ocean-700"
+                }`}
+              >
+                {m === "phone" ? "📱 Phone number" : "✉️ Email"}
+              </button>
+            ))}
+          </div>
+
+          {method === "phone" ? (
+            <div className="mt-6">
+              <PhoneAuthForm mode="login" next={next || undefined} />
+            </div>
+          ) : (
+          <form action={formAction} className="mt-6 space-y-4">
             {next && <input type="hidden" name="next" value={next} />}
             <div>
               <label htmlFor="email" className="label">
@@ -112,6 +147,7 @@ export default function LoginPage() {
               </Link>
             </p>
           </form>
+          )}
 
           <p className="mt-6 text-center text-sm text-slate-500">
             New to Banaadir Mall?{" "}
