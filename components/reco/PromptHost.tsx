@@ -38,7 +38,10 @@ const QUIET_ROUTES = ["/checkout", "/cart", "/login", "/register"];
 
 export default function PromptHost() {
   const pathname = usePathname();
-  const { data } = useRecommendations({ surface: "home", useCartLines: true });
+  const quiet = QUIET_ROUTES.some((route) => pathname?.startsWith(route));
+  // The prompt is never displayed on these routes, so don't request
+  // recommendation shelves for it on every checkout/login/cart visit.
+  const { data } = useRecommendations({ surface: "home", useCartLines: true, enabled: !quiet });
   const { profile, ready, seePrompt, answerPrompt, setPrefs, rateProduct } = useReco();
 
   /**
@@ -61,7 +64,6 @@ export default function PromptHost() {
   const handled = useRef<Set<string>>(new Set());
 
   const offer = data.prompt;
-  const quiet = QUIET_ROUTES.some((route) => pathname?.startsWith(route));
 
   useEffect(() => {
     if (!ready || !offer || quiet) return;
