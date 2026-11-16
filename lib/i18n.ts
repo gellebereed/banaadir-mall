@@ -328,6 +328,7 @@ const M = {
   "pre.home.earlyTag": { en: "Early price", so: "Qiimo hore" },
   "pre.home.step1": { en: "Reserve today", so: "Maanta dalbo" },
   "pre.home.step2": { en: "We set yours aside", so: "Taada waa laguu dhigayaa" },
+  "pre.page.how": { en: "How pre-order works", so: "Sida dalbashada hore u shaqayso" },
   "pre.home.step3": { en: "Yours ships first", so: "Adiga ayaa laguugu hor dirayaa" },
   "share.title": { en: "Share", so: "La wadaag" },
   "share.copy": { en: "Copy link", so: "Koobiyee linkiga" },

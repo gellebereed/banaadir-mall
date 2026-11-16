@@ -7,7 +7,6 @@ import { usePrefs } from "@/components/prefs/PrefsProvider";
 import { money } from "@/lib/format";
 import { arrivalDate, arrivalTime, daysUntilArrival, preorderProgress } from "@/lib/preorder";
 import { displayPrice, hasPriceRange, totalStock } from "@/lib/product-utils";
-import type { T } from "@/lib/i18n";
 import type { Product } from "@/lib/types";
 
 /**
@@ -107,7 +106,7 @@ export default function PreorderShowcase({
             </div>
 
             {soonest && !overdue && (
-              <ArrivalClock arrivesAt={soonest} label={anyEarly ? t("pre.home.earlyEndsIn") : t("pre.home.landsIn")} t={t} />
+              <ArrivalClock arrivesAt={soonest} label={anyEarly ? t("pre.home.earlyEndsIn") : t("pre.home.landsIn")} />
             )}
           </div>
 
@@ -121,7 +120,7 @@ export default function PreorderShowcase({
                 key={p.id}
                 className={`flex w-[46%] shrink-0 snap-start md:w-auto ${i >= 4 ? "md:hidden" : i === 3 ? "md:hidden lg:flex" : ""}`}
               >
-                <PreorderTile product={p} storeName={storeNames[p.store]} t={t} lang={lang} />
+                <PreorderTile product={p} storeName={storeNames[p.store]} />
               </div>
             ))}
           </div>
@@ -161,7 +160,8 @@ export default function PreorderShowcase({
  * to). Dashes until mounted, so the server and the phone render the same
  * thing and there is no hydration mismatch.
  */
-function ArrivalClock({ arrivesAt, label, t }: { arrivesAt: string; label: string; t: T }) {
+export function ArrivalClock({ arrivesAt, label }: { arrivesAt: string; label: string }) {
+  const { t } = usePrefs();
   const target = arrivalTime(arrivesAt);
   const [left, setLeft] = useState<number | null>(null);
 
@@ -216,17 +216,17 @@ function ArrivalClock({ arrivesAt, label, t }: { arrivesAt: string; label: strin
  * now" — products here nearly always have sizes, which are chosen on the
  * product page.
  */
-function PreorderTile({
+export function PreorderTile({
   product,
   storeName,
-  t,
-  lang,
+  onLight = false,
 }: {
   product: Product;
   storeName?: string;
-  t: T;
-  lang: string;
+  /** On the page's light background rather than the dark stage: a softer shadow. */
+  onLight?: boolean;
 }) {
+  const { t, lang } = usePrefs();
   const preorder = product.preorder;
   const price = displayPrice(product);
   const showFrom = hasPriceRange(product);
@@ -240,7 +240,9 @@ function PreorderTile({
   return (
     <Link
       href={href}
-      className="group flex w-full flex-col overflow-hidden rounded-2xl bg-white text-ocean-950 shadow-lg shadow-black/20 ring-1 ring-white/10 transition duration-300 hover:-translate-y-1 hover:shadow-2xl"
+      className={`group flex w-full flex-col overflow-hidden rounded-2xl bg-white text-ocean-950 ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-2xl ${
+        onLight ? "shadow-md shadow-ocean-950/10 ring-sand-200" : "shadow-lg shadow-black/20 ring-white/10"
+      }`}
     >
       <div className="relative aspect-[4/5] overflow-hidden">
         <ProductImage
