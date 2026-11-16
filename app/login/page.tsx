@@ -20,6 +20,7 @@ import { useActionState, useEffect, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
 import { loginHref, safeNext } from "@/lib/safe-next";
 import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
+import MethodTabs from "@/components/auth/MethodTabs";
 
 const INITIAL_STATE: SignInState = { error: null };
 
@@ -58,22 +59,7 @@ export default function LoginPage() {
             where you left off.
           </p>
 
-          <div role="tablist" aria-label="Sign in with" className="mt-8 grid grid-cols-2 rounded-xl bg-sand-100 p-1 text-sm font-bold">
-            {(["phone", "email"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="tab"
-                aria-selected={method === m}
-                onClick={() => setMethod(m)}
-                className={`rounded-lg py-2 transition ${
-                  method === m ? "bg-white text-ocean-900 shadow-sm" : "text-slate-500 hover:text-ocean-700"
-                }`}
-              >
-                {m === "phone" ? "📱 Phone number" : "✉️ Email"}
-              </button>
-            ))}
-          </div>
+          <MethodTabs value={method} onChange={setMethod} label="Sign in with" className="mt-8" />
 
           {method === "phone" ? (
             <div className="mt-6">

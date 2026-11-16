@@ -6,6 +6,7 @@ import { loginHref, safeNext } from "@/lib/safe-next";
 import { signUpCustomer, type AuthActionState } from "@/app/auth-actions";
 import RequiredMark from "@/components/RequiredMark";
 import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
+import MethodTabs from "@/components/auth/MethodTabs";
 import { splitPhone } from "@/lib/data/locations";
 import { PHONE_COUNTRIES } from "@/lib/phone-auth";
 
@@ -56,6 +57,8 @@ export default function RegisterPage() {
           Keep your orders, saved items and addresses in one place.
         </p>
 
+        <MethodTabs value={method} onChange={setMethod} label="Sign up with" className="mt-6" />
+
         {method === "phone" ? (
           <div className="mt-6">
             {ready && (
@@ -67,16 +70,6 @@ export default function RegisterPage() {
                 defaultNumber={split?.local ?? ""}
               />
             )}
-            <p className="mt-5 text-center text-sm text-slate-500">
-              Prefer email?{" "}
-              <button
-                type="button"
-                onClick={() => setMethod("email")}
-                className="font-bold text-ocean-700 hover:underline"
-              >
-                Sign up with email instead
-              </button>
-            </p>
           </div>
         ) : (
         <>
@@ -132,15 +125,6 @@ export default function RegisterPage() {
             {pending ? "Creating account…" : "Create Account"}
           </button>
         </form>
-        <p className="mt-5 text-center text-sm text-slate-500">
-          <button
-            type="button"
-            onClick={() => setMethod("phone")}
-            className="font-bold text-ocean-700 hover:underline"
-          >
-            Sign up with your phone number instead
-          </button>
-        </p>
         </>
         )}
 
