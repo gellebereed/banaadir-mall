@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
 import { loginHref, safeNext } from "@/lib/safe-next";
-import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
+import PhonePasswordLogin from "@/components/auth/PhonePasswordLogin";
 import MethodTabs from "@/components/auth/MethodTabs";
 
 const INITIAL_STATE: SignInState = { error: null };
@@ -33,6 +33,8 @@ export default function LoginPage() {
    * `?with=email` opens on email (links from seller pages use it).
    */
   const [method, setMethod] = useState<"phone" | "email">("phone");
+  // `?reset=1` (from the account page) opens straight on "set a password".
+  const [reset, setReset] = useState(false);
   const [state, formAction, pending] = useActionState(signIn, INITIAL_STATE);
   // Where to return after signing in (?next=, checked by safeNext). Read
   // after mount: useSearchParams would make this page need a Suspense shell.
@@ -41,6 +43,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     setNext(safeNext(params.get("next")) ?? "");
     const back = params.get("next") ?? "";
+    if (params.get("reset") === "1") setReset(true);
     if (params.get("with") === "email" || back.startsWith("/vendor") || back.startsWith("/admin")) {
       setMethod("email");
     }
@@ -49,7 +52,7 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-[calc(100vh-13rem)] lg:grid-cols-2">
       {/* ── The form ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center px-4 py-12 sm:px-8">
+      <div className="flex min-w-0 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-ocean-950">
             Welcome back
@@ -63,7 +66,7 @@ export default function LoginPage() {
 
           {method === "phone" ? (
             <div className="mt-6">
-              <PhoneAuthForm mode="login" next={next || undefined} />
+              <PhonePasswordLogin key={String(reset)} next={next || undefined} startInReset={reset} />
             </div>
           ) : (
           <form action={formAction} className="mt-6 space-y-4">

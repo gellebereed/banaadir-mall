@@ -76,11 +76,18 @@ export default async function SecurityPage({
         </div>
       )}
 
-      {isPhoneLoginEmail(session.email) ? (
-        <p className="mt-5 rounded-2xl bg-ocean-50 p-4 text-sm text-ocean-800">
-          You sign in with your phone number and a code we text you, so there is no password
-          or email to manage here.
-        </p>
+      {isPhoneLoginEmail(session.email) && live ? (
+        <section className="card mt-5 p-5 sm:p-6">
+          <h2 className="font-display text-lg font-bold text-ocean-950">Change password</h2>
+          <p className="mt-1 mb-4 text-sm text-slate-500">
+            You sign in with your phone number and this password. Forgot it, or never set one?{" "}
+            <Link href="/login?reset=1" className="font-semibold text-ocean-700 underline">
+              Set a new one with a code
+            </Link>
+            .
+          </p>
+          <PasswordForm minLength={MIN_PASSWORD_LENGTH} />
+        </section>
       ) : !live ? (
         <p className="mt-5 rounded-2xl bg-mango-50 p-4 text-sm text-mango-800">
           This is a demo install with shared demo passwords, so there is nothing to change here.
