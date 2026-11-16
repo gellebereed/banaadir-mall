@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { signInConfirmedUser } from "@/lib/email-signin";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -11,8 +12,12 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // `signin=1` is set by the sign-up forms: confirming the email signs
+      // the new account in (lib/email-signin.ts). Password-reset and
+      // email-change links leave it off.
+      if (searchParams.get("signin") === "1") await signInConfirmedUser(data.user);
       const forwardedHost = request.headers.get("x-forwarded-host");
       const isLocalEnv = process.env.NODE_ENV === "development";
       if (isLocalEnv) {

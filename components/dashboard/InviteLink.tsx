@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import { useEffect, useState } from "react";
 
 /**
@@ -16,7 +17,7 @@ export default function InviteLink({ token }: { token: string }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setUrl(`${window.location.origin}/invite/${token}`);
+    setUrl(`${PUBLIC_SITE_URL}/invite/${token}`);
   }, [token]);
 
   useEffect(() => {

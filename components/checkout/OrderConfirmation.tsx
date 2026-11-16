@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -117,10 +118,6 @@ export default function OrderConfirmation({
     isValidWhatsAppNumber(parcel.whatsapp) ? parcel.whatsapp! : SUPPORT_WHATSAPP_CONFIGURED;
   const canChat = order.parcels.some((p) => chatTarget(p));
 
-  // The slip link has to be absolute — it travels into WhatsApp, where a
-  // relative path means nothing. Empty during SSR, which is fine: the
-  // message is only ever built for a click that happens in the browser.
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
 
   const receipt = buildCustomerReceipt({
     orderId: order.baseId,
@@ -332,7 +329,9 @@ export default function OrderConfirmation({
             const message = buildVendorOrderMessage({
               orderId: parcel.orderId,
               storeName: parcel.storeName,
-              slipUrl: `${origin}/api/order-slip/${parcel.orderId}`,
+              // Absolute (it travels into WhatsApp) and always on the real
+              // domain — see lib/public-site.ts.
+              slipUrl: `${PUBLIC_SITE_URL}/api/order-slip/${parcel.orderId}`,
               customerName: order.customerName,
               customerPhone: order.customerPhone,
               address: order.address,

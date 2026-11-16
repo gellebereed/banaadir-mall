@@ -92,10 +92,20 @@ export async function signUpCustomer(
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
+      /*
+       * Where the confirmation link lands: our callback, which signs them
+       * in and carries on to where they were going. Without this Supabase
+       * fell back to its "Site URL" setting — which on the live project had
+       * been set to a redirect pattern (".../api/auth/**"), so the link
+       * opened a "Not Found" page.
+       */
+      const { requestOrigin } = await import("@/lib/request-origin");
+      const after = safeNext(formData.get("next")) ?? "/account";
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: `${await requestOrigin()}/api/auth/callback?signin=1&next=${encodeURIComponent(after)}`,
           data: {
             name,
             phone,
@@ -226,7 +236,11 @@ export async function signUpSeller(
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { name: ownerName, phone } },
+        options: {
+          data: { name: ownerName, phone },
+          // See signUpCustomer: never let the link fall back to Supabase's Site URL.
+          emailRedirectTo: `${await (await import("@/lib/request-origin")).requestOrigin()}/api/auth/callback?next=%2Flogin%3Fwith%3Demail`,
+        },
       });
 
       let user = authErr ? null : authData.user;

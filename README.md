@@ -295,16 +295,17 @@ admin), `payout_accounts` (where each store wants to be paid) and
 Sent by Supabase Auth — no code changes needed, only settings:
 
 1. **Supabase → Authentication → URL Configuration:** set *Site URL* to your
-   live address and add `https://<your-site>/api/auth/**` to *Redirect URLs*.
+   live address with no path — `https://banaadirmall.com` — and add
+   `https://banaadirmall.com/api/auth/**` to *Redirect URLs* (the `**`
+   pattern belongs only there; in *Site URL* it breaks every email link).
 2. **Supabase → Authentication → SMTP Settings:** connect a mail service
    (e.g. Resend, Brevo, SendGrid). Supabase's built-in sender only delivers
    to your own team members' addresses and a few emails an hour — real
    customers and sellers would never receive their links.
-3. *(Recommended)* **Authentication → Email Templates**, so links work even
-   when opened in a different app or browser than the one that asked:
-   - Reset Password: `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}`
-   - Change Email Address:
-     `{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=email_change&next=/account/security?email=confirmed`
+3. *(Recommended)* **Authentication → Email Templates:** paste the branded
+   templates in `supabase/email-templates/` (subjects are listed in its
+   README). Their links work even when opened in a different app or browser
+   than the one that asked, and confirming a sign-up signs the customer in.
 
 Everyone manages their own login at `/account/security` (linked from the
 account menu and both dashboards). Staff and the admin can change their

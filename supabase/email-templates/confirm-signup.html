@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f6f1e9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
+    <span style="display:none;max-height:0;overflow:hidden;opacity:0;">Confirm your email to finish creating your Banaadir Mall account.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f1e9;padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 2px 12px rgba(29,67,78,0.08);">
+            <tr>
+              <td style="background:#1d434e;padding:28px 32px;" align="center">
+                <img src="{{ .SiteURL }}/banaadir-logo.png" alt="Banaadir Mall" width="64" height="64" style="display:block;border:0;border-radius:14px;background:#ffffff;padding:6px;" />
+                <p style="margin:12px 0 0;font-size:20px;font-weight:800;letter-spacing:0.3px;color:#ffffff;">Banaadir Mall</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:#1d434e;">Welcome to Banaadir Mall 🛍️</h1>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">Thanks for signing up! Please confirm this is your email address and you're in. You'll be able to track your orders, save what you like and check out faster.</p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0;">
+                  <tr>
+                    <td style="border-radius:999px;background:#fb8a0e;">
+                      <a href="{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/account" style="display:inline-block;padding:14px 32px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Confirm my email</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;font-size:13px;line-height:1.6;color:#64748b;">Didn't create an account? You can ignore this email — nothing happens unless the button is pressed.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#faf7f2;padding:20px 32px;border-top:1px solid #eee5d8;" align="center">
+                <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">
+                  Banaadir Mall · Mogadishu, Somalia<br />
+                  <a href="{{ .SiteURL }}" style="color:#1f6270;text-decoration:none;">banaadirmall.com</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

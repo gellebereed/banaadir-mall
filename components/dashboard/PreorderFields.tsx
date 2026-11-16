@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { markPreorderArrived } from "@/app/actions";
@@ -200,7 +201,7 @@ function LivePanel({ product }: { product: Product }) {
   // Known only in the browser, and only after mount — reading it during
   // render gives the server and the browser two different WhatsApp links.
   const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
+  useEffect(() => setOrigin(PUBLIC_SITE_URL), []);
   const url = (path: string) => `${origin}${path}`;
   const message = (path: string) =>
     `📦 ${product.name} is on its way! Pre-order yours now, arriving ${date}.` +
