@@ -11,7 +11,10 @@ different browser or app than the one that asked.
 | Change email address | `Confirm your new email · Banaadir Mall` | `change-email.html` |
 
 They need **Site URL** set to `https://banaadirmall.com` (Authentication → URL
-Configuration) — the logo and every link are built from it.
+Configuration) — every link is built from it. The logo is a fixed address
+(`https://banaadirmall.com/banaadir-logo.png`, a PNG — Gmail and Outlook don't
+show SVG or WebP), because Supabase's template preview leaves `{{ .SiteURL }}`
+unfilled and the image showed as broken there.
 
 To send from `no-reply@banaadirmall.com` instead of Supabase, connect a mail
 service under **Authentication → Emails → SMTP Settings** (see the main README).
