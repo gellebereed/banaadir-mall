@@ -311,5 +311,5 @@ export async function transferOwnership(_prev: MoneyState, formData: FormData): 
   );
 
   await clearSessionCookie();
-  redirect("/login?transferred=1");
+  redirect("/login?transferred=1&with=email");
 }

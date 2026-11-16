@@ -28,7 +28,7 @@ function columns(session: Session | null, t: T) {
           ]
         : [
             { label: t("footer.openStore"), href: "/sell" },
-            { label: t("footer.sellerSignIn"), href: "/login" },
+            { label: t("footer.sellerSignIn"), href: "/login?with=email" },
           ];
 
   return [
