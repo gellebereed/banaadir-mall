@@ -120,7 +120,11 @@ export function defaultVariant(product: Product): Variant | undefined {
  * better answer than none.
  */
 /** What a product picker row needs — and nothing else. */
-export type PickerProduct = Pick<Product, "id" | "name" | "store" | "category" | "price" | "art" | "icon" | "images">;
+export type PickerProduct = Pick<
+  Product,
+  "id" | "name" | "store" | "category" | "price" | "art" | "icon" | "images"
+> &
+  Partial<Pick<Product, "preorder">>;
 
 /**
  * A product trimmed for a picker. The admin flash page hands the whole
@@ -139,6 +143,7 @@ export function pickerProduct(p: Product): PickerProduct {
     art: p.art,
     icon: p.icon,
     images: image ? [image] : [],
+    preorder: p.preorder,
   };
 }
 

@@ -99,6 +99,7 @@ import {
   upsertOfferInSupabase,
   deleteOfferFromSupabase,
   togglePromotionInSupabase,
+  updatePromotionInSupabase,
   deletePromotionFromSupabase,
   insertEmployee,
   type EmployeeWriteResult,
@@ -1746,10 +1747,24 @@ export async function createPromotion(
   // "products" scope limits the promotion to the ticked products; the
   // default "store" scope leaves productIds empty (applies to everything).
   const scopedToProducts = String(formData.get("scope")) === "products";
-  const productIds = scopedToProducts ? formData.getAll("productIds").map(String) : [];
+  const picked = scopedToProducts ? formData.getAll("productIds").map(String) : [];
+
+  // Only this shop's products, and never a pre-order: a promotion does not
+  // discount stock that hasn't arrived (lib/api.ts), so listing one here
+  // would only promise a price the shopper never gets.
+  const { getBaseProductsByStore, getPromotionsByStore } = await import("@/lib/api");
+  const { isPreorder } = await import("@/lib/preorder");
+  const own = new Map((await getBaseProductsByStore(storeSlug)).map((p) => [p.id, p]));
+  const productIds = picked.filter((id) => own.has(id) && !isPreorder(own.get(id)!));
+  const droppedPreorders = picked.filter((id) => own.has(id) && isPreorder(own.get(id)!)).length;
 
   if (scopedToProducts && productIds.length === 0) {
-    return { ok: false, message: "Pick at least one product, or choose the whole store." };
+    return {
+      ok: false,
+      message: droppedPreorders
+        ? "Pre-orders can't go on sale — set an early price on them in the product editor instead."
+        : "Pick at least one product, or choose the whole store.",
+    };
   }
 
   // The form's datetime-local has no time zone: it is the seller's
@@ -1760,10 +1775,36 @@ export async function createPromotion(
     return { ok: false, message: "The end date must come after the start date." };
   }
 
+  const name = String(formData.get("name")).trim() || "Store Sale";
+  const preorderNote = droppedPreorders
+    ? ` ${droppedPreorders} pre-order${droppedPreorders === 1 ? " was" : "s were"} left out — pre-orders are never on sale.`
+    : "";
+
+  // EDIT: the same form, carrying the promotion's id.
+  const editId = String(formData.get("id") ?? "");
+  if (editId) {
+    const existing = (await getPromotionsByStore(storeSlug)).find((p) => p.id === editId);
+    if (!existing) return { ok: false, message: "That promotion no longer exists." };
+    assertOwnsStore(session, existing.store);
+    const next = { ...existing, name, pct, productIds, startsAt, endsAt };
+    if (useSupabaseMutations()) {
+      if (!(await updatePromotionInSupabase(next))) {
+        return { ok: false, message: "Could not save the promotion to Supabase — check the server logs." };
+      }
+    } else {
+      await mutateDB((db) => {
+        db.promotions = db.promotions.map((p) => (p.id === editId ? next : p));
+      });
+    }
+    await logActivity(next.store, "promotion.update", `Edited promotion "${next.name}" (−${next.pct}%)`, next.id);
+    refresh();
+    return { ok: true, message: `Saved.${preorderNote}`, link: campaignPath({ id: next.id, kind: "promotion" }) };
+  }
+
   const promo = {
     id: "promo-" + Date.now().toString(36),
     store: storeSlug,
-    name: String(formData.get("name")).trim() || "Store Sale",
+    name,
     pct,
     active: true,
     productIds,
@@ -1795,8 +1836,8 @@ export async function createPromotion(
   return {
     ok: true,
     message: startsAt
-      ? `Scheduled — ${pct}% off ${scopeLabel} from the start date.`
-      : `Live now — ${pct}% off ${scopeLabel}.`,
+      ? `Scheduled — ${pct}% off ${scopeLabel} from the start date.${preorderNote}`
+      : `Live now — ${pct}% off ${scopeLabel}.${preorderNote}`,
     link: campaignPath({ id: promo.id, kind: "promotion" }),
   };
 }

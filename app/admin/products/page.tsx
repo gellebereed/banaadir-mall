@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import AdminProductFilters from "@/components/dashboard/AdminProductFilters";
-import { getBaseProducts, getCategories, getStores } from "@/lib/api";
+import { getAllProducts, getBaseProducts, getCategories, getStores } from "@/lib/api";
+import type { ProductBadge } from "@/lib/types";
+
+/** Badge filter values, in the order the storefront ranks them. */
+const BADGES: ProductBadge[] = ["Pre-order", "Sale", "Low stock", "Just landed", "New", "Bestseller"];
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { compact, money } from "@/lib/format";
 
@@ -22,13 +26,28 @@ export default async function AdminProductsPage({
     const value = params[key];
     return ((Array.isArray(value) ? value[0] : value) ?? "").trim();
   };
-  const filters = { q: param("q"), store: param("store"), category: param("category"), stock: param("stock") };
+  const filters = { q: param("q"), store: param("store"), category: param("category"), stock: param("stock"), badge: param("badge") };
 
-  const [products, stores, categoryList] = await Promise.all([
+  const [products, stores, categoryList, priced] = await Promise.all([
     getBaseProducts(),
     getStores(),
     getCategories(true),
+    // As shoppers see it — for the badge each product wears today.
+    getAllProducts(),
   ]);
+  const badgeOf = new Map(priced.map((p) => [p.id, p.badge]));
+  // "off" = the seller switched badges off; "none" = none earned.
+  const badgeKey = (p: (typeof products)[number]) =>
+    p.badge === "Off" ? "off" : (badgeOf.get(p.id) ?? "none");
+  const badgeCounts = new Map<string, number>();
+  for (const p of products) badgeCounts.set(badgeKey(p), (badgeCounts.get(badgeKey(p)) ?? 0) + 1);
+  const badgeOptions = [
+    ...BADGES.map((b) => ({ id: b as string, label: b })),
+    { id: "none", label: "No badge" },
+    { id: "off", label: "Badges switched off" },
+  ]
+    .map((o) => ({ ...o, count: badgeCounts.get(o.id) ?? 0 }))
+    .filter((o) => o.count > 0);
   const storeName = (slug: string) =>
     stores.find((s) => s.slug === slug)?.name ?? slug;
   const categoryNames = new Map(categoryList.map((c) => [c.slug, c.name]));
@@ -49,6 +68,7 @@ export default async function AdminProductsPage({
     if (filters.category && p.category !== filters.category) return false;
     if (filters.stock === "low" && !(p.stock > 0 && p.stock <= 15)) return false;
     if (filters.stock === "out" && p.stock > 0) return false;
+    if (filters.badge && badgeKey(p) !== filters.badge) return false;
     if (q) {
       return (
         p.name.toLowerCase().includes(q) ||
@@ -102,6 +122,7 @@ export default async function AdminProductsPage({
         {...filters}
         stores={stores.map((s) => ({ slug: s.slug, name: s.name }))}
         categories={categoryOptions}
+        badges={badgeOptions}
         active={filtersActive}
       />
       {filtersActive && (
@@ -147,8 +168,15 @@ export default async function AdminProductsPage({
                       className="h-10 w-10 shrink-0 rounded-lg"
                       sizes="40px"
                     />
-                    <span className={`truncate font-semibold ${p.hidden ? "text-slate-400 line-through" : "text-slate-800"}`}>
-                      {p.name}
+                    <span className="min-w-0">
+                      <span className={`block truncate font-semibold ${p.hidden ? "text-slate-400 line-through" : "text-slate-800"}`}>
+                        {p.name}
+                      </span>
+                      {badgeOf.get(p.id) && p.badge !== "Off" && (
+                        <span className="mt-0.5 inline-block rounded-full bg-sand-100 px-2 text-[10px] font-bold text-slate-600">
+                          {badgeOf.get(p.id)}
+                        </span>
+                      )}
                     </span>
                   </Link>
                 </td>

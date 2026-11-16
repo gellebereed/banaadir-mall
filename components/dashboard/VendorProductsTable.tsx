@@ -10,7 +10,7 @@ import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from 
 import { compact, money } from "@/lib/format";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { hasVariants, totalStock } from "@/lib/product-utils";
-import type { Product } from "@/lib/types";
+import type { Product, ProductBadge } from "@/lib/types";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -34,13 +34,22 @@ import type { Product } from "@/lib/types";
 
 const LOW_STOCK = 15;
 
-type TabId = "all" | "live" | "hidden" | "featured" | "low_stock" | "out_of_stock" | "no_photos";
+type TabId =
+  | "all"
+  | "live"
+  | "hidden"
+  | "featured"
+  | "preorder"
+  | "low_stock"
+  | "out_of_stock"
+  | "no_photos";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "all", label: "All" },
   { id: "live", label: "Live" },
   { id: "hidden", label: "Hidden" },
   { id: "featured", label: "Featured" },
+  { id: "preorder", label: "Pre-order" },
   { id: "low_stock", label: "Low stock" },
   { id: "out_of_stock", label: "Out of stock" },
   { id: "no_photos", label: "No photos" },
@@ -55,6 +64,8 @@ function matchesTab(p: Product, tab: TabId): boolean {
       return Boolean(p.hidden);
     case "featured":
       return Boolean(p.featured);
+    case "preorder":
+      return isPreorder(p);
     case "low_stock":
       return stock > 0 && stock <= LOW_STOCK;
     case "out_of_stock":
@@ -104,6 +115,18 @@ function hasBarcode(product: Product): boolean {
 
 const VIEW_KEY = "banaadir_products_view";
 
+/**
+ * The badge filter. Badges are worked out (lib/badges.ts), not typed, so
+ * the page hands the table the one each product wears today. "none" is no
+ * badge earned; "off" is the seller having switched badges off.
+ */
+const BADGE_ORDER: ProductBadge[] = ["Pre-order", "Sale", "Low stock", "Just landed", "New", "Bestseller"];
+
+function badgeKey(p: Product, badges: Record<string, ProductBadge>): string {
+  if (p.badge === "Off") return "off";
+  return badges[p.id] ?? "none";
+}
+
 const FILTER_SELECT =
   "h-10 w-full min-w-0 truncate rounded-xl border border-sand-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-ocean-500 focus:ring-2 focus:ring-ocean-200";
 
@@ -127,12 +150,15 @@ export default function VendorProductsTable({
   discounts,
   mayEdit,
   categoryNames = {},
+  badges = {},
 }: {
   products: Product[];
   discounts: Record<string, number>;
   mayEdit: boolean;
   /** category slug → display name, so the filter reads like the shop does. */
   categoryNames?: Record<string, string>;
+  /** product id → the badge it wears on the storefront today. */
+  badges?: Record<string, ProductBadge>;
 }) {
   /*
    * Filters, sort and page come from the URL, and are written back to it as
@@ -219,6 +245,22 @@ export default function VendorProductsTable({
     () => param("sub") || "all",
   );
 
+  const badgeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of products) {
+      const key = badgeKey(p, badges);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [
+      ...BADGE_ORDER.map((b) => ({ id: b as string, label: b })),
+      { id: "none", label: "No badge" },
+      { id: "off", label: "Badges switched off" },
+    ]
+      .map((o) => ({ ...o, count: counts.get(o.id) ?? 0 }))
+      .filter((o) => o.count > 0);
+  }, [products, badges]);
+  const [selectedBadge, setSelectedBadge] = useState<string>(() => param("badge") || "all");
+
   const tabCounts = useMemo(
     () => Object.fromEntries(TABS.map((t) => [t.id, products.filter((p) => matchesTab(p, t.id)).length])),
     [products],
@@ -230,6 +272,7 @@ export default function VendorProductsTable({
       if (!matchesTab(p, activeTab)) return false;
       if (selectedCategory !== "all" && p.category !== selectedCategory) return false;
       if (selectedSubcategory !== "all" && p.subcategory !== selectedSubcategory) return false;
+      if (selectedBadge !== "all" && badgeKey(p, badges) !== selectedBadge) return false;
 
       // Matched against every code a seller might type, including the
       // variant codes, which is what is on a scanner label.
@@ -264,7 +307,7 @@ export default function VendorProductsTable({
      * typo, to add its photo.
      */
     return [...list].sort((a, b) => editedAt(b) - editedAt(a));
-  }, [products, activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
+  }, [products, badges, activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy]);
 
   /*
    * PAGINATION. Rendering 1,688 rows put ~20,000 DOM nodes on the page.
@@ -284,7 +327,7 @@ export default function VendorProductsTable({
       return;
     }
     setPage(1);
-  }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy]);
+  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy]);
 
   // The list as it stands, as a URL: kept in the address bar (replaced,
   // not pushed, so Back still leaves the page) and handed to the editor.
@@ -293,12 +336,13 @@ export default function VendorProductsTable({
     if (activeTab !== "all") qs.set("status", activeTab);
     if (selectedCategory !== "all") qs.set("category", selectedCategory);
     if (selectedSubcategory !== "all") qs.set("sub", selectedSubcategory);
+    if (selectedBadge !== "all") qs.set("badge", selectedBadge);
     if (searchQuery.trim()) qs.set("q", searchQuery.trim());
     if (sortBy !== "default") qs.set("sort", sortBy);
     if (currentPage > 1) qs.set("page", String(currentPage));
     const query = qs.toString();
     return query ? `${LIST_PATH}?${query}` : LIST_PATH;
-  }, [activeTab, selectedCategory, selectedSubcategory, searchQuery, sortBy, currentPage]);
+  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy, currentPage]);
   useEffect(() => {
     if (window.location.pathname + window.location.search !== listHref) {
       window.history.replaceState(null, "", listHref);
@@ -310,12 +354,14 @@ export default function VendorProductsTable({
     activeTab !== "all" ||
     selectedCategory !== "all" ||
     selectedSubcategory !== "all" ||
+    selectedBadge !== "all" ||
     searchQuery.trim() !== "";
 
   function clearFilters() {
     setActiveTab("all");
     setSelectedCategory("all");
     setSelectedSubcategory("all");
+    setSelectedBadge("all");
     setSearchQuery("");
   }
 
@@ -510,8 +556,8 @@ export default function VendorProductsTable({
           })}
         </div>
 
-        {(categories.length > 1 || subcategories.length > 0 || filtersActive) && (
-          <div className="grid gap-2 p-3 sm:grid-cols-[repeat(2,minmax(0,16rem))_1fr] sm:items-end sm:px-4">
+        {(categories.length > 1 || subcategories.length > 0 || badgeOptions.length > 0 || filtersActive) && (
+          <div className="grid gap-2 p-3 sm:grid-cols-2 sm:items-end sm:px-4 lg:grid-cols-[repeat(3,minmax(0,14rem))_1fr]">
             {categories.length > 1 && (
               <label className="min-w-0">
                 <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -550,8 +596,27 @@ export default function VendorProductsTable({
                 </select>
               </label>
             )}
+            {badgeOptions.length > 0 && (
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Badge
+                </span>
+                <select
+                  value={selectedBadge}
+                  onChange={(e) => setSelectedBadge(e.target.value)}
+                  className={FILTER_SELECT}
+                >
+                  <option value="all">Any badge</option>
+                  {badgeOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label} ({o.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {filtersActive && (
-              <div className="flex items-center justify-between gap-3 sm:col-start-3 sm:h-10 sm:justify-end">
+              <div className="flex items-center justify-between gap-3 sm:col-span-2 sm:h-10 sm:justify-end lg:col-span-1 lg:col-start-4">
                 <span className="text-xs text-slate-500">
                   <strong className="text-slate-700">{filtered.length.toLocaleString()}</strong> of{" "}
                   {products.length.toLocaleString()} shown

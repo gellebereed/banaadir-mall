@@ -384,6 +384,11 @@ export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
  * covers the whole store when it has no productIds, or only the listed
  * products when it does. The site-wide campaign applies to the shops that
  * accepted it — they pay for it.
+ *
+ * A PRE-ORDER is never discounted by a promotion or the campaign. Its
+ * price before arrival is the shop's own early price (lib/preorder.ts);
+ * a store-wide "60% clearance" was never meant for stock that hasn't
+ * even landed, and it used to catch every new pre-order silently.
  */
 function discountPctFor(
   product: Product,
@@ -391,21 +396,24 @@ function discountPctFor(
   campaign: Campaign,
   flash: Map<string, FlashPrice> = new Map(),
 ): number {
-  const promo = promotions
-    .filter(
-      (p) =>
-        isPromotionLive(p) &&
-        // Approvals used to create one of these, and it never ended. The
-        // flash discount now comes from the campaign itself (flashPct).
-        !isLegacyFlashPromotion(p.id) &&
-        p.store === product.store &&
-        (!p.productIds?.length || p.productIds.includes(product.id)),
-    )
-    .reduce((max, p) => Math.max(max, p.pct), 0);
-  const campaignPct = campaign.stores.has(product.store) ? campaign.pct : 0;
+  const preorder = isPreorder(product);
+  const promo = preorder
+    ? 0
+    : promotions
+        .filter(
+          (p) =>
+            isPromotionLive(p) &&
+            // Approvals used to create one of these, and it never ended. The
+            // flash discount now comes from the campaign itself (flashPct).
+            !isLegacyFlashPromotion(p.id) &&
+            p.store === product.store &&
+            (!p.productIds?.length || p.productIds.includes(product.id)),
+        )
+        .reduce((max, p) => Math.max(max, p.pct), 0);
+  const campaignPct = !preorder && campaign.stores.has(product.store) ? campaign.pct : 0;
   // The early price of a pre-order — it ends the moment the shop marks the
   // stock arrived (lib/preorder.ts), which is what makes its deadline true.
-  const earlyPct = isPreorder(product) ? (product.preorder?.earlyPct ?? 0) : 0;
+  const earlyPct = preorder ? (product.preorder?.earlyPct ?? 0) : 0;
   return Math.max(promo, campaignPct, flash.get(product.id)?.pct ?? 0, earlyPct);
 }
 

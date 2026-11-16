@@ -950,6 +950,35 @@ export async function togglePromotionInSupabase(
   }
 }
 
+/** Save an edited promotion: name, percentage, products and schedule. */
+export async function updatePromotionInSupabase(promo: Promotion): Promise<boolean> {
+  if (!useSupabaseMutations()) return false;
+  try {
+    const supabase = getDataClient();
+    const row: Record<string, unknown> = {
+      name: promo.name,
+      pct: promo.pct,
+      product_ids: promo.productIds ?? [],
+      starts_at: promo.startsAt ?? null,
+      ends_at: promo.endsAt ?? null,
+    };
+    let { error } = await supabase.from("promotions").update(row).eq("id", promo.id);
+    if (error && isMissingColumnError(error)) {
+      delete row.starts_at;
+      delete row.ends_at;
+      ({ error } = await supabase.from("promotions").update(row).eq("id", promo.id));
+    }
+    if (error) {
+      console.error("[Supabase Mutations] updatePromotion error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[Supabase Mutations] updatePromotion exception:", err);
+    return false;
+  }
+}
+
 export async function deletePromotionFromSupabase(id: string): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
