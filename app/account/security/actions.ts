@@ -35,6 +35,7 @@ import { getSession, setSessionCookie } from "@/lib/session";
 import { getServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
+import { isPhoneLoginEmail } from "@/lib/phone-auth";
 
 export interface SecurityState {
   ok?: string;
@@ -54,7 +55,11 @@ async function proveCurrentPassword(password: string) {
   if (wait > 0) return { error: `Too many wrong passwords. Try again in ${wait} minutes.` } as const;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email: session.email, password });
+  // Phone sign-ups have a stand-in email Supabase has never heard of; their
+  // Supabase login is the number itself.
+  const { error } = isPhoneLoginEmail(session.email)
+    ? await supabase.auth.signInWithPassword({ phone: session.phone ?? "", password })
+    : await supabase.auth.signInWithPassword({ email: session.email, password });
   if (error) {
     recordSignInFailure(session.email, ip);
     return { error: "Your current password isn't right." } as const;
@@ -83,6 +88,11 @@ export async function changePassword(_prev: SecurityState, formData: FormData): 
 export async function changeEmail(_prev: SecurityState, formData: FormData): Promise<SecurityState> {
   const session = await getSession();
   if (!session) return { error: "Please sign in again." };
+  // A phone sign-up's orders are keyed on its stand-in address; adding an
+  // email would move the account to a new key and strand them.
+  if (isPhoneLoginEmail(session.email)) {
+    return { error: "Accounts made with a phone number sign in with the number." };
+  }
   if (session.access || session.role === "admin") {
     return {
       error:

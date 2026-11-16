@@ -1,16 +1,20 @@
 "use client";
 
 /**
- * Sign in / sign up with a code by SMS or WhatsApp — the default way in
- * for shoppers.
- * Two steps on one form: the number (and, signing up, a name), then the
- * 6-digit code. The server side is app/phone-auth-actions.ts.
+ * Create an account with a phone number — or set a new password for one —
+ * proving the number once with a 6-digit code by SMS or WhatsApp.
+ *
+ *   signup: name, number, password  → code → signed in
+ *   reset:  number, new password    → code → signed in with the new password
+ *
+ * Signing in day to day is number + password (PhonePasswordLogin), no code.
+ * The server side is app/phone-auth-actions.ts.
  */
 
 import { useActionState, useState } from "react";
 import { phoneAuth, type Channel, type PhoneAuthState } from "@/app/phone-auth-actions";
-import { PHONE_COUNTRIES } from "@/lib/phone-auth";
 import RequiredMark from "@/components/RequiredMark";
+import { PasswordField, PhoneField } from "@/components/auth/fields";
 
 const INITIAL_STATE: PhoneAuthState = { error: null };
 
@@ -20,12 +24,15 @@ export default function PhoneAuthForm({
   defaultName = "",
   defaultCountry = "+252",
   defaultNumber = "",
+  onBack,
 }: {
-  mode: "login" | "signup";
+  mode: "signup" | "reset";
   next?: string;
   defaultName?: string;
   defaultCountry?: string;
   defaultNumber?: string;
+  /** Reset only: back to the password sign-in. */
+  onBack?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(phoneAuth, INITIAL_STATE);
   // "Change number" goes back to step one without losing what was typed.
@@ -33,9 +40,12 @@ export default function PhoneAuthForm({
   const [name, setName] = useState(defaultName);
   const [country, setCountry] = useState(defaultCountry);
   const [number, setNumber] = useState(defaultNumber);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   // Which button was pressed, so only that one says "Sending…".
   const [sending, setSending] = useState<Channel>("sms");
   const other: Channel = state.channel === "whatsapp" ? "sms" : "whatsapp";
+  const mismatch = confirm.length > 0 && confirm !== password;
 
   const codeStep = Boolean(state.phone) && !editing;
 
@@ -52,18 +62,42 @@ export default function PhoneAuthForm({
     </>
   );
 
+  // What every post carries: the step-one answers, held here between steps.
+  const carried = (
+    <>
+      <input type="hidden" name="mode" value={mode} />
+      <input type="hidden" name="phone" value={state.phone ?? ""} />
+      <input type="hidden" name="name" value={name} />
+      <input type="hidden" name="password" value={password} />
+      <input type="hidden" name="confirmPassword" value={confirm} />
+      {next && <input type="hidden" name="next" value={next} />}
+    </>
+  );
+
   if (codeStep) {
     return (
       <div className="space-y-4">
+        <div className="flex items-start gap-3 rounded-2xl bg-sand-50 p-4 ring-1 ring-sand-200">
+          <span className="text-2xl" aria-hidden>
+            {state.channel === "whatsapp" ? "💬" : "📱"}
+          </span>
+          <div className="min-w-0 text-sm">
+            <p className="font-bold text-slate-800">Check your {state.channel === "whatsapp" ? "WhatsApp" : "messages"}</p>
+            <p className="mt-0.5 text-slate-500">
+              We sent a 6-digit code to <span className="font-semibold text-slate-700">{state.phone}</span>.
+              {mode === "signup"
+                ? " Enter it to verify your number and finish creating your account."
+                : " Enter it to confirm it's you and save your new password."}
+            </p>
+          </div>
+        </div>
+
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="intent" value="verify" />
-          <input type="hidden" name="mode" value={mode} />
-          <input type="hidden" name="phone" value={state.phone} />
-          <input type="hidden" name="name" value={name} />
-          {next && <input type="hidden" name="next" value={next} />}
+          {carried}
           <div>
             <label htmlFor="code" className="label">
-              {state.channel === "whatsapp" ? "Code from WhatsApp" : "Code from the SMS"}
+              Verification code
             </label>
             <input
               key={state.phone}
@@ -75,17 +109,17 @@ export default function PhoneAuthForm({
               autoComplete="one-time-code"
               pattern="[0-9 ]{4,8}"
               maxLength={8}
-              placeholder="123456"
+              placeholder="000000"
               className="input text-center font-mono text-2xl tracking-[0.4em]"
             />
           </div>
-          {notice}
+          {state.error && notice}
           <button type="submit" disabled={pending} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60">
-            {pending ? "Checking…" : mode === "signup" ? "Verify & create account" : "Verify & sign in"}
+            {pending ? "Checking…" : mode === "signup" ? "Verify & create account" : "Verify & save password"}
           </button>
         </form>
 
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-start justify-between gap-3 text-sm">
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -93,13 +127,10 @@ export default function PhoneAuthForm({
           >
             ← Change number
           </button>
-          {/* Resend: the same number, step one again — the same way, or the
-              other way when the first one didn't arrive. */}
+          {/* Resend: the same way, or the other way when the first didn't arrive. */}
           <form action={formAction} className="flex flex-col items-end gap-1">
             <input type="hidden" name="intent" value="send" />
-            <input type="hidden" name="mode" value={mode} />
-            <input type="hidden" name="phone" value={state.phone} />
-            <input type="hidden" name="name" value={name} />
+            {carried}
             <button
               type="submit"
               name="channel"
@@ -128,7 +159,14 @@ export default function PhoneAuthForm({
     <form action={formAction} onSubmit={() => setEditing(false)} className="space-y-4">
       <input type="hidden" name="intent" value="send" />
       <input type="hidden" name="mode" value={mode} />
+      <input type="hidden" name="name" value={name} />
       {next && <input type="hidden" name="next" value={next} />}
+
+      {mode === "reset" && (
+        <p className="text-sm text-slate-500">
+          Enter your number and choose a new password. We'll send a code to confirm it's you.
+        </p>
+      )}
 
       {mode === "signup" && (
         <div>
@@ -138,7 +176,6 @@ export default function PhoneAuthForm({
           </label>
           <input
             id="name"
-            name="name"
             required
             autoComplete="name"
             value={name}
@@ -149,50 +186,44 @@ export default function PhoneAuthForm({
         </div>
       )}
 
+      <PhoneField
+        country={country}
+        onCountry={setCountry}
+        number={number}
+        onNumber={setNumber}
+        required={mode === "signup"}
+        autoFocus={mode === "reset"}
+      />
+
+      <PasswordField
+        id="password"
+        name="password"
+        label={mode === "signup" ? "Create a password" : "New password"}
+        value={password}
+        onChange={setPassword}
+        autoComplete="new-password"
+        showStrength
+      />
       <div>
-        <label htmlFor="phone" className="label">
-          Mobile number
-          {mode === "signup" && <RequiredMark />}
+        <label htmlFor="confirmPassword" className="label">
+          Confirm password
         </label>
-        <div className="flex gap-2">
-          {/* `.input` is w-full, so the width lives on a wrapper — on the
-              select itself it lost to w-full and pushed the number off-screen. */}
-          <div className="w-32 shrink-0">
-          <select
-            name="countryCode"
-            aria-label="Country code"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="input px-2"
-          >
-            {PHONE_COUNTRIES.map((c) => (
-              <option key={c.code} value={c.phoneCode}>
-                {c.flag} {c.phoneCode}
-              </option>
-            ))}
-          </select>
-          </div>
-          <input
-            id="phone"
-            name="phone"
-            type="tel"
-            required
-            autoFocus={mode === "login"}
-            inputMode="tel"
-            autoComplete="tel-national"
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            placeholder="61 777 8899"
-            className="input !w-auto min-w-0 flex-1"
-          />
-        </div>
-        <p className="mt-1.5 text-xs text-slate-400">
-          We'll send you a 6-digit code by SMS or WhatsApp. No password needed.
-        </p>
+        <input
+          id="confirmPassword"
+          name="confirmPassword"
+          type="password"
+          required
+          maxLength={72}
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          aria-invalid={mismatch}
+          className={`input ${mismatch ? "!border-coral-400" : ""}`}
+        />
+        {mismatch && <p className="mt-1 text-xs font-medium text-coral-600">The passwords don't match yet.</p>}
       </div>
 
-      {!state.phone && notice}
-      {state.phone && state.error && notice}
+      {(!state.phone || state.error) && notice}
 
       {mode === "signup" && (
         <label className="flex items-start gap-2 text-xs text-slate-500">
@@ -201,28 +232,45 @@ export default function PhoneAuthForm({
         </label>
       )}
 
-      <div className="grid gap-2.5 sm:grid-cols-2">
-        <button
-          type="submit"
-          name="channel"
-          value="sms"
-          onClick={() => setSending("sms")}
-          disabled={pending}
-          className="btn-primary w-full !px-4 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending && sending === "sms" ? "Sending…" : "📱 Send code by SMS"}
-        </button>
-        <button
-          type="submit"
-          name="channel"
-          value="whatsapp"
-          onClick={() => setSending("whatsapp")}
-          disabled={pending}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-3 font-semibold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending && sending === "whatsapp" ? "Sending…" : "💬 Send on WhatsApp"}
-        </button>
+      <div>
+        <p className="mb-2 text-xs font-semibold text-slate-500">
+          {mode === "signup" ? "Verify your number with a code by:" : "Send the code by:"}
+        </p>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <button
+            type="submit"
+            name="channel"
+            value="sms"
+            onClick={() => setSending("sms")}
+            disabled={pending || mismatch}
+            className="btn-primary w-full !px-4 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending && sending === "sms" ? "Sending…" : "📱 SMS"}
+          </button>
+          <button
+            type="submit"
+            name="channel"
+            value="whatsapp"
+            onClick={() => setSending("whatsapp")}
+            disabled={pending || mismatch}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-3 font-semibold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending && sending === "whatsapp" ? "Sending…" : "💬 WhatsApp"}
+          </button>
+        </div>
       </div>
+
+      {onBack && (
+        <p className="text-center text-sm">
+          <button type="button" onClick={onBack} className="font-semibold text-ocean-700 transition hover:text-mango-600">
+            ← Back to sign in
+          </button>
+        </p>
+      )}
+
+      <p className="flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
+        <span aria-hidden>🔒</span> Your number is verified once. After that you sign in with your password.
+      </p>
     </form>
   );
 }
