@@ -11,12 +11,15 @@
  *
  * NEXT_PUBLIC_SITE_URL wins when set; otherwise the production domain
  * Netlify reports (next.config.ts → BM_SITE_URL), unless that is itself a
- * *.netlify.app address; otherwise banaadirmall.com.
+ * *.netlify.app address; otherwise www.banaadirmall.com (the bare
+ * banaadirmall.com does not reach this site — it answered 404 in Nov 2026).
  */
-const FALLBACK = "https://banaadirmall.com";
+const FALLBACK = "https://www.banaadirmall.com";
 
 function pick(): string {
   const configured = (process.env.NEXT_PUBLIC_SITE_URL || process.env.BM_SITE_URL || "").replace(/\/+$/, "");
+  // The bare domain doesn't reach the shop (see above): name www instead.
+  if (/^https?:\/\/banaadirmall\.com$/i.test(configured)) return FALLBACK;
   if (configured && !/\.netlify\.app$/i.test(configured)) return configured;
   return FALLBACK;
 }

@@ -295,8 +295,8 @@ admin), `payout_accounts` (where each store wants to be paid) and
 Sent by Supabase Auth — no code changes needed, only settings:
 
 1. **Supabase → Authentication → URL Configuration:** set *Site URL* to your
-   live address with no path — `https://banaadirmall.com` — and add
-   `https://banaadirmall.com/api/auth/**` to *Redirect URLs* (the `**`
+   live address with no path — `https://www.banaadirmall.com` — and add
+   `https://www.banaadirmall.com/**` to *Redirect URLs* (the `**`
    pattern belongs only there; in *Site URL* it breaks every email link).
 2. **Supabase → Authentication → SMTP Settings:** connect a mail service
    (e.g. Resend, Brevo, SendGrid). Supabase's built-in sender only delivers

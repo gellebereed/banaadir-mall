@@ -10,9 +10,9 @@ different browser or app than the one that asked.
 | Reset password | `Reset your password · Banaadir Mall` | `reset-password.html` |
 | Change email address | `Confirm your new email · Banaadir Mall` | `change-email.html` |
 
-They need **Site URL** set to `https://banaadirmall.com` (Authentication → URL
+They need **Site URL** set to `https://www.banaadirmall.com` (Authentication → URL
 Configuration) — every link is built from it. The logo is a fixed address
-(`https://banaadirmall.com/banaadir-logo.png`, a PNG — Gmail and Outlook don't
+(`https://www.banaadirmall.com/email-logo.png`, a PNG served by `app/email-logo.png/route.ts` — Gmail and Outlook don't
 show SVG or WebP), because Supabase's template preview leaves `{{ .SiteURL }}`
 unfilled and the image showed as broken there.
 
