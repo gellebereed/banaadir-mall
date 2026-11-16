@@ -116,13 +116,52 @@ export function cartLineKey(item: Pick<CartItem, "productId" | "variantId" | "co
 }
 export const WISHLIST_KEY = "bm-wishlist";
 
-function readStorage<T>(key: string, fallback: T): T {
+/**
+ * Browser storage is untrusted input: old versions, extensions, or partially
+ * written values can leave valid JSON that is NOT an array. Treat those as
+ * empty instead of crashing the global CartProvider during hydration.
+ */
+function readStorageArray<T>(key: string, valid: (item: unknown) => item is T): T[] {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(valid) : [];
   } catch {
-    return fallback;
+    // Storage access can be blocked (private browsers, security policies).
+    return [];
   }
+}
+
+function isCartItem(item: unknown): item is CartItem {
+  if (!item || typeof item !== "object") return false;
+  const value = item as Partial<CartItem>;
+  if (
+    typeof value.productId !== "string" ||
+    !value.productId ||
+    !Number.isSafeInteger(value.qty) ||
+    (value.qty ?? 0) <= 0
+  ) return false;
+  if (value.snapshot === undefined) return true;
+  const snapshot = value.snapshot;
+  return Boolean(
+    snapshot &&
+    typeof snapshot === "object" &&
+    typeof snapshot.name === "string" &&
+    typeof snapshot.slug === "string" &&
+    typeof snapshot.icon === "string" &&
+    typeof snapshot.price === "number" &&
+    Number.isFinite(snapshot.price) &&
+    (snapshot.image === undefined || typeof snapshot.image === "string") &&
+    (snapshot.store === undefined || typeof snapshot.store === "string") &&
+    (snapshot.compareAt === undefined || (
+      typeof snapshot.compareAt === "number" && Number.isFinite(snapshot.compareAt)
+    ))
+  );
+}
+
+function isWishlistId(id: unknown): id is string {
+  return typeof id === "string" && id.length > 0;
 }
 
 /** How long a confirmation stays on screen. */
@@ -184,27 +223,38 @@ export function CartProvider({
         setItems([]);
         setWishlist([]);
       } else {
-        setItems(readStorage<CartItem[]>(cartKey, []));
-        setWishlist(readStorage<string[]>(wishlistKey, []));
+        setItems(readStorageArray(cartKey, isCartItem));
+        setWishlist(readStorageArray(wishlistKey, isWishlistId));
       }
     } else {
       // First sign-in on this device takes over whatever was browsed as a
       // guest — losing a basket at the point of signing in to pay for it
       // would be indefensible.
       adoptGuestData([...SHOPPER_KEYS], scope);
-      setItems(readStorage<CartItem[]>(cartKey, []));
-      setWishlist(readStorage<string[]>(wishlistKey, []));
+      setItems(readStorageArray(cartKey, isCartItem));
+      setWishlist(readStorageArray(wishlistKey, isWishlistId));
     }
 
     setHydrated(true);
   }, [scope, cartKey, wishlistKey]);
 
+  // A storage quota error or blocked storage must not take down EVERY route.
   useEffect(() => {
-    if (hydrated) localStorage.setItem(cartKey, JSON.stringify(items));
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(cartKey, JSON.stringify(items));
+    } catch {
+      // Basket remains usable for this tab even without persistence.
+    }
   }, [items, hydrated, cartKey]);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(wishlistKey, JSON.stringify(wishlist));
+    } catch {
+      // Wishlisting remains usable for this tab even without persistence.
+    }
   }, [wishlist, hydrated, wishlistKey]);
 
   const value = useMemo<CartContextValue>(() => {
