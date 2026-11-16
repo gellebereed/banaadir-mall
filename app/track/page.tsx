@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import { Suspense, useEffect, useState } from "react";
 import { useCart } from "@/lib/cart-context";
 import { GUEST_SCOPE, scopedKey } from "@/lib/storage-scope";
@@ -341,7 +342,7 @@ function TrackContent() {
               type="button"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(`${window.location.origin}/track?id=${order.id}`);
+                  await navigator.clipboard.writeText(`${PUBLIC_SITE_URL}/track?id=${order.id}`);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 } catch {

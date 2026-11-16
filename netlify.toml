@@ -4,3 +4,13 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# The Netlify address answers with the same shop. Send visitors (and the
+# links they share) to the real domain, so a seller never receives a
+# "banaadir-mall.netlify.app" link that looks like phishing, and Google
+# sees one address. Deploy previews have other host names and are untouched.
+[[redirects]]
+  from = "https://banaadir-mall.netlify.app/*"
+  to = "https://banaadirmall.com/:splat"
+  status = 301
+  force = true
