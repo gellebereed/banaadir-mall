@@ -11,6 +11,6 @@
 # sees one address. Deploy previews have other host names and are untouched.
 [[redirects]]
   from = "https://banaadir-mall.netlify.app/*"
-  to = "https://banaadirmall.com/:splat"
+  to = "https://www.banaadirmall.com/:splat"
   status = 301
   force = true
