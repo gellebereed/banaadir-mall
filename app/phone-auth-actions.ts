@@ -18,10 +18,14 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import { isPhoneLoginEmail, phoneLoginEmail, toE164 } from "@/lib/phone-auth";
 
+export type Channel = "sms" | "whatsapp";
+
 export interface PhoneAuthState {
   error?: string | null;
   /** Set once a code has been sent: the number it went to, in +E.164. */
   phone?: string;
+  /** How the last code went out — the resend links offer the other one. */
+  channel?: Channel;
   message?: string;
 }
 
@@ -50,7 +54,7 @@ function friendly(err: { message: string; code?: string; status?: number }, mode
     return "We couldn't send the SMS to this number. Check it and try again, or use email instead.";
   }
   if (text.includes("expired") || text.includes("invalid") || text.includes("token")) {
-    return "That code is wrong or has expired. Check the SMS, or send a new code.";
+    return "That code is wrong or has expired. Check the message, or send a new code.";
   }
   return "Something went wrong. Please try again.";
 }
@@ -64,18 +68,27 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
   // ── Step 1: text the code ───────────────────────────────────────────
   if (intent === "send") {
     const phone = toE164(String(formData.get("countryCode") ?? "+252"), String(formData.get("phone") ?? ""));
+    /*
+     * SMS or WhatsApp, the shopper's choice. Plenty of people here keep
+     * WhatsApp on wifi while their SIM is out of credit or roaming, and an
+     * international SMS can arrive minutes late; WhatsApp needs no signal.
+     * Both go through the same Twilio Verify service and are checked the
+     * same way (verifyOtp type "sms").
+     */
+    const channel: Channel = formData.get("channel") === "whatsapp" ? "whatsapp" : "sms";
+    const via = channel === "whatsapp" ? "on WhatsApp" : "by SMS";
     if (!phone) return { error: "Please enter a valid mobile number." };
     if (mode === "signup" && !name) return { error: "Please enter your name." };
 
     if (!isSupabaseConfigured()) {
-      return { phone, message: `Demo mode: no SMS is sent. Enter ${DEMO_CODE}.` };
+      return { phone, channel, message: `Demo mode: nothing is sent ${via}. Enter ${DEMO_CODE}.` };
     }
 
     const supabase = await createClient();
     const { error } = await supabase.auth.signInWithOtp({
       phone,
       options: {
-        channel: "sms",
+        channel,
         // Signing in must not quietly create an account for a mistyped
         // number; signing up with a number that already has one just
         // signs them in, which is what they wanted anyway.
@@ -84,10 +97,16 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
       },
     });
     if (error) {
-      console.error("[PhoneAuth] send failed:", error.code, error.status, error.message);
-      return { error: friendly(error, mode) };
+      console.error(`[PhoneAuth] ${channel} send failed:`, error.code, error.status, error.message);
+      const message = friendly(error, mode);
+      return {
+        error:
+          channel === "whatsapp" && message.startsWith("We couldn't send")
+            ? "We couldn't send the code on WhatsApp. Is WhatsApp set up on this number? Try SMS instead."
+            : message,
+      };
     }
-    return { phone, message: `We've sent a 6-digit code to ${phone}.` };
+    return { phone, channel, message: `We've sent a 6-digit code to ${phone} ${via}.` };
   }
 
   // ── Step 2: check the code ──────────────────────────────────────────
@@ -110,7 +129,7 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
   if (!isSupabaseConfigured()) {
     if (token !== DEMO_CODE) {
       recordSignInFailure(phone, ip);
-      return { phone, error: "That code is wrong or has expired. Check the SMS, or send a new code." };
+      return { phone, error: "That code is wrong or has expired. Check the message, or send a new code." };
     }
     session = { name: name || "Shopper", email: phoneLoginEmail(phone), role: "customer", phone };
   } else {
