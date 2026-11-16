@@ -13,6 +13,7 @@ import StoreCard from "@/components/StoreCard";
 import ProductImage from "@/components/ProductImage";
 import CampaignTiles from "@/components/home/CampaignTiles";
 import HeroBrandArt from "@/components/home/HeroBrandArt";
+import PreorderShowcase from "@/components/home/PreorderShowcase";
 import { campaignPath, isScheduledLive, SALE_CAMPAIGN_ID, shopDay } from "@/lib/campaign-utils";
 import { PALETTES } from "@/lib/scenes";
 import { getCampaigns, homeEligible, MAX_TILES, planHero, planTiles, type Campaign } from "@/lib/campaigns";
@@ -423,7 +424,13 @@ export default async function HomePage() {
         when one does it is the most time-limited thing on the page — so it
         goes straight under the hero, and vanishes when the last one lands.
       */}
-      {comingSoon.length > 0 && <ComingSoon products={comingSoon.slice(0, 4)} t={t} />}
+      {comingSoon.length > 0 && (
+        <PreorderShowcase
+          products={comingSoon.slice(0, 8)}
+          total={comingSoon.length}
+          storeNames={Object.fromEntries(storeNames)}
+        />
+      )}
 
       {visibleSections.map((section, index) => (
         <div key={section.key}>
@@ -811,21 +818,6 @@ function TrustStrip({ delivery, t }: { delivery: MarketingSettings["delivery"]; 
  */
 const RAIL_GRID = "rail-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-4";
 const RAIL_ITEM = "flex w-[44%] shrink-0 snap-start md:w-auto";
-
-function ComingSoon({ products, t }: { products: Product[]; t: T }) {
-  return (
-    <section className="mx-auto max-w-7xl px-4 pt-14">
-      <SectionHeader title={`📦 ${t("pre.section")}`} subtitle={t("pre.section.sub")} href="/preorder" linkLabel={t("section.viewAll")} />
-      <div className={RAIL_GRID}>
-        {products.map((p) => (
-          <div key={p.id} className={RAIL_ITEM}>
-            <ProductCard product={p} />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function Bestsellers({ products, t }: { products: Product[]; t: T }) {
   return (
