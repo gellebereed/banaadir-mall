@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import VendorProductsTable from "@/components/dashboard/VendorProductsTable";
-import { getBaseProductsByStore, getCategories, getDiscountMap } from "@/lib/api";
+import { getAllProducts, getBaseProductsByStore, getCategories, getDiscountMap } from "@/lib/api";
 import { money } from "@/lib/format";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { may } from "@/lib/auth";
@@ -15,13 +15,19 @@ export default async function VendorProductsPage() {
   const { session, storeSlug } = await requireVendor();
   // Base prices, so sellers always see and edit their own numbers rather
   // than the temporarily discounted ones customers are charged.
-  const [products, discounts, categories] = await Promise.all([
+  const [products, discounts, categories, priced] = await Promise.all([
     getBaseProductsByStore(storeSlug),
     getDiscountMap(storeSlug),
     // Hidden ones included: a product can sit in a category the shopper
     // cannot browse to, and the seller still needs to filter by it.
     getCategories(true),
+    // The catalogue as shoppers see it, for the badge each product wears
+    // today (worked out on read, mall-wide — see lib/badges.ts).
+    getAllProducts(),
   ]);
+  const badges = Object.fromEntries(
+    priced.filter((p) => p.store === storeSlug && p.badge).map((p) => [p.id, p.badge!]),
+  );
   const categoryNames = Object.fromEntries(categories.map((c) => [c.slug, c.name]));
   const mayEdit = may(session, "products.edit");
   const discountedCount = Object.keys(discounts).length;
@@ -96,6 +102,7 @@ export default async function VendorProductsPage() {
         discounts={discounts}
         mayEdit={mayEdit}
         categoryNames={categoryNames}
+        badges={badges}
       />
     </div>
   );

@@ -17,16 +17,20 @@ export default function AdminProductFilters({
   store,
   category,
   stock,
+  badge,
   stores,
   categories,
+  badges,
   active,
 }: {
   q: string;
   store: string;
   category: string;
   stock: string;
+  badge: string;
   stores: { slug: string; name: string }[];
   categories: { slug: string; name: string; count: number }[];
+  badges: { id: string; label: string; count: number }[];
   active: boolean;
 }) {
   const submit = (e: React.ChangeEvent<HTMLSelectElement>) => e.currentTarget.form?.requestSubmit();
@@ -34,7 +38,7 @@ export default function AdminProductFilters({
   return (
     <Form
       action="/admin/products"
-      className="card mt-5 grid gap-2 p-3 sm:grid-cols-2 sm:p-4 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto] lg:items-end"
+      className="card mt-5 grid gap-2 p-3 sm:grid-cols-2 sm:p-4 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto] lg:items-end"
     >
       <label className="min-w-0 sm:col-span-2 lg:col-span-1">
         <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">Search</span>
@@ -77,6 +81,17 @@ export default function AdminProductFilters({
           <option value="">Any stock</option>
           <option value="low">Low stock</option>
           <option value="out">Out of stock</option>
+        </select>
+      </label>
+      <label className="min-w-0">
+        <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">Badge</span>
+        <select name="badge" defaultValue={badge} onChange={submit} className={SELECT}>
+          <option value="">Any badge</option>
+          {badges.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.label} ({b.count})
+            </option>
+          ))}
         </select>
       </label>
       <div className="flex h-10 items-center gap-2">
