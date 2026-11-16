@@ -51,7 +51,12 @@ function promoStatus(promo: Promotion | Offer): { label: string; tone: string } 
   return { label: "Live", tone: "bg-emerald-100 text-emerald-700" };
 }
 
-export default async function VendorPromotionsPage() {
+export default async function VendorPromotionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
+  const { edit: editId } = await searchParams;
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "promotions.manage")) redirect("/vendor");
 
@@ -92,6 +97,11 @@ export default async function VendorPromotionsPage() {
   const rewards = rewardSettings(marketing.rewards);
 
   const productName = (id: string) => products.find((p) => p.id === id)?.name ?? id;
+  const editing = editId ? promotions.find((p) => p.id === editId) : undefined;
+  // The badge each product wears in the shop today, for the picker's filter.
+  const badges = Object.fromEntries(
+    pricedProducts.filter((p) => p.badge).map((p) => [p.id, p.badge as string]),
+  );
 
   /*
    * Every campaign this shop can share: its own sales and public offers,
@@ -358,10 +368,18 @@ export default async function VendorPromotionsPage() {
         </div>
       </div>
 
-      {/* Create */}
-      <div className="card mt-5 p-5 sm:p-6">
-        <h2 className="font-display font-bold text-ocean-950">🏷️ New promotion</h2>
-        <PromotionForm products={products} categories={categories} />
+      {/* Create — or edit the one picked from the list below */}
+      <div id="promotion-form" className={`card mt-5 scroll-mt-24 p-5 sm:p-6 ${editing ? "ring-2 ring-ocean-300" : ""}`}>
+        <h2 className="font-display font-bold text-ocean-950">
+          {editing ? `✏️ Edit "${editing.name}"` : "🏷️ New promotion"}
+        </h2>
+        <PromotionForm
+          key={editing?.id ?? "new"}
+          products={products}
+          categories={categories}
+          promotion={editing}
+          badges={badges}
+        />
         <p className="mt-3 text-xs text-slate-400">
           If several promotions cover the same product, the biggest discount
           applies. For a permanent sale price on one product, edit that product
@@ -421,6 +439,12 @@ export default async function VendorPromotionsPage() {
                     {promo.active ? "Pause" : "Activate"}
                   </PendingButton>
                 </form>
+                <Link
+                  href={`/vendor/promotions?edit=${encodeURIComponent(promo.id)}#promotion-form`}
+                  className="rounded-full border border-sand-200 px-4 py-1.5 text-xs font-bold text-ocean-700 transition hover:border-ocean-400"
+                >
+                  Edit
+                </Link>
                 <form action={deletePromotion.bind(null, promo.id)}>
                   <PendingButton confirm={`Delete the promotion "${promo.name}"? This can't be undone.`} className="rounded-full border border-coral-500 px-4 py-1.5 text-xs font-bold text-coral-600 transition hover:bg-coral-500 hover:text-white">
                     Delete

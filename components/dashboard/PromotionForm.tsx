@@ -1,26 +1,35 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPromotion, type SaveState } from "@/app/actions";
 import CampaignShareButton from "@/components/CampaignShareButton";
 import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import { money } from "@/lib/format";
-import type { Category, Product } from "@/lib/types";
+import { isPreorder } from "@/lib/preorder";
+import { toShopInput } from "@/lib/shop-time";
+import type { Category, Product, Promotion } from "@/lib/types";
 
 const INITIAL: SaveState = { ok: false, message: "" };
 
 /**
- * Create a promotion. Uses useActionState + router.refresh so a new
+ * Create a promotion — or, given `promotion`, edit that one in place. Uses useActionState + router.refresh so a new
  * promotion appears in the list straight away — it previously needed a
  * manual page refresh to show up.
  */
 export default function PromotionForm({
   products,
   categories,
+  promotion,
+  badges,
 }: {
   products: Product[];
   categories: Category[];
+  /** The promotion being edited; omit to create a new one. */
+  promotion?: Promotion;
+  /** product id → the badge it wears today, for the picker's filter. */
+  badges?: Record<string, string>;
 }) {
   /**
    * No router.refresh() here on purpose. Calling it the moment the action
@@ -32,20 +41,32 @@ export default function PromotionForm({
    */
   const [state, formAction] = useActionState(createPromotion, INITIAL);
 
-  const [scope, setScope] = useState<"store" | "products">("store");
-  const [pct, setPct] = useState(15);
+  const editing = Boolean(promotion);
+  const [scope, setScope] = useState<"store" | "products">(
+    promotion?.productIds?.length ? "products" : "store",
+  );
+  const [pct, setPct] = useState(promotion?.pct ?? 15);
+  const preorderCount = products.filter((p) => isPreorder(p)).length;
 
   // Live worked example so the seller sees the real effect before saving.
-  const sample = products[0];
+  const sample = products.find((p) => !isPreorder(p)) ?? products[0];
   const samplePrice = sample ? sample.price : 0;
   const discounted = Math.round(samplePrice * (1 - pct / 100) * 100) / 100;
 
   return (
     <form action={formAction} className="mt-4 space-y-4">
+      {promotion && <input type="hidden" name="id" value={promotion.id} />}
       <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
         <div>
           <label htmlFor="promo-name" className="label">Name</label>
-          <input id="promo-name" name="name" required placeholder="e.g. Weekend Flash Sale" className="input" />
+          <input
+            id="promo-name"
+            name="name"
+            required
+            defaultValue={promotion?.name}
+            placeholder="e.g. Weekend Flash Sale"
+            className="input"
+          />
         </div>
         <div>
           <label htmlFor="promo-pct" className="label">Discount %</label>
@@ -106,13 +127,28 @@ export default function PromotionForm({
         </div>
         {scope === "products" && (
           <div className="mt-3">
-            <ProductPicker products={products} categories={categories} />
+            <ProductPicker
+              products={products}
+              categories={categories}
+              initial={promotion?.productIds ?? []}
+              badges={badges}
+              blockPreorders
+            />
           </div>
+        )}
+        {scope === "store" && preorderCount > 0 && (
+          <p className="mt-2 text-xs text-slate-500">
+            ⏳ Your {preorderCount} pre-order product{preorderCount === 1 ? " is" : "s are"} left out
+            automatically — stock that hasn&apos;t arrived is never on sale.
+          </p>
         )}
       </div>
 
       {/* Optional schedule */}
-      <details className="rounded-2xl border border-sand-200 bg-sand-50 p-4">
+      <details
+        open={Boolean(promotion?.startsAt || promotion?.endsAt)}
+        className="rounded-2xl border border-sand-200 bg-sand-50 p-4"
+      >
         <summary className="cursor-pointer text-sm font-bold text-ocean-800">
           🗓️ Schedule it (optional)
         </summary>
@@ -122,17 +158,36 @@ export default function PromotionForm({
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="promo-start" className="label">Starts (Mogadishu time)</label>
-            <input id="promo-start" name="startsAt" type="datetime-local" className="input" />
+            <input
+              id="promo-start"
+              name="startsAt"
+              type="datetime-local"
+              defaultValue={toShopInput(promotion?.startsAt)}
+              className="input"
+            />
           </div>
           <div>
             <label htmlFor="promo-end" className="label">Ends (Mogadishu time)</label>
-            <input id="promo-end" name="endsAt" type="datetime-local" className="input" />
+            <input
+              id="promo-end"
+              name="endsAt"
+              type="datetime-local"
+              defaultValue={toShopInput(promotion?.endsAt)}
+              className="input"
+            />
           </div>
         </div>
       </details>
 
       <div className="flex flex-wrap items-center gap-4">
-        <SubmitButton pendingLabel="Launching…">Launch Promotion</SubmitButton>
+        <SubmitButton pendingLabel={editing ? "Saving…" : "Launching…"}>
+          {editing ? "Save changes" : "Launch Promotion"}
+        </SubmitButton>
+        {editing && (
+          <Link href="/vendor/promotions" className="text-sm font-bold text-slate-500 hover:underline">
+            {state.ok ? "Done" : "Cancel"}
+          </Link>
+        )}
         {state.message && (
           <span
             className={`text-sm font-semibold ${state.ok ? "text-emerald-600" : "text-coral-600"}`}
@@ -146,7 +201,7 @@ export default function PromotionForm({
       {/* The moment a shop has launched a sale is the moment it wants to
           tell people — the link is offered right here, not left to be
           found in the list below. */}
-      {state.ok && state.link && (
+      {!editing && state.ok && state.link && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-mango-50 px-4 py-3 ring-1 ring-mango-200">
           <div className="min-w-0">
             <p className="text-sm font-bold text-ocean-950">📣 Your campaign link is ready</p>
