@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = ".next"
 
+[build.environment]
+  # Skew protection. Without it, every merge to main broke the site for
+  # anyone who had it open: their tab still ran the previous build's
+  # JavaScript, whose files and server actions the new build no longer
+  # has, so the next tap ended in "Application error: a client-side
+  # exception has occurred". With it, Netlify routes each tab to the
+  # build it loaded (deploy id in a cookie/header) until it reloads.
+  # Read by @netlify/plugin-nextjs at build time; it uses Netlify's
+  # DEPLOY_ID as Next.js's deploymentId. Safety net in lib/stale-deploy.ts.
+  NETLIFY_NEXT_SKEW_PROTECTION = "true"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
