@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { changeEmail, changePassword, type SecurityState } from "./actions";
+import { changeEmail, changePassword, deleteAccount, type SecurityState } from "./actions";
 
 const INITIAL: SecurityState = {};
 
@@ -80,5 +80,49 @@ export function EmailForm({ currentEmail, immediate }: { currentEmail: string; i
         {pending ? "Saving…" : immediate ? "Change my email" : "Send confirmation link"}
       </button>
     </form>
+  );
+}
+
+/**
+ * Two deliberate steps — open the section, then type DELETE with the
+ * password — so a stray tap on a phone can't close an account.
+ */
+export function DeleteAccountForm() {
+  const [state, action, pending] = useActionState(deleteAccount, INITIAL);
+  return (
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-xl border border-coral-500/40 px-4 py-2.5 text-sm font-bold text-coral-700 hover:bg-coral-100 [&::-webkit-details-marker]:hidden">
+        Delete my account…
+      </summary>
+      <form action={action} className="mt-4 space-y-4 rounded-2xl border border-coral-500/40 bg-coral-100/40 p-4">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
+          <li>You&apos;ll be signed out and won&apos;t be able to sign in with this account again.</li>
+          <li>Your back-in-stock alerts, synced recommendations and reward points are removed.</li>
+          <li>
+            Shops keep a record of orders you already received (for their accounts and returns), but it
+            is no longer linked to you.
+          </li>
+          <li>This can&apos;t be undone. You can always create a new account later.</li>
+        </ul>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="deletePassword" className="label">Your password</label>
+            <input id="deletePassword" name="currentPassword" type="password" required autoComplete="current-password" className="input" />
+          </div>
+          <div>
+            <label htmlFor="confirmText" className="label">Type DELETE to confirm</label>
+            <input id="confirmText" name="confirmText" required autoComplete="off" autoCapitalize="characters" placeholder="DELETE" className="input" />
+          </div>
+        </div>
+        <Result state={state} />
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-xl bg-coral-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-coral-700 disabled:opacity-60"
+        >
+          {pending ? "Deleting…" : "Delete my account for good"}
+        </button>
+      </form>
+    </details>
   );
 }

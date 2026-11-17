@@ -27,6 +27,13 @@ const INITIAL_STATE: SignInState = { error: null };
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   /*
+   * Controlled, because React resets a form after its action runs: a
+   * wrong password used to wipe the email too, and the shopper had to type
+   * it all again (found in the launch test, 17 Nov 2026).
+   */
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  /*
    * Phone first: most shoppers here have a phone number long before they
    * have an email they check. Email stays one tap away for every account
    * made before phone sign-in, and for sellers, staff and the admin.
@@ -82,6 +89,8 @@ export default function LoginPage() {
                 required
                 autoComplete="email"
                 autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="input"
               />
@@ -106,6 +115,8 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 required
                 autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input"
               />

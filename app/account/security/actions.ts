@@ -22,6 +22,7 @@
  */
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   accountsEnabled,
   findAuthUser,
@@ -31,8 +32,8 @@ import {
 } from "@/lib/accounts";
 import { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } from "@/lib/rate-limit";
 import { requestOrigin } from "@/lib/request-origin";
-import { getSession, setSessionCookie } from "@/lib/session";
-import { getServiceClient } from "@/lib/supabase/service";
+import { clearSessionCookie, getSession, setSessionCookie } from "@/lib/session";
+import { getServiceClient, hasServiceRole } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import { isPhoneLoginEmail } from "@/lib/phone-auth";
@@ -154,4 +155,97 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
       " (Supabase may also ask you to confirm from your current address)"
     }. Until then, keep signing in with ${session.email}.`,
   };
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  DELETE MY ACCOUNT — a shopper closing their own account.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Before this there was no way to leave: Apple and Google both refuse apps
+ * whose users can't delete their account from inside the app, and a
+ * shopper who asked had to message the owner.
+ *
+ * What goes, and what stays:
+ *   · the login itself (the Supabase user) — the email or number can sign
+ *     up again afterwards as a brand-new account;
+ *   · saved recommendations and "tell me when it's back" alerts;
+ *   · past ORDERS stay, because the shops that fulfilled them need the
+ *     record for their books and for returns — but they are cut loose from
+ *     the address (`orders.email` is replaced), so a later sign-up with the
+ *     same email or number does not inherit that history or its rewards.
+ *
+ * Shoppers only. A store owner's login is attached to a store, staff to a
+ * team and the admin to configuration; deleting those from here would
+ * orphan a shop, so they are pointed at the person who can do it properly.
+ *
+ * Refused while an order is still on its way: the shop must still be able
+ * to reach the customer about it, and the customer to track it.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export async function deleteAccount(_prev: SecurityState, formData: FormData): Promise<SecurityState> {
+  const session = await getSession();
+  if (!session) return { error: "Please sign in again." };
+  if (session.role !== "customer" || session.access) {
+    return {
+      error:
+        "Store, team and admin logins can't be deleted from here. Please contact Banaadir Mall support and we'll close it for you.",
+    };
+  }
+  if (String(formData.get("confirmText") ?? "").trim().toUpperCase() !== "DELETE") {
+    return { error: "Type DELETE in the box to confirm." };
+  }
+
+  const { getOrders } = await import("@/lib/api");
+  const { orderBelongsTo } = await import("@/lib/order-utils");
+  const mine = (await getOrders()).filter((o) => orderBelongsTo(o, session));
+  const open = mine.filter((o) => o.status !== "delivered" && o.status !== "cancelled");
+  if (open.length > 0) {
+    return {
+      error: `You have ${open.length} order${open.length === 1 ? "" : "s"} still on the way. You can delete your account once ${
+        open.length === 1 ? "it has" : "they have"
+      } been delivered or cancelled.`,
+    };
+  }
+
+  const proof = await proveCurrentPassword(String(formData.get("currentPassword") ?? ""));
+  if ("error" in proof) return { error: proof.error };
+  if (!hasServiceRole()) {
+    return { error: "Account deletion isn't available right now. Please contact support." };
+  }
+
+  const { data: me } = await proof.supabase.auth.getUser();
+  if (!me.user) return { error: "Please sign in again." };
+
+  const db = getServiceClient();
+  // Order history first: if anything below fails, the worst case is an
+  // account that still exists, never a deleted login whose orders a new
+  // sign-up with the same address would inherit.
+  if (mine.length > 0) {
+    const detached = `deleted-${me.user.id}@deleted.banaadirmall.com`;
+    const { error } = await db.from("orders").update({ email: detached }).in(
+      "id",
+      mine.map((o) => o.id),
+    );
+    if (error) {
+      console.error("[Account] delete: could not detach orders:", error.message);
+      return { error: "Something went wrong. Your account was not deleted — please try again." };
+    }
+  }
+
+  const { deleteSyncedProfile } = await import("@/lib/reco/sync");
+  await deleteSyncedProfile(session.email).catch((err) => console.warn("[Account] delete: reco", err));
+  {
+    const { error } = await db.from("product_alerts").delete().eq("email", session.email.trim().toLowerCase());
+    if (error) console.warn("[Account] delete: alerts", error.message);
+  }
+
+  const { error } = await db.auth.admin.deleteUser(me.user.id);
+  if (error) {
+    console.error("[Account] delete: auth user:", error.message);
+    return { error: "Something went wrong. Please try again, or contact support." };
+  }
+
+  await proof.supabase.auth.signOut().catch(() => {});
+  await clearSessionCookie();
+  redirect("/goodbye");
 }

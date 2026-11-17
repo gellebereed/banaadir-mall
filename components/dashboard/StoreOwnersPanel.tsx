@@ -66,7 +66,7 @@ export default function StoreOwnersPanel({ stores }: { stores: StoreOwnership[] 
         <p className="mt-4 rounded-xl bg-mango-50 px-4 py-3 text-sm text-mango-800">
           {onRetired} store{onRetired === 1 ? " is" : "s are"} still run from an old{" "}
           <code className="font-semibold">@seller.banaadirmall.com</code> login. Those addresses are
-          retired: ask each owner to open <strong>My account → Password &amp; email</strong> and
+          retired: ask each owner to open <strong>My account → Password &amp; account</strong> and
           switch to their own email — they keep their store.
         </p>
       )}
@@ -103,7 +103,7 @@ export default function StoreOwnersPanel({ stores }: { stores: StoreOwnership[] 
                         <span className="font-semibold text-emerald-700">✓ {email}</span>
                         {retired && (
                           <span
-                            title="Nobody receives mail at this address, so a forgotten password can't be reset. They can switch to their own email from My account → Password & email and keep the store."
+                            title="Nobody receives mail at this address, so a forgotten password can't be reset. They can switch to their own email from My account → Password & account and keep the store."
                             className="rounded-full bg-mango-100 px-2 py-0.5 text-[10px] font-bold text-mango-800"
                           >
                             Retired login — ask them to switch to their own email

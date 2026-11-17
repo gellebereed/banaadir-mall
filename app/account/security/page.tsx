@@ -6,9 +6,9 @@ import SignOutButton from "@/components/SignOutButton";
 import { isRetiredStoreLogin, MIN_PASSWORD_LENGTH } from "@/lib/accounts";
 import { getSession } from "@/lib/session";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
-import { EmailForm, PasswordForm } from "./SecurityForms";
+import { DeleteAccountForm, EmailForm, PasswordForm } from "./SecurityForms";
 
-export const metadata: Metadata = { title: "Password & email" };
+export const metadata: Metadata = { title: "Password & account" };
 export const dynamic = "force-dynamic";
 
 /**
@@ -42,7 +42,7 @@ export default async function SecurityPage({
       <Link href={back} className="text-sm font-semibold text-ocean-700 hover:underline">
         ← Back
       </Link>
-      <h1 className="mt-3 font-display text-3xl font-extrabold text-ocean-950">Password &amp; email</h1>
+      <h1 className="mt-3 font-display text-3xl font-extrabold text-ocean-950">Password &amp; account</h1>
 
       <div className="card mt-5 flex flex-wrap items-center justify-between gap-3 p-5">
         <div className="min-w-0">
@@ -133,6 +133,26 @@ export default async function SecurityPage({
             )}
           </section>
         </>
+      )}
+
+      {live && session.role === "customer" && !isStaff && (
+        <section className="card mt-5 p-5 sm:p-6">
+          <h2 className="font-display text-lg font-bold text-ocean-950">Delete account</h2>
+          <p className="mt-1 mb-4 text-sm text-slate-500">
+            Close your Banaadir Mall account and remove your personal details. See our{" "}
+            <Link href="/privacy#deletion" className="font-semibold text-ocean-700 underline">
+              Privacy Policy
+            </Link>{" "}
+            for what is kept.
+          </p>
+          <DeleteAccountForm />
+        </section>
+      )}
+      {live && session.role !== "customer" && (
+        <p className="mt-5 text-xs text-slate-400">
+          To close a store, team or admin login, contact Banaadir Mall support from the{" "}
+          <Link href="/help" className="font-semibold underline">Help page</Link>.
+        </p>
       )}
     </div>
   );
