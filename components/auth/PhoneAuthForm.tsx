@@ -2,7 +2,7 @@
 
 /**
  * Create an account with a phone number — or set a new password for one —
- * proving the number once with a 6-digit code by SMS or WhatsApp.
+ * proving the number once with a 6-digit code by SMS.
  *
  *   signup: name, number, password  → code → signed in
  *   reset:  number, new password    → code → signed in with the new password
@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { phoneAuth, type Channel, type PhoneAuthState } from "@/app/phone-auth-actions";
+import { phoneAuth, type PhoneAuthState } from "@/app/phone-auth-actions";
 import RequiredMark from "@/components/RequiredMark";
 import { PasswordField, PhoneField } from "@/components/auth/fields";
 
@@ -43,9 +43,6 @@ export default function PhoneAuthForm({
   const [number, setNumber] = useState(defaultNumber);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  // Which button was pressed, so only that one says "Sending…".
-  const [sending, setSending] = useState<Channel>("sms");
-  const other: Channel = state.channel === "whatsapp" ? "sms" : "whatsapp";
   const mismatch = confirm.length > 0 && confirm !== password;
 
   const codeStep = Boolean(state.phone) && !editing;
@@ -80,12 +77,12 @@ export default function PhoneAuthForm({
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-2xl bg-sand-50 p-4 ring-1 ring-sand-200">
           <span className="text-2xl" aria-hidden>
-            {state.channel === "whatsapp" ? "💬" : "📱"}
+            📱
           </span>
           <div className="min-w-0 text-sm">
-            <p className="font-bold text-slate-800">Check your {state.channel === "whatsapp" ? "WhatsApp" : "messages"}</p>
+            <p className="font-bold text-slate-800">Check your messages</p>
             <p className="mt-0.5 text-slate-500">
-              We sent a 6-digit code to <span className="font-semibold text-slate-700">{state.phone}</span>.
+              We sent a 6-digit code by SMS to <span className="font-semibold text-slate-700">{state.phone}</span>.
               {mode === "signup"
                 ? " Enter it to verify your number and finish creating your account."
                 : " Enter it to confirm it's you and save your new password."}
@@ -128,27 +125,15 @@ export default function PhoneAuthForm({
           >
             ← Change number
           </button>
-          {/* Resend: the same way, or the other way when the first didn't arrive. */}
-          <form action={formAction} className="flex flex-col items-end gap-1">
+          <form action={formAction}>
             <input type="hidden" name="intent" value="send" />
             {carried}
             <button
               type="submit"
-              name="channel"
-              value={state.channel ?? "sms"}
               disabled={pending}
               className="font-semibold text-ocean-700 transition hover:text-mango-600 disabled:opacity-60"
             >
               Send a new code
-            </button>
-            <button
-              type="submit"
-              name="channel"
-              value={other}
-              disabled={pending}
-              className="text-xs font-semibold text-slate-500 transition hover:text-mango-600 disabled:opacity-60"
-            >
-              {other === "whatsapp" ? "💬 Get it on WhatsApp instead" : "📱 Get it by SMS instead"}
             </button>
           </form>
         </div>
@@ -242,33 +227,10 @@ export default function PhoneAuthForm({
         </label>
       )}
 
-      <div>
-        <p className="mb-2 text-xs font-semibold text-slate-500">
-          {mode === "signup" ? "Verify your number with a code by:" : "Send the code by:"}
-        </p>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <button
-            type="submit"
-            name="channel"
-            value="sms"
-            onClick={() => setSending("sms")}
-            disabled={pending || mismatch}
-            className="btn-primary w-full !px-4 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {pending && sending === "sms" ? "Sending…" : "📱 SMS"}
-          </button>
-          <button
-            type="submit"
-            name="channel"
-            value="whatsapp"
-            onClick={() => setSending("whatsapp")}
-            disabled={pending || mismatch}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-3 font-semibold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {pending && sending === "whatsapp" ? "Sending…" : "💬 WhatsApp"}
-          </button>
-        </div>
-      </div>
+      <button type="submit" disabled={pending || mismatch} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60">
+        {pending ? "Sending code…" : mode === "signup" ? "Send verification code" : "Send code"}
+      </button>
+      <p className="-mt-2 text-center text-xs text-slate-500">We'll text a 6-digit code to your number.</p>
 
       {onBack && (
         <p className="text-center text-sm">

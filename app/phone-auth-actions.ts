@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Phone number + password, with a one-time code (SMS or WhatsApp, Supabase
+ * Phone number + password, with a one-time code (SMS, Supabase
  * Auth phone provider → Twilio Verify) only where proof of the number is
  * needed:
  *
@@ -170,15 +170,10 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
   // ── Step 1: send the code ───────────────────────────────────────────
   if (intent === "send") {
     const phone = toE164(String(formData.get("countryCode") ?? "+252"), String(formData.get("phone") ?? ""));
-    /*
-     * SMS or WhatsApp, the shopper's choice. Plenty of people here keep
-     * WhatsApp on wifi while their SIM is out of credit or roaming, and an
-     * international SMS can arrive minutes late; WhatsApp needs no signal.
-     * Both go through the same Twilio Verify service and are checked the
-     * same way (verifyOtp type "sms").
-     */
-    const channel: Channel = formData.get("channel") === "whatsapp" ? "whatsapp" : "sms";
-    const via = channel === "whatsapp" ? "on WhatsApp" : "by SMS";
+    // Codes go by SMS only. WhatsApp was offered too, but it needs an
+    // approved WhatsApp sender on the Twilio Verify service (Nov 2026).
+    const channel: Channel = "sms";
+    const via = "by SMS";
     if (!phone) return { error: "Please enter a valid mobile number." };
     if (mode === "signup" && !name) return { error: "Please enter your name." };
     // Checked before a code is sent: a refusal after the code would waste
@@ -207,12 +202,7 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
     if (error) {
       console.error(`[PhoneAuth] ${channel} send failed:`, error.code, error.status, error.message);
       const message = friendly(error, mode);
-      return {
-        error:
-          channel === "whatsapp" && message.startsWith("We couldn't send")
-            ? "We couldn't send the code on WhatsApp. Is WhatsApp set up on this number? Try SMS instead."
-            : message,
-      };
+      return { error: message };
     }
     return { phone, channel, message: `We've sent a 6-digit code to ${phone} ${via}.` };
   }
