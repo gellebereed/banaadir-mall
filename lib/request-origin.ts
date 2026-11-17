@@ -25,8 +25,16 @@ export async function requestOrigin(): Promise<string> {
  * (next.config.ts), else — locally, and on previews — the request's own.
  */
 export async function siteOrigin(): Promise<string> {
-  const configured = process.env.BM_SITE_URL;
-  return configured ? configured.replace(/\/+$/, "") : requestOrigin();
+  const configured = (process.env.BM_SITE_URL || "").replace(/\/+$/, "");
+  if (!configured) return requestOrigin();
+  /*
+   * The bare banaadirmall.com is not served by this site: on 17 Nov 2026
+   * its home page redirected to www, but every other path (/product/…,
+   * /category/…) answered 404. Netlify still reports it as the primary
+   * domain, so canonical links, og:url and all 470 sitemap entries pointed
+   * Google at addresses that don't exist. www is the address that works.
+   */
+  return /^https?:\/\/banaadirmall\.com$/i.test(configured) ? "https://www.banaadirmall.com" : configured;
 }
 
 /**

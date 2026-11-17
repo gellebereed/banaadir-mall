@@ -36,7 +36,7 @@ function describe(campaign: Campaign, sharer?: Store): string {
   if (campaign.kind === "sale" && !who) {
     return `${campaign.headline} at ${campaign.stores.length} shops on Banaadir Mall — ${campaign.name}.${until}`;
   }
-  return `${campaign.headline} at ${who} on Banaadir Mall — ${campaign.name}.${until} Pay with EVC Plus, Zaad, eDahab or cash on delivery.`;
+  return `${campaign.headline} at ${who} on Banaadir Mall — ${campaign.name}.${until} Pay with EVC Plus, eDahab or Premier Wallet.`;
 }
 
 /**

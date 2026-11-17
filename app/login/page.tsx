@@ -212,7 +212,7 @@ export default function LoginPage() {
           </ul>
 
           <div className="mt-10 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-ocean-100/70">
-            {["EVC Plus", "Zaad", "eDahab", "Cash on delivery"].map((method) => (
+            {["EVC Plus", "eDahab", "Premier Wallet"].map((method) => (
               <span key={method} className="rounded-full bg-white/10 px-2.5 py-1">
                 {method}
               </span>

@@ -30,6 +30,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { HOLDING_SLUG } from "@/lib/category-holding";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ProductCard from "@/components/ProductCard";
 import { money } from "@/lib/format";
@@ -317,7 +318,12 @@ export default function ShopClient({
   const categories = liveCategories?.length ? liveCategories : seedCategories;
   const categoriesPresent = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const p of products) totals.set(p.category, (totals.get(p.category) ?? 0) + 1);
+    for (const p of products) {
+      // The admin's holding shelf ("Needs a category") is a to-do list,
+      // not a department — it showed up as a search chip on the live site.
+      if (p.category === HOLDING_SLUG) continue;
+      totals.set(p.category, (totals.get(p.category) ?? 0) + 1);
+    }
     return [...totals.entries()]
       .map(([slug, total]) => {
         const category = categories.find((c) => c.slug === slug);

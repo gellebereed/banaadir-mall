@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { money } from "@/lib/format";
-import { dialCode, dialHref, kindInfo, type PaymentStatus, type ShopPaymentMethod } from "@/lib/shop-payments";
+import { dialCode, dialHref, kindInfo, payNumber, type PaymentStatus, type ShopPaymentMethod } from "@/lib/shop-payments";
 import { isValidWhatsAppNumber, whatsappLink } from "@/lib/whatsapp";
 
 /**
@@ -53,10 +53,11 @@ export default function PayShopPanel({
   }
 
   const code = dialCode(method, amount);
+  const number = payNumber(method);
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(method.number ?? "");
+      await navigator.clipboard.writeText(number);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -72,7 +73,7 @@ export default function PayShopPanel({
       {method.number ? (
         <>
           <p className="mt-1 select-all font-mono text-lg font-extrabold tracking-wide text-ocean-950">
-            {method.number}
+            {number}
           </p>
           {method.merchant && <p className="text-[11px] text-slate-600">{t("pay.merchant", { method: label })}</p>}
           {method.accountName && (

@@ -114,7 +114,7 @@ export function organizationLd(origin: string) {
     logo: `${origin}/icons/icon-512.png`,
     image: `${origin}/social/banaadir-mall.jpg`,
     description:
-      "Somalia's online marketplace — trusted local stores, delivered. Pay with EVC Plus, Zaad, eDahab or cash on delivery.",
+      "Somalia's online marketplace — trusted local stores, delivered. Pay with EVC Plus, eDahab or Premier Wallet.",
     areaServed: { "@type": "Country", name: "Somalia" },
     // The brand's own profiles, so search engines tie them to the site.
     sameAs: SOCIAL_PROFILES,
