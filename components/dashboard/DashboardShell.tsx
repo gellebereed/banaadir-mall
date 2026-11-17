@@ -443,7 +443,7 @@ function AccountMenu({ user }: { user: { name: string; email: string; role: stri
           </div>
           <div className="py-1 text-sm">
             <Link href="/account/security" className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-sand-50">
-              <UserCog className="h-4 w-4 text-slate-400" /> Password &amp; email
+              <UserCog className="h-4 w-4 text-slate-400" /> Password &amp; account
             </Link>
             <Link href="/" className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-sand-50">
               <ShoppingBag className="h-4 w-4 text-slate-400" /> Back to the shop

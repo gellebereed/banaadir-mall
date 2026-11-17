@@ -399,6 +399,8 @@ const M = {
   "footer.track": { en: "Track My Order", so: "La soco dalabkayga" },
   "footer.faq": { en: "FAQ & Contact", so: "Su'aalaha & La xiriir" },
   "footer.myAccount": { en: "My Account", so: "Akoonkayga" },
+  "footer.terms": { en: "Terms of Service", so: "Shuruudaha Adeegga" },
+  "footer.privacy": { en: "Privacy Policy", so: "Qaanuunka Asturnaanta" },
   "footer.rights": { en: "All rights reserved.", so: "Xuquuqda oo dhan way dhowran tahay." },
   "footer.sellBand.title": { en: "Have products to sell?", so: "Alaab ma haysaa aad iibiso?" },
   "footer.sellBand.text": {

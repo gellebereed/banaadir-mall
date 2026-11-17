@@ -48,6 +48,8 @@ function columns(session: Session | null, t: T) {
         { label: t("footer.track"), href: "/track" },
         { label: t("footer.faq"), href: "/help" },
         { label: session ? t("footer.myAccount") : t("nav.signIn"), href: session ? "/account" : "/login" },
+        { label: t("footer.terms"), href: "/terms" },
+        { label: t("footer.privacy"), href: "/privacy" },
       ],
     },
   ];

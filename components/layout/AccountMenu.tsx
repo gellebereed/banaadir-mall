@@ -121,7 +121,7 @@ export default function AccountMenu({
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition hover:bg-sand-50"
             >
-              <span aria-hidden>🔑</span> Password &amp; email
+              <span aria-hidden>🔑</span> Password &amp; account
             </Link>
             <Link
               href="/track"

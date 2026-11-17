@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { formatWhatsAppNumber, SUPPORT_WHATSAPP_CONFIGURED } from "@/lib/whatsapp";
 
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "ahgbered10@gmail.com";
+
 export const metadata: Metadata = {
   title: "Help & FAQ",
   description:
@@ -75,12 +77,21 @@ export default function HelpPage() {
                 { icon: "💚", title: "WhatsApp", text: formatWhatsAppNumber(SUPPORT_WHATSAPP_CONFIGURED), sub: "Fastest response" },
               ]
             : []),
-          { icon: "✉️", title: "Email", text: "salaam@banaadirmall.so", sub: "Reply within 24h" },
+          // salaam@banaadirmall.so was never a real inbox. The owner reads
+          // this one daily; NEXT_PUBLIC_SUPPORT_EMAIL can move it to a
+          // company address later without a code change.
+          { icon: "✉️", title: "Email", text: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}`, sub: "Reply within 24h" },
         ].map((c) => (
           <div key={c.title} className="card p-5 text-center">
             <span className="text-3xl">{c.icon}</span>
             <h3 className="mt-2 font-display font-bold text-ocean-950">{c.title}</h3>
-            <p className="mt-1 text-sm font-semibold text-ocean-700">{c.text}</p>
+            {"href" in c && c.href ? (
+              <a href={c.href} className="mt-1 block break-all text-sm font-semibold text-ocean-700 hover:underline">
+                {c.text}
+              </a>
+            ) : (
+              <p className="mt-1 text-sm font-semibold text-ocean-700">{c.text}</p>
+            )}
             <p className="text-xs text-slate-400">{c.sub}</p>
           </div>
         ))}
