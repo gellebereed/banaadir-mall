@@ -163,6 +163,16 @@ them; the marketplace category tree is untouched, which is the point: a
 store can group however it likes without adding categories every other
 store would see. Run **`supabase/migration-store-collections.sql`** once.
 
+### Product labels
+
+A seller's **private** tags on a product — "Clearance", "Winter 2026" —
+set in the product editor or in bulk from the product list (which can also
+filter by label). Shoppers never see them; the card badge stays automatic
+(`lib/badges.ts`). A promotion can run on every product with a label, or
+leave labelled products out of a store-wide sale, and keeps the rule so
+products labelled later join by themselves (`lib/labels.ts`). Run
+**`supabase/migration-product-labels.sql`** once.
+
 ## Search, navigation, tracking & reviews
 
 - **Search** (`lib/search.ts`, used by `/search`, store sites and the

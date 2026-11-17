@@ -8,6 +8,7 @@ import ProductPicker from "./ProductPicker";
 import SubmitButton from "./SubmitButton";
 import { money } from "@/lib/format";
 import { isPreorder } from "@/lib/preorder";
+import { promotionCovers, storeLabels } from "@/lib/labels";
 import { toShopInput } from "@/lib/shop-time";
 import type { Category, Product, Promotion } from "@/lib/types";
 
@@ -42,9 +43,26 @@ export default function PromotionForm({
   const [state, formAction] = useActionState(createPromotion, INITIAL);
 
   const editing = Boolean(promotion);
-  const [scope, setScope] = useState<"store" | "products">(
-    promotion?.productIds?.length ? "products" : "store",
+  const [scope, setScope] = useState<"store" | "products" | "labels">(
+    promotion?.productIds?.length ? "products" : promotion?.includeLabels?.length ? "labels" : "store",
   );
+  // The store's private labels (lib/labels.ts) and what the label rule
+  // covers right now — counted with the same function pricing uses.
+  const labels = storeLabels(products);
+  const [include, setInclude] = useState<string[]>(promotion?.includeLabels ?? []);
+  const [exclude, setExclude] = useState<string[]>(promotion?.excludeLabels ?? []);
+  const toggle = (list: string[], label: string) =>
+    list.some((l) => l.toLowerCase() === label.toLowerCase())
+      ? list.filter((l) => l.toLowerCase() !== label.toLowerCase())
+      : [...list, label];
+  const covered =
+    scope === "products"
+      ? null
+      : products.filter(
+          (p) =>
+            !isPreorder(p) &&
+            promotionCovers({ includeLabels: scope === "labels" ? include : [], excludeLabels: exclude }, p),
+        ).length;
   const [pct, setPct] = useState(promotion?.pct ?? 15);
   const preorderCount = products.filter((p) => isPreorder(p)).length;
 
@@ -95,11 +113,15 @@ export default function PromotionForm({
       {/* Scope */}
       <div>
         <span className="label">Applies to</span>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={`grid gap-3 ${labels.length ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           {(
             [
               ["store", "🏪 Entire store", "Every product you sell"],
               ["products", "🎯 Selected products", "Pick exactly which ones"],
+              // Only offered once the shop has labelled something.
+              ...(labels.length || scope === "labels"
+                ? [["labels", "🏷️ Products with a label", "e.g. everything labelled Clearance"] as const]
+                : []),
             ] as const
           ).map(([value, title, hint]) => (
             <label
@@ -135,6 +157,46 @@ export default function PromotionForm({
               blockPreorders
             />
           </div>
+        )}
+        {scope === "labels" && (
+          <LabelChips
+            title="Products with any of these labels"
+            labels={labels}
+            chosen={include}
+            onToggle={(l) => {
+              setInclude(toggle(include, l));
+              setExclude(exclude.filter((x) => x.toLowerCase() !== l.toLowerCase()));
+            }}
+            name="includeLabels"
+            tone="include"
+          />
+        )}
+        {scope !== "products" && labels.length > 0 && (
+          <LabelChips
+            title="Leave out products with these labels (optional)"
+            labels={labels.filter((l) => !include.some((x) => x.toLowerCase() === l.label.toLowerCase()))}
+            chosen={exclude}
+            onToggle={(l) => setExclude(toggle(exclude, l))}
+            name="excludeLabels"
+            tone="exclude"
+          />
+        )}
+        {covered !== null && (scope === "labels" || exclude.length > 0) && (
+          <p className="mt-2 rounded-xl bg-ocean-50 px-3 py-2 text-xs font-semibold text-ocean-900">
+            {scope === "labels" && include.length === 0
+              ? "Pick a label above."
+              : `Covers ${covered} product${covered === 1 ? "" : "s"} today. ${
+                  scope === "labels"
+                    ? "Products you label later join automatically."
+                    : "Products you give a left-out label later drop out automatically."
+                }`}
+          </p>
+        )}
+        {scope !== "products" && labels.length === 0 && (
+          <p className="mt-2 text-xs text-slate-500">
+            🏷️ Tip: give products a private label (like “Clearance”) in the product editor or from
+            the product list, then run a promotion on just those, or leave them out of a store-wide sale.
+          </p>
         )}
         {scope === "store" && preorderCount > 0 && (
           <p className="mt-2 text-xs text-slate-500">
@@ -218,5 +280,60 @@ export default function PromotionForm({
         </div>
       )}
     </form>
+  );
+}
+
+/** Tap-to-toggle label chips; each chosen one posts as a hidden `name` field. */
+function LabelChips({
+  title,
+  labels,
+  chosen,
+  onToggle,
+  name,
+  tone,
+}: {
+  title: string;
+  labels: { label: string; count: number }[];
+  chosen: string[];
+  onToggle: (label: string) => void;
+  name: string;
+  tone: "include" | "exclude";
+}) {
+  // A chosen label no product carries any more still shows, so it can be untoggled.
+  const all = [
+    ...labels,
+    ...chosen
+      .filter((c) => !labels.some((l) => l.label.toLowerCase() === c.toLowerCase()))
+      .map((label) => ({ label, count: 0 })),
+  ];
+  if (all.length === 0) return null;
+  const isOn = (l: string) => chosen.some((c) => c.toLowerCase() === l.toLowerCase());
+  const on =
+    tone === "include"
+      ? "border-ocean-700 bg-ocean-700 text-white"
+      : "border-coral-700 bg-coral-700 text-white";
+  return (
+    <fieldset className="mt-3">
+      <legend className="mb-1.5 text-xs font-bold text-slate-600">{title}</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {all.map(({ label, count }) => (
+          <button
+            key={label}
+            type="button"
+            aria-pressed={isOn(label)}
+            onClick={() => onToggle(label)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+              isOn(label) ? on : "border-sand-200 bg-white text-slate-700 hover:border-ocean-300"
+            }`}
+          >
+            {tone === "exclude" && isOn(label) ? "✕ " : "🏷️ "}
+            {label} <span className="font-semibold opacity-70">({count})</span>
+          </button>
+        ))}
+      </div>
+      {chosen.map((l) => (
+        <input key={l} type="hidden" name={name} value={l} />
+      ))}
+    </fieldset>
   );
 }

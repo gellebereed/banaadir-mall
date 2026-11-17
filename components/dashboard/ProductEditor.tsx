@@ -8,6 +8,7 @@ import ProductCodesFields from "@/components/dashboard/ProductCodesFields";
 import PreorderFields from "@/components/dashboard/PreorderFields";
 import SafeForm from "@/components/dashboard/SafeForm";
 import SearchableSelect, { type SelectOption } from "@/components/dashboard/SearchableSelect";
+import LabelsField from "./LabelsField";
 import SubcategoryField from "@/components/dashboard/SubcategoryField";
 import AttributeFields from "@/components/dashboard/AttributeFields";
 import SuggestDetails from "@/components/dashboard/SuggestDetails";
@@ -80,6 +81,7 @@ export default function ProductEditor({
   storeSlug,
   categories,
   subcategories,
+  knownLabels = [],
   attributeSets = { defs: {}, byCategory: {} },
   aiSuggest = false,
   product,
@@ -94,6 +96,8 @@ export default function ProductEditor({
   storeSlug: string;
   categories: SelectOption[];
   subcategories: string[];
+  /** The store's own private labels, offered as one-tap suggestions (lib/labels.ts). */
+  knownLabels?: string[];
   /** Standard attributes per category (lib/taxonomy-attributes.ts). */
   attributeSets?: AttributeSets;
   /** Whether "✨ Suggest" is answered by AI (ANTHROPIC_API_KEY set) or by word matching. */
@@ -578,6 +582,7 @@ export default function ProductEditor({
                   )}
                 </div>
                 <SubcategoryField existing={subcategories} defaultValue={product?.subcategory} />
+                <LabelsField defaultValue={product?.labels} known={knownLabels} />
                 <div className="grid grid-cols-2 gap-3">
                   {isEdit && (
                     <div>

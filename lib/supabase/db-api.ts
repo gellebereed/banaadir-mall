@@ -359,6 +359,8 @@ async function fetchProductsFromSupabaseRaw(): Promise<Product[] | null> {
       stock:
         p.stock !== undefined && p.stock !== null ? Number(p.stock) : p.in_stock ? 50 : 0,
       badge: p.badge || undefined,
+      // supabase/migration-product-labels.sql — absent until that has been run.
+      labels: Array.isArray(p.labels) && p.labels.length ? p.labels.map(String) : undefined,
       colors: p.colors?.length ? p.colors : undefined,
       sizes: p.sizes?.length ? p.sizes : undefined,
       // supabase/migration-product-attributes.sql
@@ -441,6 +443,8 @@ async function fetchPromotionsFromSupabaseRaw(): Promise<Promotion[] | null> {
       code: p.code || undefined,
       active: p.active ?? true,
       productIds: p.product_ids || undefined,
+      includeLabels: Array.isArray(p.include_labels) && p.include_labels.length ? p.include_labels : undefined,
+      excludeLabels: Array.isArray(p.exclude_labels) && p.exclude_labels.length ? p.exclude_labels : undefined,
       startsAt: p.starts_at || undefined,
       endsAt: p.ends_at || undefined,
     }));
