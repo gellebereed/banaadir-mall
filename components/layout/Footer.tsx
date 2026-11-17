@@ -177,7 +177,7 @@ export default async function Footer({ session }: { session: Session | null }) {
             © 2026 Banaadir Mall. {t("footer.rights")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {["EVC Plus", "Zaad", "eDahab", "Visa", "Mastercard", "Cash on Delivery"].map(
+            {["EVC Plus", "eDahab", "Premier Wallet", "eBesa"].map(
               (m) => (
                 <span
                   key={m}

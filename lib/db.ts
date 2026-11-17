@@ -158,12 +158,12 @@ const DEFAULT_DB: DB = {
   employees: [],
   marketing: {
     announcement:
-      "Free delivery in Mogadishu on orders over $25 · Pay with EVC Plus, Zaad & eDahab",
+      "Free delivery in Mogadishu on orders over $25 · Pay with EVC Plus, eDahab & Premier Wallet",
     heroBadge: "🇸🇴 Proudly Somali · 8 categories · Trusted local stores",
     heroTitleTop: "The whole market,",
     heroTitleHighlight: "in your pocket.",
     heroSubtitle:
-      "Shop electronics, fashion, beauty and more from Somalia's best stores. Pay with EVC Plus, Zaad, eDahab or cash on delivery.",
+      "Shop electronics, fashion, beauty and more from Somalia's best stores. Pay with EVC Plus, eDahab or Premier Wallet.",
     sections: [
       { key: "banners", visible: true },
       { key: "promoTiles", visible: true },

@@ -228,7 +228,7 @@ export default async function HomePage() {
               <HeroBrandArt
                 products={heroProducts}
                 storeNames={storeNames}
-                badges={[deliveryLine(marketing.delivery, t), "EVC Plus · Zaad · eDahab"]}
+                badges={[deliveryLine(marketing.delivery, t), "EVC Plus · eDahab · Premier Wallet"]}
               />
             ),
           },
@@ -789,7 +789,7 @@ function TrustStrip({ delivery, t }: { delivery: MarketingSettings["delivery"]; 
       icon: "🚚",
       text: deliveryLine(delivery, t),
     },
-    { icon: "📲", text: "EVC Plus · Zaad · eDahab" },
+    { icon: "📲", text: "EVC Plus · eDahab · Premier Wallet" },
     { icon: "💵", text: t("trust.cod") },
     { icon: "↩️", text: t("trust.returns") },
     { icon: "🏪", text: t("trust.local") },

@@ -89,6 +89,12 @@ export default function PaymentMethodsForm({
                     className="input"
                   />
                   {info.wallet && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      A full pay code works too — put $ where the amount goes, e.g. *789*643089*$#. Customers get it
+                      with their amount filled in.
+                    </p>
+                  )}
+                  {info.wallet && (
                     <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
                       <input
                         type="checkbox"

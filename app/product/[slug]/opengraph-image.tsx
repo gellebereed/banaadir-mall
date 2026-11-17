@@ -179,7 +179,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
               Shop now
             </div>
             <div style={{ display: "flex", flexDirection: "column", marginLeft: 22, fontSize: 19, color: BRAND.muted, lineHeight: 1.35 }}>
-              <div style={{ display: "flex" }}>EVC Plus · Zaad · eDahab</div>
+              <div style={{ display: "flex" }}>EVC Plus · eDahab · Premier Wallet</div>
               <div style={{ display: "flex" }}>Cash on delivery</div>
             </div>
           </div>

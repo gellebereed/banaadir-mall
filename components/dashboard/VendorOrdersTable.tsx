@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ParcelDispatch from "@/components/dashboard/ParcelDispatch";
 import ParcelPayment from "@/components/dashboard/ParcelPayment";
-import { kindInfo, type ShopPaymentMethod } from "@/lib/shop-payments";
+import { kindInfo, payNumber, type ShopPaymentMethod } from "@/lib/shop-payments";
 import StatusBadge from "@/components/dashboard/StatusBadge";
 import { telLink } from "@/lib/delivery";
 import { money, shortDate } from "@/lib/format";
@@ -96,7 +96,7 @@ export default function VendorOrdersTable({
     const method = paymentMethods.find((m) => m.kind === o.payment);
     if (o.paymentStatus !== "awaiting" || !method?.number) return hello;
     return (
-      `${hello} Please send ${money(o.total)} by ${kindInfo(method.kind)?.label} to ${method.number}` +
+      `${hello} Please send ${money(o.total)} by ${kindInfo(method.kind)?.label} to ${payNumber(method)}` +
       `${method.accountName ? ` (${method.accountName})` : ""}, then reply here. Thank you!`
     );
   };

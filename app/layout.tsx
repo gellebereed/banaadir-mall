@@ -30,7 +30,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 const SITE_DESCRIPTION =
-  "Discover your next favourite from local Somali stores. Shop fashion, electronics, beauty and home — with EVC Plus, Zaad or cash on delivery.";
+  "Discover your next favourite from local Somali stores. Shop fashion, electronics, beauty and home — pay with EVC Plus, eDahab or Premier Wallet.";
 
 /*
  * Link previews. A product link pasted into WhatsApp showed a bare URL:
@@ -59,8 +59,8 @@ export async function generateMetadata(): Promise<Metadata> {
       "Mogadishu online store",
       "Somali marketplace",
       "EVC Plus",
-      "Zaad",
-      "cash on delivery",
+      "eDahab",
+      "Premier Wallet",
     ],
     // Deploy previews stay out of search; production is open.
     ...(isIndexableDeploy() ? {} : { robots: { index: false, follow: false } }),

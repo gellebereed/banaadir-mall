@@ -7,14 +7,14 @@ const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "ahgbered10@gmail
 export const metadata: Metadata = {
   title: "Help & FAQ",
   description:
-    "Paying with EVC Plus, Zaad, eDahab or cash, delivery times across Somalia, returns and tracking your order — answers from Banaadir Mall.",
+    "Paying with EVC Plus, eDahab and other mobile money, delivery times across Somalia, returns and tracking your order — answers from Banaadir Mall.",
   alternates: { canonical: "/help" },
 };
 
 const FAQS = [
   {
     q: "How do I pay for my order?",
-    a: "We accept EVC Plus, Zaad, eDahab, Visa/Mastercard and cash on delivery. For mobile money, you'll get a payment prompt on your phone right after placing the order.",
+    a: "You pay each shop directly with mobile money — EVC Plus, eDahab, Premier Wallet and the others each shop lists at checkout. After you place the order, the confirmation screen and your tracking page show the shop's number (or pay code) and the exact amount; send it, then tap \"I've paid\" so the shop knows. Delivery is paid to the Banaadir Mall driver. We don't take card payments yet.",
   },
   {
     q: "How long does delivery take?",
@@ -26,7 +26,7 @@ const FAQS = [
   },
   {
     q: "How do I track my order?",
-    a: "Use the Track My Order page with the order number we sent you by SMS. You'll see exactly which stage your delivery is at.",
+    a: "Use the Track My Order page with the order number shown when you placed the order (it starts with BM-). You'll see exactly which stage your delivery is at.",
   },
   {
     q: "How do I open my own store?",
@@ -34,7 +34,7 @@ const FAQS = [
   },
   {
     q: "Is my money safe?",
-    a: "Yes. Payments are held by Banaadir Mall and only released to the store after your order is delivered. If something goes wrong, our buyer protection covers you.",
+    a: "Every shop on Banaadir Mall is checked before it can sell. Pay only to the number or pay code shown on your order page, check that your wallet shows the shop's name before you confirm, and tap \"I've paid\" so the shop can see it. If something goes wrong, message us on WhatsApp with your order number and we'll sort it out with the shop.",
   },
 ];
 

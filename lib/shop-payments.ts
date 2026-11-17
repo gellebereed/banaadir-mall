@@ -160,7 +160,37 @@ export function localWalletNumber(number: string): string {
  * whole amounts — a mistyped code moves real money, so anything uncertain
  * gets the copy button alone.
  */
+/**
+ * A number saved as a whole dial code with "$" where the amount goes —
+ * "*789*643089*$#" is how Hormuud prints a merchant's pay code, and three
+ * live shops saved theirs exactly so. Shown as it was typed, the customer
+ * saw a code with a dollar sign in it and a Copy button that copied that.
+ */
+export function isDialTemplate(number: string | undefined): boolean {
+  return !!number && /^\*[\d*]*\$[\d*]*#$/.test(number.replace(/\s/g, ""));
+}
+
+/**
+ * What the customer types or pastes into their wallet: the number itself,
+ * or — for a dial-code template — the merchant code inside it (its longest
+ * run of digits: 643089 in "*789*643089*$#").
+ */
+export function payNumber(method: Pick<ShopPaymentMethod, "number">): string {
+  const number = method.number ?? "";
+  if (!isDialTemplate(number)) return number;
+  return (number.match(/\d+/g) ?? []).reduce((a, b) => (b.length > a.length ? b : a), "") || number;
+}
+
+/** "12", "4.5", "1.57" — an amount as a wallet's dial code expects it. */
+function dialAmount(amount: number): string {
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0$/, "");
+}
+
 export function dialCode(method: ShopPaymentMethod, amount: number): string | undefined {
+  // The shop gave the exact code its wallet uses: fill in the amount.
+  if (isDialTemplate(method.number) && amount > 0) {
+    return method.number!.replace(/\s/g, "").replace("$", dialAmount(amount));
+  }
   if (!method.number || method.merchant || !Number.isInteger(amount) || amount <= 0) return undefined;
   const number = localWalletNumber(method.number);
   if (number.length < 7) return undefined;

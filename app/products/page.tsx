@@ -7,7 +7,7 @@ import { getCategories, getListedStores, getMarketplaceProducts } from "@/lib/ap
 export const metadata: Metadata = {
   title: "Shop all products",
   description:
-    "Fashion, electronics, beauty, home and more from trusted Somali stores — delivered, with EVC Plus, Zaad or cash on delivery.",
+    "Fashion, electronics, beauty, home and more from trusted Somali stores — delivered, paid with EVC Plus, eDahab or Premier Wallet.",
   // Sorted and filtered views (?sort=, ?max=) are the same page.
   alternates: { canonical: "/products" },
 };

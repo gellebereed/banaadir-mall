@@ -235,7 +235,7 @@ const M = {
   "promise.freeOver": { en: "Free delivery over {amount} · {fee} below that", so: "Keenis bilaash ah wixii ka badan {amount} · {fee} ka hoos" },
   "promise.addMore": { en: "Add {amount} more for free delivery", so: "Ku dar {amount} si aad u hesho keenis bilaash ah" },
   "promise.fee": { en: "Delivery fee {fee}", so: "Kharashka keenista {fee}" },
-  "promise.pay": { en: "Pay on delivery, or with EVC Plus · Zaad · eDahab", so: "Bixi marka laguu keeno, ama EVC Plus · Zaad · eDahab" },
+  "promise.pay": { en: "Pay the shop with EVC Plus · eDahab · Premier Wallet", so: "Dukaanka ku bixi EVC Plus · eDahab · Premier Wallet" },
   "promise.returns": { en: "7-day returns on most items", so: "Celin 7 maalmood gudahood alaabta badankeeda" },
   "store.visit": { en: "Visit Store", so: "Booqo dukaanka" },
   "store.chat": { en: "Ask the seller", so: "Weydii iibiyaha" },
@@ -437,7 +437,7 @@ const M = {
   "cart.promoApplied": { en: "{code} applied — {pct}% off", so: "{code} waa la dabaqay — {pct}% dhimis" },
   "cart.promoInvalid": { en: "That code isn't valid.", so: "Koodhkaas sax maaha." },
   "cart.trust.secure": { en: "Secure checkout", so: "Bixin ammaan ah" },
-  "cart.trust.cod": { en: "Pay on delivery", so: "Bixi marka laguu keeno" },
+  "cart.trust.cod": { en: "Pay by mobile money", so: "Ku bixi lacag mobile" },
   "cart.trust.returns": { en: "7-day returns", so: "Celin 7 maalmood" },
 
   // ── Checkout ──────────────────────────────────────────────────────────
