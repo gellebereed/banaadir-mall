@@ -324,7 +324,7 @@ export default function ProductEditor({
             <Section
               id="photos"
               title="Photos"
-              hint="The first photo is the cover. Hover a photo to move it, make it the cover (★) or remove it."
+              hint="The main photo is what shoppers see first."
             >
               <PhotoManager initial={product?.images ?? []} />
             </Section>
