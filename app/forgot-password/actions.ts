@@ -8,6 +8,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/storage";
 
 export interface ForgotState {
   sent?: boolean;
+  /** The address the link was requested for, to show it back. */
+  email?: string;
   error?: string;
 }
 
@@ -43,5 +45,5 @@ export async function requestPasswordReset(_prev: ForgotState, formData: FormDat
     return { error: "Too many emails were sent just now. Please wait a few minutes and try again." };
   }
   if (error) console.warn("[Auth] resetPasswordForEmail:", error.message);
-  return { sent: true };
+  return { sent: true, email };
 }

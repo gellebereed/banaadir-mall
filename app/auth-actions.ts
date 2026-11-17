@@ -70,6 +70,9 @@ const RESERVED_EMAIL_ERROR =
   "This email already belongs to an admin, staff or store login. Please sign in instead, or ask the marketplace admin to send you a password reset link.";
 
 /** Customer registration action */
+const EMAIL_TAKEN =
+  "This email is already registered. Sign in with it, or use “Forgot password” if you don't remember the password.";
+
 export async function signUpCustomer(
   _prev: AuthActionState,
   formData: FormData
@@ -115,7 +118,14 @@ export async function signUpCustomer(
       });
 
       if (error) {
-        return { error: error.message };
+        return {
+          error: /already|registered|exists/i.test(error.message) ? EMAIL_TAKEN : error.message,
+        };
+      }
+      // Supabase answers an existing address with a user that has no
+      // identities (and sends nothing). One email, one account: say so.
+      if (data.user && (data.user.identities?.length ?? 0) === 0) {
+        return { error: EMAIL_TAKEN };
       }
 
       /*

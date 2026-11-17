@@ -140,7 +140,7 @@ export default function LoginPage() {
             </button>
             <p className="text-center text-sm">
               <Link
-                href="/forgot-password"
+                href="/forgot-password?with=email"
                 className="font-semibold text-ocean-700 transition hover:text-mango-600"
               >
                 Forgot your password?

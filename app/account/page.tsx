@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { accountLabel } from "@/lib/phone-auth";
+import { accountLabel, isPhoneLoginEmail } from "@/lib/phone-auth";
+import { isSupabaseConfigured } from "@/lib/supabase/storage";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAllStores, getBaseProducts, getOrders, getRewardSettings, getStore, getVendorStats } from "@/lib/api";
@@ -152,6 +153,28 @@ export default async function AccountPage() {
           it the header painted over the top half of the first card. */}
       <div className="relative mx-auto -mt-16 max-w-5xl space-y-4 px-4">
         {appliedStore && <StoreApplicationStatus store={appliedStore} />}
+        {/* ── A second way in: phone accounts add an email, email accounts
+            add a number. Shown until they have both. */}
+        {isSupabaseConfigured() && session.role === "customer" && !session.access &&
+          (isPhoneLoginEmail(session.email) || !session.verifiedPhone) && (
+            <Link
+              href={`/account/security#${isPhoneLoginEmail(session.email) ? "add-email" : "add-phone"}`}
+              className="card flex items-center gap-4 p-4 transition hover:ring-2 hover:ring-mango-200"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-mango-50 text-2xl" aria-hidden>
+                {isPhoneLoginEmail(session.email) ? "✉️" : "📱"}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold text-slate-900">
+                  {isPhoneLoginEmail(session.email) ? "Add your email" : "Add your phone number"}
+                </span>
+                <span className="block text-sm text-slate-500">
+                  Sign in with either one, and reset a forgotten password by SMS or email.
+                </span>
+              </span>
+              <span className="shrink-0 rounded-full bg-mango-500 px-3 py-1.5 text-xs font-bold text-white">Add</span>
+            </Link>
+          )}
         {/* ── Reward credit — the reason to come back, so it comes first. */}
         {!isSeller && (
           <WalletCard

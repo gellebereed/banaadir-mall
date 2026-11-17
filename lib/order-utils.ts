@@ -1,3 +1,4 @@
+import { phoneLoginEmail } from "./phone-auth";
 /**
  * ─────────────────────────────────────────────────────────────────────────
  *  MULTI-VENDOR ORDER SPLITTING — safe to import from client and server.
@@ -162,8 +163,13 @@ export function newOrderId(): string {
  */
 export function orderBelongsTo(
   order: { email?: string },
-  user: { email: string },
+  user: { email: string; verifiedPhone?: string },
 ): boolean {
   const email = user.email.trim().toLowerCase();
-  return Boolean(email) && order.email?.trim().toLowerCase() === email;
+  const mine = order.email?.trim().toLowerCase();
+  if (!mine) return false;
+  if (email && mine === email) return true;
+  // Placed while the account signed in by phone only: those orders carry
+  // the number's stand-in address, and the number is proven theirs.
+  return Boolean(user.verifiedPhone) && mine === phoneLoginEmail(user.verifiedPhone!);
 }
