@@ -1,15 +1,16 @@
 "use client";
 
-import Image from "next/image";
 import { useState } from "react";
 import PhotoPicker, { type PendingPhoto } from "./PhotoPicker";
+import SortablePhotoGrid, { movePhoto } from "./SortablePhotoGrid";
 import { UPLOAD_PLACEHOLDER } from "@/lib/product-utils";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
  *  A PRODUCT'S PHOTOS — saved and just-picked, in one editable grid.
  * ─────────────────────────────────────────────────────────────────────────
- * Reorder, promote to main image, or remove. The resulting order is
+ * Reorder (drag or ‹ ›), promote to main image, or remove — the controls
+ * live in SortablePhotoGrid. The resulting order is
  * submitted as JSON in a hidden field.
  *
  * ── Why newly picked photos are in the same grid ─────────────────────────
@@ -70,22 +71,8 @@ export default function PhotoManager({
     });
   }
 
-  function move(index: number, delta: number) {
-    setSlots((prev) => {
-      const next = [...prev];
-      const target = index + delta;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  }
-
-  function makeMain(index: number) {
-    setSlots((prev) => {
-      const next = [...prev];
-      const [picked] = next.splice(index, 1);
-      return [picked, ...next];
-    });
+  function move(from: number, to: number) {
+    setSlots((prev) => movePhoto(prev, from, to));
   }
 
   function remove(index: number) {
@@ -102,84 +89,16 @@ export default function PhotoManager({
       <input type="hidden" name={name} value={serialised} />
 
       {slots.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-3">
-          {slots.map((slot, i) => {
-            const key = slot.kind === "saved" ? slot.url : slot.photo.id;
-            return (
-              <div
-                key={key}
-                className={`group relative h-28 w-28 overflow-hidden rounded-xl border-2 ${
-                  i === 0 ? "border-ocean-600" : "border-sand-200"
-                }`}
-              >
-                {slot.kind === "saved" ? (
-                  <Image src={slot.url} alt="" fill sizes="112px" className="object-cover" />
-                ) : (
-                  // Local blob preview — next/image cannot optimise these.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={slot.photo.previewUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                )}
-
-                {i === 0 && (
-                  <span className="absolute left-1 top-1 rounded bg-ocean-800/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                    Main
-                  </span>
-                )}
-
-                {slot.kind === "pending" && (
-                  <span className="absolute bottom-8 left-1 rounded bg-emerald-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white">
-                    New
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => remove(i)}
-                  aria-label="Remove photo"
-                  title="Remove photo"
-                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs font-bold text-white transition hover:bg-coral-500"
-                >
-                  ✕
-                </button>
-
-                {/* Reorder / promote controls */}
-                <div className="absolute inset-x-0 bottom-0 flex items-stretch bg-black/60 text-[11px] font-bold text-white opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() => move(i, -1)}
-                    disabled={i === 0}
-                    aria-label="Move photo left"
-                    className="flex-1 py-1 hover:bg-white/20 disabled:opacity-30"
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => makeMain(i)}
-                    disabled={i === 0}
-                    aria-label="Make main photo"
-                    title="Make main photo"
-                    className="flex-1 py-1 hover:bg-white/20 disabled:opacity-30"
-                  >
-                    ★
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => move(i, 1)}
-                    disabled={i === slots.length - 1}
-                    aria-label="Move photo right"
-                    className="flex-1 py-1 hover:bg-white/20 disabled:opacity-30"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="mb-4">
+          <SortablePhotoGrid
+            photos={slots.map((slot) =>
+              slot.kind === "saved"
+                ? { key: slot.url, src: slot.url }
+                : { key: slot.photo.id, src: slot.photo.previewUrl, isNew: true },
+            )}
+            onMove={move}
+            onRemove={remove}
+          />
         </div>
       )}
 
@@ -190,11 +109,11 @@ export default function PhotoManager({
         onPhotosChange={setPending}
       />
 
-      {slots.length > 0 && (
-        <p className="mt-2 text-xs text-slate-400">
-          Hover a photo to reorder (← →), make it the main image (★) or remove
-          it (✕) — including ones you have just added. Changes apply when you
-          save.
+      {slots.length > 1 && (
+        <p className="mt-2 text-xs text-slate-500">
+          The <b>Main</b> photo is the one shoppers see first. Tap{" "}
+          <b>★ Make main</b> on any photo, or hold <b>⠿</b> and drag it to a
+          new spot. Changes apply when you save.
         </p>
       )}
     </div>
