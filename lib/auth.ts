@@ -74,6 +74,14 @@ export interface Session {
    * every first order was the shop not paying attention.
    */
   phone?: string;
+  /**
+   * The number this account proved with an SMS code, in +E.164 — so it
+   * can also sign in with it. Unlike `phone`, never typed freely: it is
+   * read from the Supabase account at sign-in. Orders placed while the
+   * account was phone-only (keyed on the stand-in email) stay theirs
+   * through it after they add an email.
+   */
+  verifiedPhone?: string;
 }
 
 interface DemoUser extends Session {

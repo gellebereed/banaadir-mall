@@ -89,11 +89,10 @@ export async function changePassword(_prev: SecurityState, formData: FormData): 
 export async function changeEmail(_prev: SecurityState, formData: FormData): Promise<SecurityState> {
   const session = await getSession();
   if (!session) return { error: "Please sign in again." };
-  // A phone sign-up's orders are keyed on its stand-in address; adding an
-  // email would move the account to a new key and strand them.
-  if (isPhoneLoginEmail(session.email)) {
-    return { error: "Accounts made with a phone number sign in with the number." };
-  }
+  // A phone sign-up adding its first email. Its earlier orders (keyed on
+  // the number's stand-in address) stay linked through the verified
+  // number — see orderBelongsTo.
+  const adding = isPhoneLoginEmail(session.email);
   if (session.access || session.role === "admin") {
     return {
       error:
@@ -106,6 +105,9 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
   const email = String(formData.get("newEmail") ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
   if (email === session.email) return { error: "That's already your email." };
+  if (accountsEnabled() && (await findAuthUser(email))) {
+    return { error: "This email is already registered to another account." };
+  }
   if (email !== String(formData.get("confirmEmail") ?? "").trim().toLowerCase()) {
     return { error: "The two email addresses don't match." };
   }
@@ -146,8 +148,13 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
   if (error) {
     return {
       error: /already|registered|exists/i.test(error.message)
-        ? "Another account already uses that email."
+        ? "This email is already registered to another account."
         : error.message,
+    };
+  }
+  if (adding) {
+    return {
+      ok: `Almost done — we've emailed a confirmation link to ${email}. Open it and your email is added: you can then sign in with it or with your number, using the same password.`,
     };
   }
   return {
@@ -248,4 +255,77 @@ export async function deleteAccount(_prev: SecurityState, formData: FormData): P
   await proof.supabase.auth.signOut().catch(() => {});
   await clearSessionCookie();
   redirect("/goodbye");
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  ADD A PHONE NUMBER — so an email account can also sign in by phone.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Two steps, like sign-up: the current password proves it's them and the
+ * number is sent a 6-digit code; the code proves the number is theirs.
+ * Supabase stores it as the account's phone, so "number + password" then
+ * signs in to this same account, and "Forgot password" works by SMS too.
+ *
+ * One number, one account: a number another account has proved is
+ * refused, before any SMS is spent.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export interface PhoneStepState extends SecurityState {
+  /** Set once a code has gone out: the number, in +E.164. */
+  phone?: string;
+  done?: boolean;
+}
+
+export async function addPhone(_prev: PhoneStepState, formData: FormData): Promise<PhoneStepState> {
+  const session = await getSession();
+  if (!session) return { error: "Please sign in again." };
+  const intent = String(formData.get("intent") ?? "send");
+
+  if (intent === "verify") {
+    const phone = String(formData.get("phone") ?? "");
+    const token = String(formData.get("code") ?? "").replace(/\D/g, "");
+    if (!/^\+\d{8,15}$/.test(phone) || token.length < 4) {
+      return { phone, error: "Enter the 6-digit code from the SMS." };
+    }
+    const supabase = await createClient();
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: "phone_change" });
+    if (error) {
+      console.warn("[AddPhone] verify:", error.code, error.message);
+      return { phone, error: "That code is wrong or has expired. Check the SMS, or send a new code." };
+    }
+    await setSessionCookie({ ...session, verifiedPhone: phone, phone });
+    return {
+      done: true,
+      ok: `Your number ${phone} is added. You can now sign in with it or with your email, using the same password.`,
+    };
+  }
+
+  const { toE164 } = await import("@/lib/phone-auth");
+  const phone = toE164(String(formData.get("countryCode") ?? "+252"), String(formData.get("phone") ?? ""));
+  if (!phone) return { error: "Please enter a valid mobile number." };
+  if (session.verifiedPhone === phone) return { error: "That's already your number." };
+
+  if (accountsEnabled()) {
+    const { findAuthUserByPhone } = await import("@/lib/accounts");
+    if (await findAuthUserByPhone(phone)) {
+      return { error: "This number is already registered to another account." };
+    }
+  }
+
+  const proof = await proveCurrentPassword(String(formData.get("currentPassword") ?? ""));
+  if ("error" in proof) return { error: proof.error };
+
+  const { error } = await proof.supabase.auth.updateUser({ phone });
+  if (error) {
+    console.warn("[AddPhone] send:", error.code, error.status, error.message);
+    const text = `${error.code ?? ""} ${error.message}`.toLowerCase();
+    return {
+      error: /exists|already|registered/.test(text)
+        ? "This number is already registered to another account."
+        : /rate|429/.test(text) || error.status === 429
+          ? "Too many codes requested. Please wait a minute and try again."
+          : "We couldn't send the SMS to this number. Check it and try again.",
+    };
+  }
+  return { phone, ok: `We sent a 6-digit code by SMS to ${phone}.` };
 }

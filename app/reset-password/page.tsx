@@ -37,7 +37,7 @@ export default async function ResetPasswordPage({
         ) : (
           <p className="mt-4 rounded-xl bg-coral-100 px-4 py-3 text-sm font-medium text-coral-700">
             This reset link is incomplete or has expired.{" "}
-            <Link href="/forgot-password" className="font-bold underline">
+            <Link href="/forgot-password?with=email" className="font-bold underline">
               Request a new one
             </Link>
             .

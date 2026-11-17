@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import ForgotForm from "./ForgotForm";
+import ForgotTabs from "./ForgotTabs";
 
 export const metadata: Metadata = { title: "Forgot password", robots: { index: false } };
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ with?: string }>;
+}) {
+  const { with: via } = await searchParams;
   return (
     <div className="flex min-h-[calc(100vh-13rem)] items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
@@ -12,9 +17,9 @@ export default function ForgotPasswordPage() {
           Forgot your password?
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Enter the email you sign in with and we&apos;ll send you a link to choose a new one.
+          Reset it with a code by SMS to your phone, or with a link to your email.
         </p>
-        <ForgotForm />
+        <ForgotTabs initial={via === "email" ? "email" : "phone"} />
         <p className="mt-6 text-center text-sm text-slate-500">
           Remembered it?{" "}
           <Link href="/login" className="font-bold text-ocean-700 hover:text-mango-600">

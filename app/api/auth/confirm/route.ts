@@ -27,7 +27,9 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
-      if (type === "signup" || type === "email") {
+      // A confirmed new email (email_change) signs in as it too: for an
+      // account that only had a phone, that is the moment it gains one.
+      if (type === "signup" || type === "email" || type === "email_change") {
         const signedIn = await signInConfirmedUser(data.user);
         if (!signedIn) return NextResponse.redirect(`${origin}/login?with=email&confirmed=1`);
       }

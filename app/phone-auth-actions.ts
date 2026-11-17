@@ -63,6 +63,7 @@ async function sessionFor(user: User, phone: string, name: string): Promise<Sess
     email: phoneLoginEmail(phone),
     role: "customer",
     phone,
+    verifiedPhone: phone,
   };
 }
 
@@ -87,6 +88,9 @@ export interface PhoneAuthState {
   message?: string;
 }
 
+const ALREADY_REGISTERED =
+  "This number is already registered. Sign in with it, or use “Forgot password” if you don't remember the password.";
+
 /** On a site without Supabase (local demo) this code always works. */
 const DEMO_CODE = "123456";
 
@@ -100,7 +104,7 @@ function friendly(err: { message: string; code?: string; status?: number }, mode
   if (text.includes("signups not allowed") || text.includes("otp_disabled") || text.includes("user not found")) {
     return mode === "signup"
       ? "Sign-up by phone is switched off right now. Please use email instead."
-      : "No account uses this number yet. Create one — it takes a minute.";
+      : "No account uses this number. Check it, or reset by email if you signed up with one.";
   }
   if (text.includes("weak_password") || text.includes("pwned") || text.includes("leaked")) {
     return "That password is too easy to guess or has appeared in a data leak. Please choose another.";
@@ -187,14 +191,30 @@ export async function phoneAuth(_prev: PhoneAuthState, formData: FormData): Prom
       return { phone, channel, message: `Demo mode: nothing is sent ${via}. Enter ${DEMO_CODE}.` };
     }
 
+    /*
+     * One number, one account. Without this, "signing up" with a number
+     * that already had an account quietly signed into it and replaced its
+     * password — and a mistyped number became someone else's account,
+     * with their orders and address. Say so plainly instead.
+     */
+    if (mode === "signup") {
+      const { hasServiceRole } = await import("@/lib/supabase/service");
+      if (hasServiceRole()) {
+        const { findAuthUserByPhone } = await import("@/lib/accounts");
+        if (await findAuthUserByPhone(phone)) {
+          return { error: ALREADY_REGISTERED };
+        }
+      }
+    }
+
     const supabase = await createClient();
     const { error } = await supabase.auth.signInWithOtp({
       phone,
       options: {
         channel,
         // A password reset must not quietly create an account for a
-        // mistyped number; signing up with a number that already has one
-        // proves it is theirs just the same, and sets the password.
+        // mistyped number. (A sign-up with a registered number was
+        // refused above.)
         shouldCreateUser: mode === "signup",
         data: mode === "signup" ? { name, role: "customer" } : undefined,
       },
