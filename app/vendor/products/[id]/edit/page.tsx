@@ -3,7 +3,14 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { deleteProduct, updateProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
-import { getBaseProduct, getEditorCategories, getDiscountMap, getSubcategories } from "@/lib/api";
+import {
+  getBaseProduct,
+  getBaseProductsByStore,
+  getEditorCategories,
+  getDiscountMap,
+  getSubcategories,
+} from "@/lib/api";
+import { storeLabels } from "@/lib/labels";
 import { may } from "@/lib/auth";
 import { HOLDING_SLUG } from "@/lib/category-holding";
 import { productsReturnPath } from "@/lib/product-utils";
@@ -40,7 +47,10 @@ export default async function EditProductPage({
   if (!product) notFound();
   if (session.role !== "admin" && product.store !== storeSlug) notFound();
 
-  const discounts = await getDiscountMap(product.store);
+  const [discounts, siblings] = await Promise.all([
+    getDiscountMap(product.store),
+    getBaseProductsByStore(product.store),
+  ]);
   // The list this product was opened from, filters and all — Back, Save
   // and Delete all return there instead of to an unfiltered list.
   const backHref = productsReturnPath(
@@ -64,6 +74,7 @@ export default async function EditProductPage({
         depth: c.depth,
       }))}
       subcategories={subcategories}
+      knownLabels={storeLabels(siblings).map((l) => l.label)}
       attributeSets={attributeSetsFor(categories)}
       aiSuggest={aiMatchingAvailable()}
       backHref={backHref}

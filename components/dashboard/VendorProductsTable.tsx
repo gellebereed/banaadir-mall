@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import ProductImage from "@/components/ProductImage";
 import { arrivalDate, daysUntilArrival, isPreorder } from "@/lib/preorder";
-import { batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
+import { batchLabelProducts, batchUpdateProducts, toggleProductFeatured, toggleProductHidden } from "@/app/actions";
+import { hasLabel, storeLabels } from "@/lib/labels";
 import { compact, money } from "@/lib/format";
 import { sellableUnits } from "@/lib/odoo/mapping";
 import { hasVariants, totalStock } from "@/lib/product-utils";
@@ -261,6 +262,11 @@ export default function VendorProductsTable({
   }, [products, badges]);
   const [selectedBadge, setSelectedBadge] = useState<string>(() => param("badge") || "all");
 
+  // The seller's private labels (lib/labels.ts) — "Clearance", "Winter 2026".
+  const labelOptions = useMemo(() => storeLabels(products), [products]);
+  const [selectedLabel, setSelectedLabel] = useState<string>(() => param("label") || "all");
+  const [bulkLabel, setBulkLabel] = useState("");
+
   const tabCounts = useMemo(
     () => Object.fromEntries(TABS.map((t) => [t.id, products.filter((p) => matchesTab(p, t.id)).length])),
     [products],
@@ -273,6 +279,8 @@ export default function VendorProductsTable({
       if (selectedCategory !== "all" && p.category !== selectedCategory) return false;
       if (selectedSubcategory !== "all" && p.subcategory !== selectedSubcategory) return false;
       if (selectedBadge !== "all" && badgeKey(p, badges) !== selectedBadge) return false;
+      if (selectedLabel === "none" && p.labels?.length) return false;
+      if (selectedLabel !== "all" && selectedLabel !== "none" && !hasLabel(p, selectedLabel)) return false;
 
       // Matched against every code a seller might type, including the
       // variant codes, which is what is on a scanner label.
@@ -283,6 +291,7 @@ export default function VendorProductsTable({
           (p.internalReference && p.internalReference.toLowerCase().includes(q)) ||
           (p.barcode && p.barcode.toLowerCase().includes(q)) ||
           (p.subcategory && p.subcategory.toLowerCase().includes(q)) ||
+          (p.labels ?? []).some((l) => l.toLowerCase().includes(q)) ||
           (p.variants ?? []).some(
             (v) =>
               (v.sku && v.sku.toLowerCase().includes(q)) ||
@@ -307,7 +316,7 @@ export default function VendorProductsTable({
      * typo, to add its photo.
      */
     return [...list].sort((a, b) => editedAt(b) - editedAt(a));
-  }, [products, badges, activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy]);
+  }, [products, badges, activeTab, selectedCategory, selectedSubcategory, selectedBadge, selectedLabel, searchQuery, sortBy]);
 
   /*
    * PAGINATION. Rendering 1,688 rows put ~20,000 DOM nodes on the page.
@@ -327,7 +336,7 @@ export default function VendorProductsTable({
       return;
     }
     setPage(1);
-  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy]);
+  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, selectedLabel, searchQuery, sortBy]);
 
   // The list as it stands, as a URL: kept in the address bar (replaced,
   // not pushed, so Back still leaves the page) and handed to the editor.
@@ -337,12 +346,13 @@ export default function VendorProductsTable({
     if (selectedCategory !== "all") qs.set("category", selectedCategory);
     if (selectedSubcategory !== "all") qs.set("sub", selectedSubcategory);
     if (selectedBadge !== "all") qs.set("badge", selectedBadge);
+    if (selectedLabel !== "all") qs.set("label", selectedLabel);
     if (searchQuery.trim()) qs.set("q", searchQuery.trim());
     if (sortBy !== "default") qs.set("sort", sortBy);
     if (currentPage > 1) qs.set("page", String(currentPage));
     const query = qs.toString();
     return query ? `${LIST_PATH}?${query}` : LIST_PATH;
-  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, searchQuery, sortBy, currentPage]);
+  }, [activeTab, selectedCategory, selectedSubcategory, selectedBadge, selectedLabel, searchQuery, sortBy, currentPage]);
   useEffect(() => {
     if (window.location.pathname + window.location.search !== listHref) {
       window.history.replaceState(null, "", listHref);
@@ -355,6 +365,7 @@ export default function VendorProductsTable({
     selectedCategory !== "all" ||
     selectedSubcategory !== "all" ||
     selectedBadge !== "all" ||
+    selectedLabel !== "all" ||
     searchQuery.trim() !== "";
 
   function clearFilters() {
@@ -362,6 +373,7 @@ export default function VendorProductsTable({
     setSelectedCategory("all");
     setSelectedSubcategory("all");
     setSelectedBadge("all");
+    setSelectedLabel("all");
     setSearchQuery("");
   }
 
@@ -425,6 +437,16 @@ export default function VendorProductsTable({
       if (res.ok && action === "delete") setSelectedIds([]);
       if (res.ok && action === "price") setBulkPrice("");
       if (res.ok && action === "stock") setBulkStock("");
+    });
+  }
+
+  function runLabel(mode: "add" | "remove") {
+    const label = bulkLabel.trim();
+    if (!label) return;
+    startTransition(async () => {
+      const res = await batchLabelProducts(selectedIds, label, mode);
+      setStatusMessage({ ok: res.ok, text: res.message });
+      if (res.ok) setBulkLabel("");
     });
   }
 
@@ -556,8 +578,8 @@ export default function VendorProductsTable({
           })}
         </div>
 
-        {(categories.length > 1 || subcategories.length > 0 || badgeOptions.length > 0 || filtersActive) && (
-          <div className="grid gap-2 p-3 sm:grid-cols-2 sm:items-end sm:px-4 lg:grid-cols-[repeat(3,minmax(0,14rem))_1fr]">
+        {(categories.length > 1 || subcategories.length > 0 || badgeOptions.length > 0 || labelOptions.length > 0 || filtersActive) && (
+          <div className="grid gap-2 p-3 sm:grid-cols-2 sm:items-end sm:px-4 lg:grid-cols-[repeat(4,minmax(0,13rem))_1fr]">
             {categories.length > 1 && (
               <label className="min-w-0">
                 <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -615,8 +637,28 @@ export default function VendorProductsTable({
                 </select>
               </label>
             )}
+            {labelOptions.length > 0 && (
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Label
+                </span>
+                <select
+                  value={selectedLabel}
+                  onChange={(e) => setSelectedLabel(e.target.value)}
+                  className={FILTER_SELECT}
+                >
+                  <option value="all">Any label</option>
+                  {labelOptions.map((o) => (
+                    <option key={o.label} value={o.label}>
+                      🏷️ {o.label} ({o.count})
+                    </option>
+                  ))}
+                  <option value="none">No label</option>
+                </select>
+              </label>
+            )}
             {filtersActive && (
-              <div className="flex items-center justify-between gap-3 sm:col-span-2 sm:h-10 sm:justify-end lg:col-span-1 lg:col-start-4">
+              <div className="flex items-center justify-between gap-3 sm:col-span-2 sm:h-10 sm:justify-end lg:col-span-1 lg:col-start-5">
                 <span className="text-xs text-slate-500">
                   <strong className="text-slate-700">{filtered.length.toLocaleString()}</strong> of{" "}
                   {products.length.toLocaleString()} shown
@@ -720,6 +762,38 @@ export default function VendorProductsTable({
               />
               <BulkButton type="submit" disabled={isPending || !bulkStockValid}>
                 Set
+              </BulkButton>
+            </form>
+
+            <span className="mx-1 hidden h-5 w-px bg-white/15 sm:block" />
+
+            {/* Private labels, for promotions to pick or skip (lib/labels.ts). */}
+            <form
+              className="flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                runLabel("add");
+              }}
+            >
+              <input
+                list="bulk-label-options"
+                value={bulkLabel}
+                onChange={(e) => setBulkLabel(e.target.value)}
+                maxLength={30}
+                placeholder="🏷️ Label"
+                aria-label="Label for selected products"
+                className="w-28 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs text-white placeholder-white/40 outline-none focus:border-mango-400"
+              />
+              <datalist id="bulk-label-options">
+                {labelOptions.map((o) => (
+                  <option key={o.label} value={o.label} />
+                ))}
+              </datalist>
+              <BulkButton type="submit" disabled={isPending || !bulkLabel.trim()}>
+                Add
+              </BulkButton>
+              <BulkButton disabled={isPending || !bulkLabel.trim()} onClick={() => runLabel("remove")}>
+                Remove
               </BulkButton>
             </form>
 
@@ -1170,7 +1244,7 @@ function ProductRow({
               .filter(Boolean)
               .join(" · ")}
           </p>
-          {(noPhotos || !hasBarcode(p) || discount || isPreorder(p)) && (
+          {(noPhotos || !hasBarcode(p) || discount || isPreorder(p) || p.labels?.length) && (
             <div className="mt-1 flex flex-wrap gap-1">
               {/* Overdue is the one that needs the seller: the stock should
                   be here, and only they can say that it is. */}
@@ -1193,6 +1267,11 @@ function ProductRow({
                   −{discount}% promo
                 </span>
               ) : null}
+              {p.labels?.map((l) => (
+                <span key={l} className="rounded-full bg-ocean-50 px-1.5 py-0.5 text-[10px] font-bold text-ocean-700 ring-1 ring-ocean-100">
+                  🏷️ {l}
+                </span>
+              ))}
               {noPhotos && (
                 <span className="rounded-full bg-mango-50 px-1.5 py-0.5 text-[10px] font-bold text-mango-700">
                   No photos

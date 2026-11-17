@@ -92,5 +92,10 @@ DROP POLICY IF EXISTS "banaadir_uploads_delete" ON storage.objects;
 -- Pre-orders (supabase/migration-preorder.sql explains the column).
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS preorder JSONB;
 
+-- Private product labels + promotions by label (supabase/migration-product-labels.sql).
+ALTER TABLE public.products   ADD COLUMN IF NOT EXISTS labels         JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS include_labels JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS exclude_labels JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 -- VERIFICATION
 SELECT 'Migration completed successfully!' AS result;

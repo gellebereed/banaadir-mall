@@ -44,6 +44,7 @@ import {
   type CampaignKind,
   type ScheduleStatus,
 } from "./campaign-utils";
+import { promotionCovers } from "./labels";
 import { isPreorder } from "./preorder";
 import { flashState, isLegacyFlashPromotion } from "./flash";
 import { discountPct, money } from "./format";
@@ -180,11 +181,7 @@ export async function getCampaigns(t: T = translator("en")): Promise<Campaign[]>
 
 function fromPromotion(promo: Promotion, store: Store, storeProducts: Product[]): Campaign {
   // Pre-orders are never in a promotion (see discountPctFor in lib/api.ts).
-  const covered = (
-    promo.productIds?.length
-      ? storeProducts.filter((p) => promo.productIds!.includes(p.id))
-      : storeProducts
-  ).filter((p) => !isPreorder(p));
+  const covered = storeProducts.filter((p) => promotionCovers(promo, p) && !isPreorder(p));
   return {
     id: promo.id,
     kind: "promotion",

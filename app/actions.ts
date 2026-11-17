@@ -18,12 +18,22 @@ import {
   findCodeConflicts,
   getBaseProduct,
   getBaseProducts,
+  getBaseProductsByStore,
   getCategoryWithDescendants,
   getFlashDeal,
   getFlashRequests,
   getStore,
 } from "@/lib/api";
 import { checkBarcode, checkReference } from "@/lib/barcode";
+import {
+  MAX_LABELS_PER_PRODUCT,
+  cleanLabel,
+  hasLabel,
+  parseLabels,
+  promotionCovers,
+  storeLabels,
+  tidyLabels,
+} from "@/lib/labels";
 import { normalisePct, ruleProblem } from "@/lib/commission";
 import { sellableUnits, validateProductCodes } from "@/lib/odoo/mapping";
 import {
@@ -86,6 +96,7 @@ import {
   useSupabaseMutations,
   upsertProduct,
   PreorderColumnError,
+  LabelsColumnError,
   fetchProductPhotoState,
   updateProductFields,
   deleteProductFromSupabase,
@@ -632,6 +643,10 @@ export async function updateProduct(formData: FormData): Promise<void | { error:
   if (badgeChoice !== null) {
     updatedFields.badge = String(badgeChoice) === "Off" ? "Off" : undefined;
   }
+  // Private labels, only when the form has the labels control.
+  if (formData.get("labelsJson") !== null) {
+    updatedFields.labels = parseLabels(formData.get("labelsJson"), await knownLabels(product.store));
+  }
   if (preorderForm && "fields" in preorderForm) {
     updatedFields.preorder = mergePreorder(
       product,
@@ -659,7 +674,7 @@ export async function updateProduct(formData: FormData): Promise<void | { error:
   } catch (err) {
     // The one failure with a sentence the seller can act on — returned, not
     // thrown, because a production build hides thrown messages.
-    if (err instanceof PreorderColumnError) return { error: err.message };
+    if (err instanceof PreorderColumnError || err instanceof LabelsColumnError) return { error: err.message };
     throw err;
   }
   if (!supabaseOk) {
@@ -873,6 +888,93 @@ export async function markPreorderArrived(id: string): Promise<{ ok: boolean; me
   };
 }
 
+/** Every label this store already uses — so a new spelling joins the old one. */
+async function knownLabels(storeSlug: string): Promise<string[]> {
+  return storeLabels(await getBaseProductsByStore(storeSlug)).map((l) => l.label);
+}
+
+/**
+ * Add a label to, or take it off, many products at once — how a seller
+ * marks forty items "Clearance" without opening forty editors.
+ */
+export async function batchLabelProducts(
+  ids: string[],
+  rawLabel: string,
+  mode: "add" | "remove",
+): Promise<{ ok: boolean; count: number; message: string }> {
+  const session = await requireAccess("products");
+  const label = cleanLabel(rawLabel ?? "");
+  if (!label) return { ok: false, count: 0, message: "Type a label first." };
+  if (!ids?.length) return { ok: false, count: 0, message: "No products selected" };
+
+  let count = 0;
+  let store = session.store ?? "platform";
+  const known = new Map<string, string[]>();
+  try {
+    for (const id of ids) {
+      const product = await getBaseProduct(id);
+      if (!product) continue;
+      assertOwnsStore(session, product.store);
+      store = product.store;
+      if (!known.has(product.store)) known.set(product.store, await knownLabels(product.store));
+
+      const current = product.labels ?? [];
+      const labels =
+        mode === "add"
+          ? tidyLabels([...current, label], known.get(product.store))
+          : current.filter((l) => !hasLabel({ labels: [label] }, l));
+      if (labels.length === current.length && labels.every((l, i) => l === current[i])) continue;
+      if (mode === "add" && !hasLabel({ labels }, label)) {
+        return {
+          ok: false,
+          count,
+          message: `“${product.name}” already has ${MAX_LABELS_PER_PRODUCT} labels — remove one first.`,
+        };
+      }
+
+      const fields: Partial<Product> = { labels };
+      if (!(await updateProductFields(id, fields))) {
+        if (useSupabaseMutations()) {
+          return { ok: false, count, message: "Could not save to Supabase — check the server logs." };
+        }
+        await mutateDB((db) => {
+          db.productOverrides[id] = { ...db.productOverrides[id], ...fields };
+        });
+      }
+      count++;
+    }
+  } catch (err) {
+    if (err instanceof LabelsColumnError) return { ok: false, count, message: err.message };
+    throw err;
+  }
+
+  if (count === 0) {
+    return {
+      ok: true,
+      count,
+      message:
+        mode === "add"
+          ? `All of them already have “${label}”.`
+          : `None of them had “${label}”.`,
+    };
+  }
+
+  await logActivity(
+    store,
+    `product.bulk.label`,
+    `${mode === "add" ? "Added the label" : "Removed the label"} “${label}” ${mode === "add" ? "to" : "from"} ${count} product${count === 1 ? "" : "s"}`,
+  );
+  refresh();
+  return {
+    ok: true,
+    count,
+    message:
+      mode === "add"
+        ? `Added “${label}” to ${count} product${count === 1 ? "" : "s"}.`
+        : `Removed “${label}” from ${count} product${count === 1 ? "" : "s"}.`,
+  };
+}
+
 export async function createProduct(formData: FormData): Promise<void | { error: string }> {
   const session = await requireAccess("products");
   const storeSlug =
@@ -931,6 +1033,8 @@ export async function createProduct(formData: FormData): Promise<void | { error:
     variants,
     defaultVariantId: pickDefaultVariantId(formData, variants),
   };
+  const labels = parseLabels(formData.get("labelsJson"), await knownLabels(storeSlug));
+  if (labels.length) product.labels = labels;
 
   if (preorderForm && "fields" in preorderForm) {
     product.preorder = mergePreorder(product, preorderForm.fields, product.stock, product.createdAt ?? "");
@@ -942,7 +1046,7 @@ export async function createProduct(formData: FormData): Promise<void | { error:
   try {
     supabaseOk = await upsertProduct(product);
   } catch (err) {
-    if (err instanceof PreorderColumnError) return { error: err.message };
+    if (err instanceof PreorderColumnError || err instanceof LabelsColumnError) return { error: err.message };
     throw err;
   }
   if (!supabaseOk) {
@@ -1767,6 +1871,23 @@ export async function createPromotion(
     };
   }
 
+  // "labels" scope: every product carrying any of these labels, re-checked
+  // on each read (lib/labels.ts). Exclusions apply to the store and label
+  // scopes — leaving a label out of a hand-picked list means nothing.
+  const scope = String(formData.get("scope"));
+  const known = storeLabels([...own.values()]).map((l) => l.label);
+  const includeLabels =
+    scope === "labels" ? tidyLabels(formData.getAll("includeLabels").map(String), known) : [];
+  const excludeLabels =
+    scope === "products" ? [] : tidyLabels(formData.getAll("excludeLabels").map(String), known);
+  if (scope === "labels" && includeLabels.length === 0) {
+    return { ok: false, message: "Pick at least one label, or choose the whole store." };
+  }
+  const clash = includeLabels.find((l) => excludeLabels.some((x) => x.toLowerCase() === l.toLowerCase()));
+  if (clash) {
+    return { ok: false, message: `“${clash}” can't be both included and left out.` };
+  }
+
   // The form's datetime-local has no time zone: it is the seller's
   // Mogadishu time, saved as an exact moment (lib/shop-time.ts).
   const startsAt = normaliseShopTime(formData.get("startsAt"));
@@ -1786,9 +1907,16 @@ export async function createPromotion(
     const existing = (await getPromotionsByStore(storeSlug)).find((p) => p.id === editId);
     if (!existing) return { ok: false, message: "That promotion no longer exists." };
     assertOwnsStore(session, existing.store);
-    const next = { ...existing, name, pct, productIds, startsAt, endsAt };
+    const next = { ...existing, name, pct, productIds, includeLabels, excludeLabels, startsAt, endsAt };
     if (useSupabaseMutations()) {
-      if (!(await updatePromotionInSupabase(next))) {
+      let saved: boolean;
+      try {
+        saved = await updatePromotionInSupabase(next);
+      } catch (err) {
+        if (err instanceof LabelsColumnError) return { ok: false, message: err.message };
+        throw err;
+      }
+      if (!saved) {
         return { ok: false, message: "Could not save the promotion to Supabase — check the server logs." };
       }
     } else {
@@ -1808,11 +1936,19 @@ export async function createPromotion(
     pct,
     active: true,
     productIds,
+    includeLabels,
+    excludeLabels,
     startsAt,
     endsAt,
   };
 
-  const supabaseOk = await insertPromotion(promo);
+  let supabaseOk: boolean;
+  try {
+    supabaseOk = await insertPromotion(promo);
+  } catch (err) {
+    if (err instanceof LabelsColumnError) return { ok: false, message: err.message };
+    throw err;
+  }
   if (!supabaseOk) {
     if (useSupabaseMutations()) {
       // Supabase is the source of truth for pricing; writing to the JSON
@@ -1830,9 +1966,14 @@ export async function createPromotion(
   await logActivity(promo.store, "promotion.create", `Started promotion "${promo.name}" (−${promo.pct}%)`, promo.id);
   refresh();
 
+  const covered = [...own.values()].filter((p) => promotionCovers(promo, p) && !isPreorder(p)).length;
   const scopeLabel = productIds.length
     ? `${productIds.length} product${productIds.length === 1 ? "" : "s"}`
-    : "your whole store";
+    : includeLabels.length
+      ? `${covered} product${covered === 1 ? "" : "s"} labelled ${includeLabels.map((l) => `“${l}”`).join(" or ")}`
+      : excludeLabels.length
+        ? `your whole store (${covered} product${covered === 1 ? "" : "s"}, leaving out ${excludeLabels.map((l) => `“${l}”`).join(", ")})`
+        : "your whole store";
   return {
     ok: true,
     message: startsAt

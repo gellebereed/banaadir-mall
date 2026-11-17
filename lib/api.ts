@@ -11,6 +11,7 @@
 
 import { unstable_cache } from "next/cache";
 import { CACHE_TAGS } from "./supabase/public-client";
+import { promotionCovers } from "./labels";
 import { endedFlashProducts, flashDiscounts, isFlashLive, isLegacyFlashPromotion, isRealDeal, type FlashPrice } from "./flash";
 import { searchCatalog, type SearchResult } from "./search";
 import { categories as seedCategories } from "./data/categories";
@@ -381,8 +382,8 @@ export function isPromotionLive(promo: Promotion, now = new Date()): boolean {
 
 /**
  * Highest discount percentage applying to a product right now. A promotion
- * covers the whole store when it has no productIds, or only the listed
- * products when it does. The site-wide campaign applies to the shops that
+ * covers the whole store, its picked products, or its labelled products,
+ * minus any excluded label — see promotionCovers in lib/labels.ts. The site-wide campaign applies to the shops that
  * accepted it — they pay for it.
  *
  * A PRE-ORDER is never discounted by a promotion or the campaign. Its
@@ -407,7 +408,7 @@ function discountPctFor(
             // flash discount now comes from the campaign itself (flashPct).
             !isLegacyFlashPromotion(p.id) &&
             p.store === product.store &&
-            (!p.productIds?.length || p.productIds.includes(product.id)),
+            promotionCovers(p, product),
         )
         .reduce((max, p) => Math.max(max, p.pct), 0);
   const campaignPct = !preorder && campaign.stores.has(product.store) ? campaign.pct : 0;

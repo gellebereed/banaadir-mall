@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createProduct } from "@/app/actions";
 import ProductEditor from "@/components/dashboard/ProductEditor";
-import { getEditorCategories, getSubcategories } from "@/lib/api";
+import { getBaseProductsByStore, getEditorCategories, getSubcategories } from "@/lib/api";
+import { storeLabels } from "@/lib/labels";
 import { may } from "@/lib/auth";
 import { attributeSetsFor } from "@/lib/taxonomy-attributes";
 import { aiMatchingAvailable } from "@/lib/taxonomy-ai";
@@ -18,9 +19,10 @@ export const metadata: Metadata = { title: "Add Product" };
 export default async function NewProductPage() {
   const { session, storeSlug } = await requireVendor();
   if (!may(session, "products.edit")) redirect("/vendor");
-  const [categories, subcategories] = await Promise.all([
+  const [categories, subcategories, own] = await Promise.all([
     getEditorCategories(),
     getSubcategories(),
+    getBaseProductsByStore(storeSlug),
   ]);
 
   return (
@@ -35,6 +37,7 @@ export default async function NewProductPage() {
         depth: c.depth,
       }))}
       subcategories={subcategories}
+      knownLabels={storeLabels(own).map((l) => l.label)}
       attributeSets={attributeSetsFor(categories)}
       aiSuggest={aiMatchingAvailable()}
       backHref="/vendor/products"
