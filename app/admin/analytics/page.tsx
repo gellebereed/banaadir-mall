@@ -291,7 +291,7 @@ export default async function AnalyticsPage({
               <p className="p-5 text-sm text-slate-400">Nobody bought in this period.</p>
             ) : (
               <div className="max-h-[36rem] overflow-auto">
-                <table className="w-full min-w-[820px] text-left text-sm">
+                <table className="table-stack w-full min-w-[820px] text-left text-sm">
                   <thead className="sticky top-0 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-5 py-3">Customer</th>
@@ -313,17 +313,17 @@ export default async function AnalyticsPage({
                             {customer.email || customer.phone || "no contact details"}
                           </p>
                         </td>
-                        <td className="px-5 py-3 text-slate-500">{customer.city ?? "—"}</td>
-                        <td className="px-5 py-3 text-right font-semibold text-ocean-950">
+                        <td data-label="City" className="px-5 py-3 text-slate-500">{customer.city ?? "—"}</td>
+                        <td data-label="Spent now" className="px-5 py-3 text-right font-semibold text-ocean-950">
                           {money(customer.periodRevenue)}
                         </td>
-                        <td className="px-5 py-3 text-right text-slate-600">
+                        <td data-label="Orders now" className="px-5 py-3 text-right text-slate-600">
                           {customer.periodOrders}
                         </td>
-                        <td className="px-5 py-3 text-right text-slate-600">
+                        <td data-label="Lifetime" className="px-5 py-3 text-right text-slate-600">
                           {money(customer.revenue)}
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td data-label="Lifetime orders" className="px-5 py-3 text-right">
                           <span
                             className={
                               "rounded-full px-2 py-0.5 text-xs font-bold " +
@@ -335,12 +335,12 @@ export default async function AnalyticsPage({
                             {customer.orders}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-500">
+                        <td data-label="Shops" className="px-5 py-3 text-xs text-slate-500">
                           {customer.stores
                             .map((slug) => storeNames.get(slug) ?? slug)
                             .join(", ")}
                         </td>
-                        <td className="px-5 py-3 text-xs text-slate-500">
+                        <td data-label="First bought" className="px-5 py-3 text-xs text-slate-500">
                           {shortDate(customer.firstOrder)}
                         </td>
                       </tr>

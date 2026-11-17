@@ -262,7 +262,7 @@ export default function AdminStoresClient({
         ) : (
           /* Active Stores Table */
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[800px] text-sm">
+            <table className="table-stack w-full min-w-[800px] text-sm">
               <thead>
                 <tr className="border-b border-sand-200 text-left text-xs font-bold uppercase tracking-wider text-slate-400">
                   <th className="px-4 py-3">Brand Store</th>
@@ -317,7 +317,7 @@ export default function AdminStoresClient({
                     </td>
 
                     {/* Official Brand Toggle */}
-                    <td className="px-4 py-3.5">
+                    <td data-label="Official" className="px-4 py-3.5">
                       <form
                         action={async () => {
                           startTransition(async () => {
@@ -373,30 +373,30 @@ export default function AdminStoresClient({
                     </td>
 
                     {/* City */}
-                    <td className="px-4 py-3.5 text-xs text-slate-600 font-medium">{store.city}</td>
+                    <td data-label="City" className="px-4 py-3.5 text-xs text-slate-600 font-medium">{store.city}</td>
 
                     {/* Products Count */}
-                    <td className="px-4 py-3.5 text-center text-xs font-semibold text-slate-700">
+                    <td data-label="Products" className="px-4 py-3.5 text-center text-xs font-semibold text-slate-700">
                       {stats.productCount}
                     </td>
 
                     {/* Orders Count */}
-                    <td className="px-4 py-3.5 text-center text-xs font-semibold text-slate-700">
+                    <td data-label="Orders" className="px-4 py-3.5 text-center text-xs font-semibold text-slate-700">
                       {stats.orderCount}
                     </td>
 
                     {/* Revenue */}
-                    <td className="px-4 py-3.5 text-right font-display text-sm font-bold text-ocean-950">
+                    <td data-label="Revenue" className="px-4 py-3.5 text-right font-display text-sm font-bold text-ocean-950">
                       {money(stats.revenue)}
                     </td>
 
                     {/* Rating */}
-                    <td className="px-4 py-3.5 text-center text-xs font-medium text-slate-700">
+                    <td data-label="Rating" className="px-4 py-3.5 text-center text-xs font-medium text-slate-700">
                       ★ {store.rating || 5.0}
                     </td>
 
                     {/* Actions */}
-                    <td className="px-4 py-3.5 text-right">
+                    <td data-label="Actions" className="px-4 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/store/${store.slug}`}
