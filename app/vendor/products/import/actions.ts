@@ -32,6 +32,7 @@ import {
   saveCategoryMappings,
   suggestCategory,
 } from "@/lib/category-mappings";
+import { narrowToShelf } from "@/lib/product-classify";
 import { buildCategoryTree, flattenCategoryTree } from "@/lib/category-tree";
 import { categoryKey } from "@/lib/import/categories";
 import { mutateDB } from "@/lib/db";
@@ -410,6 +411,20 @@ export async function runImport(formData: FormData): Promise<RunResponse> {
         // Kept so the holding shelf can show the supplier's own grouping.
         heldFrom: target === HOLDING_SLUG ? groupName.get(original.slug) : undefined,
       } as typeof original & { heldFrom?: string };
+    }
+
+    // A department (or a group like "Boys") is a hint, not a shelf: file
+    // each product on the shelf beneath it that its name points at, whether
+    // the department came from the seller's pick, this store's memory or a
+    // grouping that matched it by name. See narrowToShelf.
+    for (const planned of analysis.plan.products) {
+      const current = planned.draft.category;
+      if (!current || current.slug === HOLDING_SLUG) continue;
+      const shelf = narrowToShelf(planned.draft.name, planned.draft.description ?? "", current.slug, categories);
+      if (shelf === current.slug) continue;
+      const into = categories.find((c) => c.slug === shelf);
+      if (!into) continue;
+      planned.draft.category = { ...current, slug: into.slug, name: into.name, parentSlug: into.parentSlug ?? "", matchedExisting: true };
     }
 
     if (offset === 0) {
