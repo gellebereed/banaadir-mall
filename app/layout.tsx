@@ -21,6 +21,7 @@ import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
 import NavigationProgress from "@/components/layout/NavigationProgress";
+import StaleDeployGuard from "@/components/layout/StaleDeployGuard";
 import Toaster from "@/components/Toaster";
 import { isIndexableDeploy, siteOrigin } from "@/lib/request-origin";
 import { previewImages, SITE_CARD } from "@/lib/seo";
@@ -159,6 +160,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <ScrollToTop />
             <NavigationProgress />
+            <StaleDeployGuard />
           </Suspense>
           {onStoreSite ? (
             <StoreSiteHeader store={siteStore!} />
