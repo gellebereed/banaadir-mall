@@ -111,7 +111,7 @@ export default async function VendorPayoutsPage() {
           <p className="p-8 text-center text-sm text-slate-500">No delivered orders yet — your first statement appears here.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="table-stack w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-sand-200 bg-sand-50 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
                   <th className="px-5 py-3">Month</th>
@@ -137,17 +137,17 @@ export default async function VendorPayoutsPage() {
                         </p>
                       ))}
                     </td>
-                    <td className="px-5 py-3 text-right text-slate-600">{m.orders}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">
+                    <td data-label="Orders" className="px-5 py-3 text-right text-slate-600">{m.orders}</td>
+                    <td data-label="Sales" className="px-5 py-3 text-right text-slate-600">
                       {money(m.gross)}
                       {m.collectedByShop > 0 && (
                         <p className="text-[11px] text-slate-400">{money(m.collectedByShop)} paid to you</p>
                       )}
                     </td>
-                    <td className="px-5 py-3 text-right text-slate-500">{m.commission > 0 ? `−${money(m.commission)}` : "—"}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-800">{money(m.earned)}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{money(m.paid)}</td>
-                    <td className="px-5 py-3 text-right">
+                    <td data-label="Commission" className="px-5 py-3 text-right text-slate-500">{m.commission > 0 ? `−${money(m.commission)}` : "—"}</td>
+                    <td data-label="Earned" className="px-5 py-3 text-right font-semibold text-slate-800">{money(m.earned)}</td>
+                    <td data-label="Paid" className="px-5 py-3 text-right text-slate-600">{money(m.paid)}</td>
+                    <td data-label="Owed" className="px-5 py-3 text-right">
                       {m.owed > 0.004 ? (
                         <span className="rounded-full bg-mango-100 px-2 py-0.5 text-xs font-bold text-mango-800">{money(m.owed)}</span>
                       ) : m.owed < -0.004 ? (

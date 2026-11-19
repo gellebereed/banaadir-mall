@@ -232,7 +232,7 @@ export default function DashboardShell({
         {/* ── Page ──────────────────────────────────────────────────── */}
         {/* A div, not <main>: the root layout's <main> already wraps this. */}
         <div className="min-w-0 flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-7">
-          <div className="mx-auto max-w-6xl">
+          <div className="dash-content mx-auto max-w-6xl">
             {notice}
             {children}
           </div>

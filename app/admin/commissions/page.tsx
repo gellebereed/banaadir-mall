@@ -157,7 +157,7 @@ export default async function CommissionPage({
             </Link>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="table-stack w-full min-w-[640px] text-left text-sm">
               <thead className="bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-3">Store</th>
@@ -176,15 +176,15 @@ export default async function CommissionPage({
                         {storeNames.get(row.store) ?? row.store}
                       </Link>
                     </td>
-                    <td className="px-5 py-3 text-right text-slate-600">{row.orders}</td>
-                    <td className="px-5 py-3 text-right text-slate-600">{money(row.gross)}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-ocean-950">
+                    <td data-label="Orders" className="px-5 py-3 text-right text-slate-600">{row.orders}</td>
+                    <td data-label="Sales" className="px-5 py-3 text-right text-slate-600">{money(row.gross)}</td>
+                    <td data-label="Commission" className="px-5 py-3 text-right font-semibold text-ocean-950">
                       {money(row.commission)}
                     </td>
-                    <td className="px-5 py-3 text-right text-slate-500">
+                    <td data-label="Rate" className="px-5 py-3 text-right text-slate-500">
                       {row.effectivePct.toFixed(1)}%
                     </td>
-                    <td className="px-5 py-3 text-right font-semibold text-emerald-700">
+                    <td data-label="Seller payout" className="px-5 py-3 text-right font-semibold text-emerald-700">
                       {money(row.payout)}
                     </td>
                   </tr>

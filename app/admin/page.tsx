@@ -330,7 +330,7 @@ export default async function AdminDashboardPage({
               </Link>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className="table-stack w-full min-w-[720px] text-left text-sm">
                 <thead className="bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Store</th>
@@ -376,7 +376,7 @@ export default async function AdminDashboardPage({
                             </span>
                           </Link>
                         </td>
-                        <td className="px-5 py-3">
+                        <td data-label="Status" className="px-5 py-3">
                           <span
                             className={
                               "rounded-full px-2 py-0.5 text-xs font-semibold capitalize " +
@@ -390,15 +390,15 @@ export default async function AdminDashboardPage({
                             {store.status}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-right text-slate-600">
+                        <td data-label="Products" className="px-5 py-3 text-right text-slate-600">
                           {productsByStore.get(store.slug) ?? 0}
                         </td>
-                        <td className="px-5 py-3 text-right text-slate-600">{orderCount}</td>
-                        <td className="px-5 py-3 text-right text-slate-600">{units}</td>
-                        <td className="px-5 py-3 text-right font-semibold text-ocean-950">
+                        <td data-label="Orders" className="px-5 py-3 text-right text-slate-600">{orderCount}</td>
+                        <td data-label="Units" className="px-5 py-3 text-right text-slate-600">{units}</td>
+                        <td data-label="Revenue" className="px-5 py-3 text-right font-semibold text-ocean-950">
                           {money(revenue)}
                         </td>
-                        <td className="px-5 py-3 text-right text-slate-500">
+                        <td data-label="Share" className="px-5 py-3 text-right text-slate-500">
                           {sales.revenue > 0 ? `${Math.round((revenue / sales.revenue) * 100)}%` : "—"}
                         </td>
                       </tr>
@@ -550,7 +550,7 @@ export default async function AdminDashboardPage({
               <p className="p-5 text-sm text-slate-400">No orders yet.</p>
             ) : (
               <div className="max-h-[32rem] overflow-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="table-stack w-full min-w-[760px] text-left text-sm">
                   <thead className="sticky top-0 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-5 py-3">Order</th>
@@ -573,16 +573,16 @@ export default async function AdminDashboardPage({
                       .map((order) => (
                         <tr key={order.id} className="border-t border-sand-100 hover:bg-sand-50">
                           <td className="px-5 py-3 font-bold text-ocean-800">{order.id}</td>
-                          <td className="px-5 py-3 text-slate-600">
+                          <td data-label="Store" className="px-5 py-3 text-slate-600">
                             {storesBySlug.get(order.store)?.name ?? order.store}
                           </td>
-                          <td className="px-5 py-3 text-slate-600">{order.customer}</td>
-                          <td className="px-5 py-3 text-slate-500">{order.city}</td>
-                          <td className="px-5 py-3 text-slate-500">{shortDate(order.date)}</td>
-                          <td className="px-5 py-3 text-right font-semibold">
+                          <td data-label="Customer" className="px-5 py-3 text-slate-600">{order.customer}</td>
+                          <td data-label="City" className="px-5 py-3 text-slate-500">{order.city}</td>
+                          <td data-label="Date" className="px-5 py-3 text-slate-500">{shortDate(order.date)}</td>
+                          <td data-label="Total" className="px-5 py-3 text-right font-semibold">
                             {money(order.total)}
                           </td>
-                          <td className="px-5 py-3">
+                          <td data-label="Status" className="px-5 py-3">
                             <StatusBadge status={order.status} />
                           </td>
                         </tr>

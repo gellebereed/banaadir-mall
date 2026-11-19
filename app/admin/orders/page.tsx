@@ -154,7 +154,7 @@ export default async function AdminOrdersPage({
       </div>
 
       <div className="card mt-4 overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="table-stack w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-sand-200 bg-sand-50/70 text-left text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3">Order</th>
@@ -189,27 +189,27 @@ export default async function AdminOrdersPage({
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Customer" className="px-4 py-3">
                     <p className="font-medium text-slate-700">{o.customer}</p>
                     <p className="text-xs text-slate-500">
                       {o.city}
                       {o.phone && ` · ${o.phone}`}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td data-label="Shop" className="px-4 py-3 text-slate-600">
                     <Link href={href({ store: o.store })} className="hover:text-ocean-700 hover:underline">
                       {storeName(o.store)}
                     </Link>
                   </td>
-                  <td className="max-w-[240px] px-4 py-3 text-xs text-slate-600">
+                  <td data-label="Items" className="max-w-[240px] px-4 py-3 text-xs text-slate-600">
                     <p className="truncate">{o.items[0]?.name ?? o.items[0]?.productId}</p>
                     <p className="text-slate-400">
                       {units} unit{units === 1 ? "" : "s"}
                       {o.items.length > 1 && ` · ${o.items.length} products`}
                     </p>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold">{money(o.total)}</td>
-                  <td className="px-4 py-3">
+                  <td data-label="Total" className="whitespace-nowrap px-4 py-3 font-semibold">{money(o.total)}</td>
+                  <td data-label="Status" className="px-4 py-3">
                     <OrderStatusSelect orderId={o.id} status={o.status} />
                     {/* Read-only here: only the shop knows whether its customer paid. */}
                     <div className="mt-1.5">

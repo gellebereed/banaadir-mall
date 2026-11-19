@@ -133,7 +133,7 @@ export default async function AdminProductsPage({
       )}
 
       <div className="card mt-3 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="table-stack w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-slate-400">
               <th className="px-5 py-3">Product</th>
@@ -180,7 +180,7 @@ export default async function AdminProductsPage({
                     </span>
                   </Link>
                 </td>
-                <td className="px-5 py-3.5">
+                <td data-label="Reference" className="px-5 py-3.5">
                   <p className="font-mono text-xs text-slate-600">
                     {p.internalReference ?? <span className="text-slate-300">—</span>}
                   </p>
@@ -188,11 +188,11 @@ export default async function AdminProductsPage({
                     {p.barcode ?? <span className="text-slate-300">—</span>}
                   </p>
                 </td>
-                <td className="px-5 py-3.5 text-slate-500">{storeName(p.store)}</td>
-                <td className="px-5 py-3.5 text-slate-500 capitalize">
+                <td data-label="Store" className="px-5 py-3.5 text-slate-500">{storeName(p.store)}</td>
+                <td data-label="Category" className="px-5 py-3.5 text-slate-500 capitalize">
                   {categoryNames.get(p.category) ?? p.category.replace("-", " ")}
                 </td>
-                <td className="px-5 py-3.5 font-semibold">
+                <td data-label="Price" className="px-5 py-3.5 font-semibold">
                   {money(p.price)}
                   {p.compareAt && (
                     <span className="ml-1.5 text-xs text-slate-400 line-through">
@@ -200,15 +200,15 @@ export default async function AdminProductsPage({
                     </span>
                   )}
                 </td>
-                <td className="px-5 py-3.5">
+                <td data-label="Stock" className="px-5 py-3.5">
                   <span className={p.stock <= 15 ? "font-bold text-coral-600" : "text-slate-600"}>
                     {p.stock}
                     {p.stock <= 15 && " ⚠"}
                   </span>
                 </td>
-                <td className="px-5 py-3.5 text-slate-600">{compact(p.sold)}</td>
-                <td className="px-5 py-3.5 text-slate-600">★ {p.rating}</td>
-                <td className="px-5 py-3.5 text-right">
+                <td data-label="Sold" className="px-5 py-3.5 text-slate-600">{compact(p.sold)}</td>
+                <td data-label="Rating" className="px-5 py-3.5 text-slate-600">★ {p.rating}</td>
+                <td data-label="" className="px-5 py-3.5 text-right">
                   <Link
                     href={`/vendor/products/${p.id}/edit${editQuery}`}
                     className="text-xs font-bold text-ocean-700 hover:underline"

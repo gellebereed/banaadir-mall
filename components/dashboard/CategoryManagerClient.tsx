@@ -118,7 +118,7 @@ export default function CategoryManagerClient({
       {/* Category Table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
+          <table className="table-stack w-full text-left text-sm text-slate-600">
             <thead className="border-b border-sand-200 bg-sand-50/70 font-display text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="py-3.5 pl-6 pr-3">Category</th>
@@ -153,9 +153,9 @@ export default function CategoryManagerClient({
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-4 font-mono text-xs text-slate-500">{cat.slug}</td>
-                    <td className="px-3 py-4 text-xs text-slate-500 max-w-xs truncate">{cat.tagline || "—"}</td>
-                    <td className="px-3 py-4">
+                    <td data-label="Slug" className="px-3 py-4 font-mono text-xs text-slate-500">{cat.slug}</td>
+                    <td data-label="Tagline" className="px-3 py-4 text-xs text-slate-500 max-w-xs truncate">{cat.tagline || "—"}</td>
+                    <td data-label="Status" className="px-3 py-4">
                       {isHidden ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 border border-slate-200">
                           🙈 Hidden
@@ -166,7 +166,7 @@ export default function CategoryManagerClient({
                         </span>
                       )}
                     </td>
-                    <td className="py-4 pl-3 pr-6 text-right">
+                    <td data-label="Actions" className="py-4 pl-3 pr-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {/* Toggle Visibility */}
                         <form action={async () => { await toggleCategoryVisibility(cat.slug); }}>

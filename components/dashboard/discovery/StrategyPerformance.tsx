@@ -76,7 +76,7 @@ export default function StrategyPerformance({
         </p>
       ) : (
         <div className="overflow-x-auto border-t border-sand-100">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="table-stack w-full min-w-[640px] text-sm">
             <thead className="bg-sand-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2.5">Strategy</th>
@@ -93,13 +93,13 @@ export default function StrategyPerformance({
                 return (
                   <tr key={r.via}>
                     <td className="px-4 py-2.5 font-semibold text-slate-700">{NAMES[r.via] ?? r.via}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{r.impressions.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-label="Cards shown" className="px-4 py-2.5 text-right tabular-nums">{r.impressions.toLocaleString()}</td>
+                    <td data-label="Tapped" className="px-4 py-2.5 text-right tabular-nums">
                       {r.clicks} <span className="text-xs text-slate-400">{pct(r.clicks, r.impressions)}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{r.carts}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{r.orders}</td>
-                    <td
+                    <td data-label="Basket" className="px-4 py-2.5 text-right tabular-nums">{r.carts}</td>
+                    <td data-label="Bought" className="px-4 py-2.5 text-right tabular-nums">{r.orders}</td>
+                    <td data-label="Weight"
                       className={`px-4 py-2.5 text-right font-bold tabular-nums ${
                         m > 1 ? "text-emerald-700" : m < 1 ? "text-coral-600" : "text-slate-400"
                       }`}
