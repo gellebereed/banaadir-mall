@@ -88,7 +88,7 @@ export default function ShelfPerformance({
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="table-stack w-full min-w-[640px] text-left text-sm">
           <thead className="border-b border-sand-200 bg-sand-50/70 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Shelf</th>
@@ -114,12 +114,12 @@ export default function ShelfPerformance({
                   <span className="font-semibold text-slate-800">{title(r.surface, r.shelf)}</span>
                   <span className="block text-xs text-slate-400">{SURFACE_NAMES[r.surface] ?? r.surface}</span>
                 </td>
-                <td className="px-3 py-3 text-right tabular-nums">{r.impressions.toLocaleString()}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{r.clicks.toLocaleString()}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{pct(r.clicks, r.impressions)}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{r.carts.toLocaleString()}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{r.orders.toLocaleString()}</td>
-                <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(r.revenue)}</td>
+                <td data-label="Seen" className="px-3 py-3 text-right tabular-nums">{r.impressions.toLocaleString()}</td>
+                <td data-label="Tapped" className="px-3 py-3 text-right tabular-nums">{r.clicks.toLocaleString()}</td>
+                <td data-label="Tap rate" className="px-3 py-3 text-right tabular-nums">{pct(r.clicks, r.impressions)}</td>
+                <td data-label="To basket" className="px-3 py-3 text-right tabular-nums">{r.carts.toLocaleString()}</td>
+                <td data-label="Orders" className="px-3 py-3 text-right tabular-nums">{r.orders.toLocaleString()}</td>
+                <td data-label="Revenue" className="px-4 py-3 text-right font-semibold tabular-nums">{money(r.revenue)}</td>
               </tr>
             ))}
           </tbody>

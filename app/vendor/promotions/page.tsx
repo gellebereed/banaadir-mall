@@ -416,10 +416,15 @@ export default async function VendorPromotionsPage({
                 </p>
                 <p className="text-xs text-slate-400">
                   {targeted === 0
-                    ? "Entire store"
+                    ? promo.includeLabels?.length
+                      ? `Products labelled ${promo.includeLabels.map((l) => `“${l}”`).join(" or ")}`
+                      : "Entire store"
                     : targeted <= 3
                       ? promo.productIds!.map(productName).join(", ")
                       : `${targeted} selected products`}
+                  {promo.excludeLabels?.length
+                    ? ` · not ${promo.excludeLabels.map((l) => `“${l}”`).join(", ")}`
+                    : ""}
                   {promo.startsAt && ` · from ${formatShopTime(promo.startsAt)}`}
                   {promo.endsAt && ` · until ${formatShopTime(promo.endsAt)}`}
                 </p>

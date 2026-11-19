@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { money } from "@/lib/format";
 import ColorPickerControl from "@/components/dashboard/ColorPickerControl";
+import SortablePhotoGrid, { movePhoto } from "@/components/dashboard/SortablePhotoGrid";
 import { checkBarcode } from "@/lib/barcode";
 import { compressImageFile } from "@/lib/image-compress";
 import {
@@ -123,7 +124,7 @@ export default function VariantEditor({
   /*
    * ── Staged photos live IN the variant's image list ───────────────────
    * Each staged file is written into `images` as a placeholder, so it
-   * flows through exactly the same ←/★/✕ controls as a saved photo, and
+   * flows through exactly the same reorder / make-main / ✕ controls as a saved photo, and
    * the server slots the upload into that position. `pending` holds the
    * File and its local preview, keyed by the placeholder.
    */
@@ -321,27 +322,9 @@ export default function VariantEditor({
 
   // ── Photos ────────────────────────────────────────────────────────────
 
-  function moveImage(id: string, index: number, delta: number) {
+  function moveImage(id: string, from: number, to: number) {
     setVariants((prev) =>
-      prev.map((v) => {
-        if (v.id !== id) return v;
-        const images = [...(v.images ?? [])];
-        const target = index + delta;
-        if (target < 0 || target >= images.length) return v;
-        [images[index], images[target]] = [images[target], images[index]];
-        return { ...v, images };
-      }),
-    );
-  }
-
-  function makeImageMain(id: string, index: number) {
-    setVariants((prev) =>
-      prev.map((v) => {
-        if (v.id !== id) return v;
-        const images = [...(v.images ?? [])];
-        const [picked] = images.splice(index, 1);
-        return { ...v, images: [picked, ...images] };
-      }),
+      prev.map((v) => (v.id === id ? { ...v, images: movePhoto(v.images ?? [], from, to) } : v)),
     );
   }
 
@@ -768,78 +751,16 @@ export default function VariantEditor({
                             — shown when a customer picks it; the first is the main one
                           </span>
                         </span>
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          {(v.images ?? []).map((entry, i) => {
+                        <SortablePhotoGrid
+                          compact
+                          photos={(v.images ?? []).map((entry) => {
                             const { src, local } = srcFor(v.id, entry);
-                            return (
-                              <div
-                                key={entry}
-                                className={`group relative h-20 w-20 overflow-hidden rounded-xl border-2 ${
-                                  local
-                                    ? "border-dashed border-emerald-400"
-                                    : i === 0
-                                      ? "border-ocean-500"
-                                      : "border-sand-200"
-                                }`}
-                              >
-                                {local ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={src} alt="New photo preview" className="h-full w-full object-cover" />
-                                ) : (
-                                  <Image src={src} alt="" fill sizes="80px" className="object-cover" />
-                                )}
-                                {i === 0 && (
-                                  <span className="absolute left-0.5 top-0.5 rounded bg-ocean-800/90 px-1 py-0.5 text-[8px] font-bold text-white">
-                                    Main
-                                  </span>
-                                )}
-                                {local && (
-                                  <span className="absolute bottom-5 left-0.5 rounded bg-emerald-600/90 px-1 py-0.5 text-[8px] font-bold text-white">
-                                    New
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => removeImage(v.id, entry)}
-                                  aria-label="Remove variant photo"
-                                  className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] font-bold text-white hover:bg-coral-500"
-                                >
-                                  ✕
-                                </button>
-                                <div className="absolute inset-x-0 bottom-0 flex bg-black/60 text-[10px] font-bold text-white opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
-                                  <button
-                                    type="button"
-                                    onClick={() => moveImage(v.id, i, -1)}
-                                    disabled={i === 0}
-                                    aria-label="Move left"
-                                    className="flex-1 py-0.5 hover:bg-white/20 disabled:opacity-30"
-                                  >
-                                    ←
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => makeImageMain(v.id, i)}
-                                    disabled={i === 0}
-                                    aria-label="Make main"
-                                    className="flex-1 py-0.5 hover:bg-white/20 disabled:opacity-30"
-                                  >
-                                    ★
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => moveImage(v.id, i, 1)}
-                                    disabled={i === (v.images?.length ?? 0) - 1}
-                                    aria-label="Move right"
-                                    className="flex-1 py-0.5 hover:bg-white/20 disabled:opacity-30"
-                                  >
-                                    →
-                                  </button>
-                                </div>
-                              </div>
-                            );
+                            return { key: entry, src, isNew: local };
                           })}
-
-                          <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-sand-200 bg-white text-[11px] font-semibold text-slate-500 transition hover:border-ocean-400 hover:text-ocean-700">
+                          onMove={(from, to) => moveImage(v.id, from, to)}
+                          onRemove={(i) => removeImage(v.id, (v.images ?? [])[i])}
+                          trailing={
+                          <label className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-sand-200 bg-white text-[11px] font-semibold text-slate-500 transition hover:border-ocean-400 hover:text-ocean-700">
                             <span className="text-lg">📸</span>
                             Add
                             <input
@@ -851,7 +772,8 @@ export default function VariantEditor({
                               className="sr-only"
                             />
                           </label>
-                        </div>
+                          }
+                        />
                         {stagedCount > 0 && (
                           <p className="mt-2 text-xs font-semibold text-emerald-600">
                             ✓ {stagedCount} new photo{stagedCount === 1 ? "" : "s"} optimised — they

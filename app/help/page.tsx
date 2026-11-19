@@ -2,17 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { formatWhatsAppNumber, SUPPORT_WHATSAPP_CONFIGURED } from "@/lib/whatsapp";
 
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "ahgbered10@gmail.com";
+
 export const metadata: Metadata = {
   title: "Help & FAQ",
   description:
-    "Paying with EVC Plus, Zaad, eDahab or cash, delivery times across Somalia, returns and tracking your order — answers from Banaadir Mall.",
+    "Paying with EVC Plus, eDahab and other mobile money, delivery times across Somalia, returns and tracking your order — answers from Banaadir Mall.",
   alternates: { canonical: "/help" },
 };
 
 const FAQS = [
   {
     q: "How do I pay for my order?",
-    a: "We accept EVC Plus, Zaad, eDahab, Visa/Mastercard and cash on delivery. For mobile money, you'll get a payment prompt on your phone right after placing the order.",
+    a: "You pay each shop directly with mobile money — EVC Plus, eDahab, Premier Wallet and the others each shop lists at checkout. After you place the order, the confirmation screen and your tracking page show the shop's number (or pay code) and the exact amount; send it, then tap \"I've paid\" so the shop knows. Delivery is paid to the Banaadir Mall driver. We don't take card payments yet.",
   },
   {
     q: "How long does delivery take?",
@@ -24,7 +26,7 @@ const FAQS = [
   },
   {
     q: "How do I track my order?",
-    a: "Use the Track My Order page with the order number we sent you by SMS. You'll see exactly which stage your delivery is at.",
+    a: "Use the Track My Order page with the order number shown when you placed the order (it starts with BM-). You'll see exactly which stage your delivery is at.",
   },
   {
     q: "How do I open my own store?",
@@ -32,7 +34,7 @@ const FAQS = [
   },
   {
     q: "Is my money safe?",
-    a: "Yes. Payments are held by Banaadir Mall and only released to the store after your order is delivered. If something goes wrong, our buyer protection covers you.",
+    a: "Every shop on Banaadir Mall is checked before it can sell. Pay only to the number or pay code shown on your order page, check that your wallet shows the shop's name before you confirm, and tap \"I've paid\" so the shop can see it. If something goes wrong, message us on WhatsApp with your order number and we'll sort it out with the shop.",
   },
 ];
 
@@ -75,12 +77,21 @@ export default function HelpPage() {
                 { icon: "💚", title: "WhatsApp", text: formatWhatsAppNumber(SUPPORT_WHATSAPP_CONFIGURED), sub: "Fastest response" },
               ]
             : []),
-          { icon: "✉️", title: "Email", text: "salaam@banaadirmall.so", sub: "Reply within 24h" },
+          // salaam@banaadirmall.so was never a real inbox. The owner reads
+          // this one daily; NEXT_PUBLIC_SUPPORT_EMAIL can move it to a
+          // company address later without a code change.
+          { icon: "✉️", title: "Email", text: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}`, sub: "Reply within 24h" },
         ].map((c) => (
           <div key={c.title} className="card p-5 text-center">
             <span className="text-3xl">{c.icon}</span>
             <h3 className="mt-2 font-display font-bold text-ocean-950">{c.title}</h3>
-            <p className="mt-1 text-sm font-semibold text-ocean-700">{c.text}</p>
+            {"href" in c && c.href ? (
+              <a href={c.href} className="mt-1 block break-all text-sm font-semibold text-ocean-700 hover:underline">
+                {c.text}
+              </a>
+            ) : (
+              <p className="mt-1 text-sm font-semibold text-ocean-700">{c.text}</p>
+            )}
             <p className="text-xs text-slate-400">{c.sub}</p>
           </div>
         ))}

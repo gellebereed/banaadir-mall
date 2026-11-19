@@ -93,7 +93,7 @@ export default async function InvitePage({
 
         <p className="mt-4 text-xs text-slate-400">
           This link works once. Afterwards, sign in at{" "}
-          <Link href="/login" className="font-semibold text-ocean-700 underline">
+          <Link href="/login?with=email" className="font-semibold text-ocean-700 underline">
             the login page
           </Link>{" "}
           with {employee.email} and{" "}

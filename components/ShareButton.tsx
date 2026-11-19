@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import { useT } from "@/components/prefs/PrefsProvider";
 import { useEffect, useRef, useState } from "react";
 
@@ -42,7 +43,7 @@ export default function ShareButton({
     };
   }, [open]);
 
-  const url = () => `${window.location.origin}${path}`;
+  const url = () => `${PUBLIC_SITE_URL}${path}`;
 
   const share = async () => {
     if (typeof navigator.share === "function") {

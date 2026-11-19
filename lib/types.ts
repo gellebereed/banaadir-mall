@@ -276,6 +276,11 @@ compareAt?: number;
    * those are ignored and re-derived.
    */
   badge?: ProductBadge;
+  /**
+   * The seller's private tags — "Clearance", "Winter 2026". Never shown to
+   * shoppers; promotions use them to pick or skip products (lib/labels.ts).
+   */
+  labels?: string[];
   /** ISO timestamp it was first listed — what "New" is measured from. */
   createdAt?: string;
   /** Set while (and after) the shop sells it ahead of its stock — lib/preorder.ts. */
@@ -606,6 +611,14 @@ export interface Promotion {
    * whole store.
    */
   productIds?: string[];
+  /**
+   * Or: every product carrying any of these labels, re-checked on every
+   * read so newly labelled products join. Used only when productIds is
+   * empty. See promotionCovers() in lib/labels.ts.
+   */
+  includeLabels?: string[];
+  /** Products carrying any of these labels are left out, whatever the scope. */
+  excludeLabels?: string[];
   /**
    * Optional schedule (ISO datetime). Lets a seller queue a promotion for
    * a future date or have it expire by itself, instead of remembering to

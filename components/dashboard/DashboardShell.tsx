@@ -232,7 +232,7 @@ export default function DashboardShell({
         {/* ── Page ──────────────────────────────────────────────────── */}
         {/* A div, not <main>: the root layout's <main> already wraps this. */}
         <div className="min-w-0 flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-7">
-          <div className="mx-auto max-w-6xl">
+          <div className="dash-content mx-auto max-w-6xl">
             {notice}
             {children}
           </div>
@@ -443,7 +443,7 @@ function AccountMenu({ user }: { user: { name: string; email: string; role: stri
           </div>
           <div className="py-1 text-sm">
             <Link href="/account/security" className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-sand-50">
-              <UserCog className="h-4 w-4 text-slate-400" /> Password &amp; email
+              <UserCog className="h-4 w-4 text-slate-400" /> Password &amp; account
             </Link>
             <Link href="/" className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-sand-50">
               <ShoppingBag className="h-4 w-4 text-slate-400" /> Back to the shop

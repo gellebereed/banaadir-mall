@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ChangeEvent } from "react";
 import { loginHref, safeNext } from "@/lib/safe-next";
 import { signUpCustomer, type AuthActionState } from "@/app/auth-actions";
 import RequiredMark from "@/components/RequiredMark";
+import PhoneAuthForm from "@/components/auth/PhoneAuthForm";
+import MethodTabs from "@/components/auth/MethodTabs";
+import { splitPhone } from "@/lib/data/locations";
+import { PHONE_COUNTRIES } from "@/lib/phone-auth";
 
 const INITIAL_STATE: AuthActionState = { error: null };
 
@@ -16,15 +20,38 @@ export default function RegisterPage() {
   // Details the shopper already typed at checkout ("Save this order to an
   // account" on the confirmation screen) — so signing up is one password.
   const [prefill, setPrefill] = useState({ name: "", email: "", phone: "" });
+  // The email form's fields, controlled so a refused sign-up (address
+  // already used, password too short) doesn't wipe everything typed —
+  // React resets a form after its action runs.
+  const [fields, setFields] = useState({ name: "", email: "", phone: "" });
+  const field = (key: keyof typeof fields) => ({
+    value: fields[key],
+    onChange: (e: ChangeEvent<HTMLInputElement>) => setFields((f) => ({ ...f, [key]: e.target.value })),
+  });
+  /*
+   * Sign up with a phone number and an SMS code by default — no email or
+   * password to invent. Email sign-up stays for those who prefer it.
+   */
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setNext(safeNext(params.get("next")) ?? "");
-    setPrefill({
+    const given = {
       name: params.get("name") ?? "",
       email: params.get("email") ?? "",
       phone: params.get("phone") ?? "",
-    });
+    };
+    setPrefill(given);
+    setFields(given);
+    if (params.get("with") === "email") setMethod("email");
+    setReady(true);
   }, []);
+
+  // A number handed over from checkout, split for the country picker.
+  const split = prefill.phone ? splitPhone(prefill.phone) : null;
+  const prefillCountry =
+    PHONE_COUNTRIES.find((c) => c.code === split?.countryCode)?.phoneCode ?? "+252";
 
   return (
     <div className="mx-auto max-w-md px-4 py-14">
@@ -40,6 +67,22 @@ export default function RegisterPage() {
           Keep your orders, saved items and addresses in one place.
         </p>
 
+        <MethodTabs value={method} onChange={setMethod} label="Sign up with" className="mt-6" />
+
+        {method === "phone" ? (
+          <div className="mt-6">
+            {ready && (
+              <PhoneAuthForm
+                mode="signup"
+                next={next || undefined}
+                defaultName={prefill.name}
+                defaultCountry={prefillCountry}
+                defaultNumber={split?.local ?? ""}
+              />
+            )}
+          </div>
+        ) : (
+        <>
         <p className="mt-4 text-xs text-slate-400">
           Fields marked <RequiredMark /> are required.
         </p>
@@ -51,21 +94,21 @@ export default function RegisterPage() {
               Full name
               <RequiredMark />
             </label>
-            <input key={`n${prefill.name}`} defaultValue={prefill.name} id="name" name="name" required placeholder="Ayaan Warsame" className="input" />
+            <input {...field("name")} id="name" name="name" required placeholder="Ayaan Warsame" className="input" />
           </div>
           <div>
             <label htmlFor="email" className="label">
               Email address
               <RequiredMark />
             </label>
-            <input key={`e${prefill.email}`} defaultValue={prefill.email} id="email" name="email" required type="email" placeholder="ayaan@banaadirmall.com" className="input" />
+            <input {...field("email")} id="email" name="email" required type="email" placeholder="ayaan@banaadirmall.com" className="input" />
           </div>
           <div>
             <label htmlFor="phone" className="label">
               Phone number
               <RequiredMark />
             </label>
-            <input key={`p${prefill.phone}`} defaultValue={prefill.phone} id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
+            <input {...field("phone")} id="phone" name="phone" required type="tel" placeholder="+252 61 000 0000" className="input" />
           </div>
           <div>
             <label htmlFor="password" className="label">
@@ -86,12 +129,23 @@ export default function RegisterPage() {
           )}
           <label className="flex items-start gap-2 text-xs text-slate-500">
             <input required type="checkbox" className="mt-0.5 h-4 w-4 accent-ocean-700" />
-            I agree to the Terms of Service and Privacy Policy
+            <span>
+            I agree to the{" "}
+            <Link href="/terms" target="_blank" className="font-semibold text-ocean-700 underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" target="_blank" className="font-semibold text-ocean-700 underline">
+              Privacy Policy
+            </Link>
+          </span>
           </label>
           <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">
             {pending ? "Creating account…" : "Create Account"}
           </button>
         </form>
+        </>
+        )}
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}

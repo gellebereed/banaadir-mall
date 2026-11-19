@@ -57,6 +57,9 @@ Do these in order — step 3 before step 1–2 takes the site offline.
 2. **Check `/api/health`** shows `"serviceRole": true`.
 3. **Run `supabase/migration-lockdown.sql`** in the Supabase SQL editor.
    `/api/health` should then show `"publicKeyCanReadPrivateTables": false`.
+   Then run **`supabase/migration-view-lockdown.sql`**: views are not
+   tables, and without it the public key could edit products and orders
+   through `product_margin` and `courier_workload`.
 4. **Run `npm run migrate:owners`** (with the service key in `.env.local`),
    read the list, then `npm run migrate:owners -- --apply`. Without this,
    sellers whose ownership was only recorded the old way sign in as
@@ -162,6 +165,16 @@ page (`/store/<store>?c=<collection>`). A product can be in any number of
 them; the marketplace category tree is untouched, which is the point: a
 store can group however it likes without adding categories every other
 store would see. Run **`supabase/migration-store-collections.sql`** once.
+
+### Product labels
+
+A seller's **private** tags on a product — "Clearance", "Winter 2026" —
+set in the product editor or in bulk from the product list (which can also
+filter by label). Shoppers never see them; the card badge stays automatic
+(`lib/badges.ts`). A promotion can run on every product with a label, or
+leave labelled products out of a store-wide sale, and keeps the rule so
+products labelled later join by themselves (`lib/labels.ts`). Run
+**`supabase/migration-product-labels.sql`** once.
 
 ## Search, navigation, tracking & reviews
 
@@ -295,16 +308,17 @@ admin), `payout_accounts` (where each store wants to be paid) and
 Sent by Supabase Auth — no code changes needed, only settings:
 
 1. **Supabase → Authentication → URL Configuration:** set *Site URL* to your
-   live address and add `https://<your-site>/api/auth/**` to *Redirect URLs*.
+   live address with no path — `https://www.banaadirmall.com` — and add
+   `https://www.banaadirmall.com/**` to *Redirect URLs* (the `**`
+   pattern belongs only there; in *Site URL* it breaks every email link).
 2. **Supabase → Authentication → SMTP Settings:** connect a mail service
    (e.g. Resend, Brevo, SendGrid). Supabase's built-in sender only delivers
    to your own team members' addresses and a few emails an hour — real
    customers and sellers would never receive their links.
-3. *(Recommended)* **Authentication → Email Templates**, so links work even
-   when opened in a different app or browser than the one that asked:
-   - Reset Password: `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}`
-   - Change Email Address:
-     `{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=email_change&next=/account/security?email=confirmed`
+3. *(Recommended)* **Authentication → Email Templates:** paste the branded
+   templates in `supabase/email-templates/` (subjects are listed in its
+   README). Their links work even when opened in a different app or browser
+   than the one that asked, and confirming a sign-up signs the customer in.
 
 Everyone manages their own login at `/account/security` (linked from the
 account menu and both dashboards). Staff and the admin can change their

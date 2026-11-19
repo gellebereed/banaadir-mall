@@ -64,6 +64,48 @@ export function suggestCategoryByWords(
 }
 
 /**
+ * A product being filed onto a department (or a group like "Boys") rather
+ * than a shelf: the shelf beneath it that its name points at.
+ *
+ * ── Why ──────────────────────────────────────────────────────────────────
+ * U.S. Polo's file groups by gender — Boys, Man, Woman — so the seller
+ * mapped those groupings onto Kids & Baby, Men's and Women's Fashion. Every
+ * product then sat on the bare department: the department menu lists only
+ * the shelves under it, so 238 products appeared under none of them, and
+ * Kids showed nothing but baby bedding. The mapping is remembered, so the
+ * next file would have done the same.
+ *
+ * The department is still the right HINT — it is what keeps "Boys' T-Shirt"
+ * out of Men's T-Shirts — so the search is confined to what lies beneath
+ * it. No confident match leaves the product where the seller put it.
+ */
+export function narrowToShelf(
+  name: string,
+  description: string,
+  targetSlug: string,
+  categories: Category[],
+): string {
+  const childrenOf = new Map<string, string[]>();
+  for (const c of categories) {
+    if (c.parentSlug) childrenOf.set(c.parentSlug, [...(childrenOf.get(c.parentSlug) ?? []), c.slug]);
+  }
+  if (!childrenOf.get(targetSlug)?.length) return targetSlug;
+
+  const below = new Set<string>();
+  const queue = [...(childrenOf.get(targetSlug) ?? [])];
+  while (queue.length > 0) {
+    const slug = queue.shift()!;
+    if (below.has(slug)) continue;
+    below.add(slug);
+    queue.push(...(childrenOf.get(slug) ?? []));
+  }
+
+  const options = choices(categories).filter((c) => below.has(c.slug));
+  const match = categoryByWords(name.slice(0, 200), description.slice(0, 1500), options, categories);
+  return match?.slug ?? targetSlug;
+}
+
+/**
  * For a group of products (a supplier's grouping): each product's name is
  * matched on its own and they vote. A grouping's NAME is often a code
  * ("GRP-COOK-01", "MISC 77") — the products are the real evidence.

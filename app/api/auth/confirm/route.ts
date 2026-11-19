@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { signInConfirmedUser } from "@/lib/email-signin";
 
 /**
  * Landing point for Supabase email links built with {{ .TokenHash }} —
- * the email-change confirmation in particular (see README → Email
- * templates). Unlike the default links, these work even when the email is
- * opened in a different browser or app than the one that asked for it.
+ * sign-up confirmation and email-change confirmation (see README → Account
+ * emails, and supabase/email-templates/). Unlike the default links, these
+ * work even when the email is opened in a different browser or app than
+ * the one that asked for it.
+ *
+ * A sign-up confirmation also signs the new customer in, so the link takes
+ * them straight to their account instead of a login form.
  *
  * Only same-site paths are accepted for `next`, so the link can't be
  * turned into a redirect to somewhere else.
@@ -20,8 +25,16 @@ export async function GET(request: Request) {
 
   if (tokenHash && type) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
-    if (!error) return NextResponse.redirect(`${origin}${next}`);
+    const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+    if (!error) {
+      // A confirmed new email (email_change) signs in as it too: for an
+      // account that only had a phone, that is the moment it gains one.
+      if (type === "signup" || type === "email" || type === "email_change") {
+        const signedIn = await signInConfirmedUser(data.user);
+        if (!signedIn) return NextResponse.redirect(`${origin}/login?with=email&confirmed=1`);
+      }
+      return NextResponse.redirect(`${origin}${next}`);
+    }
   }
   return NextResponse.redirect(`${origin}/login?error=link_expired`);
 }

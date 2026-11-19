@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -77,7 +78,7 @@ function SharePanel({
   const [origin, setOrigin] = useState("");
 
   useEffect(() => {
-    setOrigin(window.location.origin);
+    setOrigin(PUBLIC_SITE_URL);
     setCanNativeShare(typeof navigator.share === "function");
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);

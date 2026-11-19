@@ -173,6 +173,101 @@ body {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+/*
+ * ── DASHBOARD COLUMNS NEVER OUTGROW THE PHONE ────────────────────────
+ * A grid with no column template on phones (`grid gap-4 xl:grid-cols-2`)
+ * gets one `auto` column, and an auto column grows to fit the widest
+ * thing inside it. One long product name in a "Best-selling products"
+ * list was enough to make that column wider than the screen, and the
+ * whole admin home then dragged left and right under the owner's thumb.
+ * Letting every grid child shrink (`min-width: 0`) keeps the column at
+ * the screen's width and lets `truncate` do its job with "…".
+ * In a layer so a utility such as `min-w-[240px]` on a child still wins.
+ */
+@layer components {
+  .dash-content .grid > * {
+    min-width: 0;
+  }
+}
+
+/*
+ * ── TABLES BECOME CARDS ON PHONES ────────────────────────────────────
+ * A desktop table squeezed into a phone showed two of its eight columns;
+ * the rest — status, totals, the approve button — sat off to the right
+ * in a box you had to swipe inside, and read as "something is missing".
+ * Below 640px a `.table-stack` table drops its header and shows each row
+ * as a block, every cell on its own line with its column name (the
+ * cell's `data-label`) on the left. A cell without a label is the row's
+ * heading and spans the full width. Tablets and computers keep the table.
+ */
+@layer components {
+  @media (max-width: 639px) {
+    .table-stack {
+      min-width: 0 !important;
+    }
+    /* !important: some of these headers are `sticky`, a utility that
+       would otherwise win and keep the hidden header taking up width. */
+    .table-stack thead {
+      position: absolute !important;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .table-stack,
+    .table-stack tbody,
+    .table-stack tr,
+    .table-stack td {
+      display: block;
+      width: 100%;
+    }
+    .table-stack tr {
+      padding-top: 0.625rem;
+      padding-bottom: 0.625rem;
+    }
+    .table-stack td {
+      max-width: none !important;
+      padding: 0.25rem 1rem !important;
+      text-align: left !important;
+    }
+    .table-stack td[data-label] {
+      display: grid;
+      grid-template-columns: 6.5rem minmax(0, 1fr);
+      column-gap: 0.75rem;
+      align-items: start;
+      justify-items: start;
+    }
+    .table-stack td[data-label]::before {
+      content: attr(data-label);
+      grid-column: 1;
+      grid-row: 1 / span 12;
+      padding-top: 0.125rem;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.025em;
+      text-transform: uppercase;
+      color: var(--color-slate-400);
+    }
+    .table-stack td[data-label] > * {
+      grid-column: 2;
+    }
+    /* Button rows were right-aligned for the table's last column; in a
+       card they would slide under the label, so start them on the left
+       and let them wrap. */
+    .table-stack td .justify-end {
+      justify-content: flex-start !important;
+      flex-wrap: wrap;
+    }
+    .table-stack td[data-label=""]::before {
+      content: none;
+    }
+    .table-stack td[data-label=""] {
+      display: block;
+    }
+  }
+}
+
 /* ── Reusable component classes ───────────────────────────────────── */
 
 /* Primary action button (mango) */

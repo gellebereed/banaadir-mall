@@ -66,7 +66,8 @@ CREATE INDEX IF NOT EXISTS products_supplier_invoice_idx
 -- the margin the current selling price actually earns — the check that
 -- catches a markup applied to the wrong category before a season's worth
 -- of stock has been sold at it.
-CREATE OR REPLACE VIEW public.product_margin AS
+CREATE OR REPLACE VIEW public.product_margin
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   p.slug,
@@ -95,8 +96,10 @@ COMMENT ON VIEW public.product_margin IS
   'Cost, price and margin per product. Sellers and admins only — this view '
   'is deliberately NOT granted to anon.';
 
--- Storefront visitors must never reach cost data, so `anon` is left out.
-GRANT SELECT ON public.product_margin TO authenticated;
+-- Storefront visitors must never reach cost data. Supabase's default
+-- privileges grant ALL on new views to anon/authenticated, so take it back;
+-- the server reads this view with the service role key.
+REVOKE ALL ON public.product_margin FROM anon, authenticated;
 
 -- ── 4. VERIFY ───────────────────────────────────────────────────────────
 SELECT 'Supplier import migration completed.' AS result;

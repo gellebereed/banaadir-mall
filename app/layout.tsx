@@ -21,6 +21,7 @@ import InvitationBanner from "@/components/layout/InvitationBanner";
 import BottomNav from "@/components/layout/BottomNav";
 import ScrollToTop from "@/components/ScrollToTop";
 import NavigationProgress from "@/components/layout/NavigationProgress";
+import StaleDeployGuard from "@/components/layout/StaleDeployGuard";
 import Toaster from "@/components/Toaster";
 import { isIndexableDeploy, siteOrigin } from "@/lib/request-origin";
 import { previewImages, SITE_CARD } from "@/lib/seo";
@@ -30,7 +31,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 const SITE_DESCRIPTION =
-  "Discover your next favourite from local Somali stores. Shop fashion, electronics, beauty and home — with EVC Plus, Zaad or cash on delivery.";
+  "Discover your next favourite from local Somali stores. Shop fashion, electronics, beauty and home — pay with EVC Plus, eDahab or Premier Wallet.";
 
 /*
  * Link previews. A product link pasted into WhatsApp showed a bare URL:
@@ -59,8 +60,8 @@ export async function generateMetadata(): Promise<Metadata> {
       "Mogadishu online store",
       "Somali marketplace",
       "EVC Plus",
-      "Zaad",
-      "cash on delivery",
+      "eDahab",
+      "Premier Wallet",
     ],
     // Deploy previews stay out of search; production is open.
     ...(isIndexableDeploy() ? {} : { robots: { index: false, follow: false } }),
@@ -159,6 +160,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <ScrollToTop />
             <NavigationProgress />
+            <StaleDeployGuard />
           </Suspense>
           {onStoreSite ? (
             <StoreSiteHeader store={siteStore!} />

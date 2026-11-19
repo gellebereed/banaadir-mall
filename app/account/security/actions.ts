@@ -22,6 +22,7 @@
  */
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   accountsEnabled,
   findAuthUser,
@@ -31,10 +32,11 @@ import {
 } from "@/lib/accounts";
 import { clientIp, recordSignInFailure, recordSignInSuccess, signInBlockedFor } from "@/lib/rate-limit";
 import { requestOrigin } from "@/lib/request-origin";
-import { getSession, setSessionCookie } from "@/lib/session";
-import { getServiceClient } from "@/lib/supabase/service";
+import { clearSessionCookie, getSession, setSessionCookie } from "@/lib/session";
+import { getServiceClient, hasServiceRole } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/storage";
+import { isPhoneLoginEmail } from "@/lib/phone-auth";
 
 export interface SecurityState {
   ok?: string;
@@ -54,7 +56,11 @@ async function proveCurrentPassword(password: string) {
   if (wait > 0) return { error: `Too many wrong passwords. Try again in ${wait} minutes.` } as const;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email: session.email, password });
+  // Phone sign-ups have a stand-in email Supabase has never heard of; their
+  // Supabase login is the number itself.
+  const { error } = isPhoneLoginEmail(session.email)
+    ? await supabase.auth.signInWithPassword({ phone: session.phone ?? "", password })
+    : await supabase.auth.signInWithPassword({ email: session.email, password });
   if (error) {
     recordSignInFailure(session.email, ip);
     return { error: "Your current password isn't right." } as const;
@@ -83,6 +89,10 @@ export async function changePassword(_prev: SecurityState, formData: FormData): 
 export async function changeEmail(_prev: SecurityState, formData: FormData): Promise<SecurityState> {
   const session = await getSession();
   if (!session) return { error: "Please sign in again." };
+  // A phone sign-up adding its first email. Its earlier orders (keyed on
+  // the number's stand-in address) stay linked through the verified
+  // number — see orderBelongsTo.
+  const adding = isPhoneLoginEmail(session.email);
   if (session.access || session.role === "admin") {
     return {
       error:
@@ -95,6 +105,9 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
   const email = String(formData.get("newEmail") ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
   if (email === session.email) return { error: "That's already your email." };
+  if (accountsEnabled() && (await findAuthUser(email))) {
+    return { error: "This email is already registered to another account." };
+  }
   if (email !== String(formData.get("confirmEmail") ?? "").trim().toLowerCase()) {
     return { error: "The two email addresses don't match." };
   }
@@ -135,8 +148,13 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
   if (error) {
     return {
       error: /already|registered|exists/i.test(error.message)
-        ? "Another account already uses that email."
+        ? "This email is already registered to another account."
         : error.message,
+    };
+  }
+  if (adding) {
+    return {
+      ok: `Almost done — we've emailed a confirmation link to ${email}. Open it and your email is added: you can then sign in with it or with your number, using the same password.`,
     };
   }
   return {
@@ -144,4 +162,170 @@ export async function changeEmail(_prev: SecurityState, formData: FormData): Pro
       " (Supabase may also ask you to confirm from your current address)"
     }. Until then, keep signing in with ${session.email}.`,
   };
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  DELETE MY ACCOUNT — a shopper closing their own account.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Before this there was no way to leave: Apple and Google both refuse apps
+ * whose users can't delete their account from inside the app, and a
+ * shopper who asked had to message the owner.
+ *
+ * What goes, and what stays:
+ *   · the login itself (the Supabase user) — the email or number can sign
+ *     up again afterwards as a brand-new account;
+ *   · saved recommendations and "tell me when it's back" alerts;
+ *   · past ORDERS stay, because the shops that fulfilled them need the
+ *     record for their books and for returns — but they are cut loose from
+ *     the address (`orders.email` is replaced), so a later sign-up with the
+ *     same email or number does not inherit that history or its rewards.
+ *
+ * Shoppers only. A store owner's login is attached to a store, staff to a
+ * team and the admin to configuration; deleting those from here would
+ * orphan a shop, so they are pointed at the person who can do it properly.
+ *
+ * Refused while an order is still on its way: the shop must still be able
+ * to reach the customer about it, and the customer to track it.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export async function deleteAccount(_prev: SecurityState, formData: FormData): Promise<SecurityState> {
+  const session = await getSession();
+  if (!session) return { error: "Please sign in again." };
+  if (session.role !== "customer" || session.access) {
+    return {
+      error:
+        "Store, team and admin logins can't be deleted from here. Please contact Banaadir Mall support and we'll close it for you.",
+    };
+  }
+  if (String(formData.get("confirmText") ?? "").trim().toUpperCase() !== "DELETE") {
+    return { error: "Type DELETE in the box to confirm." };
+  }
+
+  const { getOrders } = await import("@/lib/api");
+  const { orderBelongsTo } = await import("@/lib/order-utils");
+  const mine = (await getOrders()).filter((o) => orderBelongsTo(o, session));
+  const open = mine.filter((o) => o.status !== "delivered" && o.status !== "cancelled");
+  if (open.length > 0) {
+    return {
+      error: `You have ${open.length} order${open.length === 1 ? "" : "s"} still on the way. You can delete your account once ${
+        open.length === 1 ? "it has" : "they have"
+      } been delivered or cancelled.`,
+    };
+  }
+
+  const proof = await proveCurrentPassword(String(formData.get("currentPassword") ?? ""));
+  if ("error" in proof) return { error: proof.error };
+  if (!hasServiceRole()) {
+    return { error: "Account deletion isn't available right now. Please contact support." };
+  }
+
+  const { data: me } = await proof.supabase.auth.getUser();
+  if (!me.user) return { error: "Please sign in again." };
+
+  const db = getServiceClient();
+  // Order history first: if anything below fails, the worst case is an
+  // account that still exists, never a deleted login whose orders a new
+  // sign-up with the same address would inherit.
+  if (mine.length > 0) {
+    const detached = `deleted-${me.user.id}@deleted.banaadirmall.com`;
+    const { error } = await db.from("orders").update({ email: detached }).in(
+      "id",
+      mine.map((o) => o.id),
+    );
+    if (error) {
+      console.error("[Account] delete: could not detach orders:", error.message);
+      return { error: "Something went wrong. Your account was not deleted — please try again." };
+    }
+  }
+
+  const { deleteSyncedProfile } = await import("@/lib/reco/sync");
+  await deleteSyncedProfile(session.email).catch((err) => console.warn("[Account] delete: reco", err));
+  {
+    const { error } = await db.from("product_alerts").delete().eq("email", session.email.trim().toLowerCase());
+    if (error) console.warn("[Account] delete: alerts", error.message);
+  }
+
+  const { error } = await db.auth.admin.deleteUser(me.user.id);
+  if (error) {
+    console.error("[Account] delete: auth user:", error.message);
+    return { error: "Something went wrong. Please try again, or contact support." };
+  }
+
+  await proof.supabase.auth.signOut().catch(() => {});
+  await clearSessionCookie();
+  redirect("/goodbye");
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  ADD A PHONE NUMBER — so an email account can also sign in by phone.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Two steps, like sign-up: the current password proves it's them and the
+ * number is sent a 6-digit code; the code proves the number is theirs.
+ * Supabase stores it as the account's phone, so "number + password" then
+ * signs in to this same account, and "Forgot password" works by SMS too.
+ *
+ * One number, one account: a number another account has proved is
+ * refused, before any SMS is spent.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export interface PhoneStepState extends SecurityState {
+  /** Set once a code has gone out: the number, in +E.164. */
+  phone?: string;
+  done?: boolean;
+}
+
+export async function addPhone(_prev: PhoneStepState, formData: FormData): Promise<PhoneStepState> {
+  const session = await getSession();
+  if (!session) return { error: "Please sign in again." };
+  const intent = String(formData.get("intent") ?? "send");
+
+  if (intent === "verify") {
+    const phone = String(formData.get("phone") ?? "");
+    const token = String(formData.get("code") ?? "").replace(/\D/g, "");
+    if (!/^\+\d{8,15}$/.test(phone) || token.length < 4) {
+      return { phone, error: "Enter the 6-digit code from the SMS." };
+    }
+    const supabase = await createClient();
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: "phone_change" });
+    if (error) {
+      console.warn("[AddPhone] verify:", error.code, error.message);
+      return { phone, error: "That code is wrong or has expired. Check the SMS, or send a new code." };
+    }
+    await setSessionCookie({ ...session, verifiedPhone: phone, phone });
+    return {
+      done: true,
+      ok: `Your number ${phone} is added. You can now sign in with it or with your email, using the same password.`,
+    };
+  }
+
+  const { toE164 } = await import("@/lib/phone-auth");
+  const phone = toE164(String(formData.get("countryCode") ?? "+252"), String(formData.get("phone") ?? ""));
+  if (!phone) return { error: "Please enter a valid mobile number." };
+  if (session.verifiedPhone === phone) return { error: "That's already your number." };
+
+  if (accountsEnabled()) {
+    const { findAuthUserByPhone } = await import("@/lib/accounts");
+    if (await findAuthUserByPhone(phone)) {
+      return { error: "This number is already registered to another account." };
+    }
+  }
+
+  const proof = await proveCurrentPassword(String(formData.get("currentPassword") ?? ""));
+  if ("error" in proof) return { error: proof.error };
+
+  const { error } = await proof.supabase.auth.updateUser({ phone });
+  if (error) {
+    console.warn("[AddPhone] send:", error.code, error.status, error.message);
+    const text = `${error.code ?? ""} ${error.message}`.toLowerCase();
+    return {
+      error: /exists|already|registered/.test(text)
+        ? "This number is already registered to another account."
+        : /rate|429/.test(text) || error.status === 429
+          ? "Too many codes requested. Please wait a minute and try again."
+          : "We couldn't send the SMS to this number. Check it and try again.",
+    };
+  }
+  return { phone, ok: `We sent a 6-digit code by SMS to ${phone}.` };
 }

@@ -19,23 +19,47 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { signIn, type SignInState } from "@/app/auth-actions";
 import { loginHref, safeNext } from "@/lib/safe-next";
+import PhonePasswordLogin from "@/components/auth/PhonePasswordLogin";
+import MethodTabs from "@/components/auth/MethodTabs";
 
 const INITIAL_STATE: SignInState = { error: null };
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  /*
+   * Controlled, because React resets a form after its action runs: a
+   * wrong password used to wipe the email too, and the shopper had to type
+   * it all again (found in the launch test, 17 Nov 2026).
+   */
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  /*
+   * Phone first: most shoppers here have a phone number long before they
+   * have an email they check. Email stays one tap away for every account
+   * made before phone sign-in, and for sellers, staff and the admin.
+   * `?with=email` opens on email (links from seller pages use it).
+   */
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  // `?reset=1` (from the account page) opens straight on "set a password".
+  const [reset, setReset] = useState(false);
   const [state, formAction, pending] = useActionState(signIn, INITIAL_STATE);
   // Where to return after signing in (?next=, checked by safeNext). Read
   // after mount: useSearchParams would make this page need a Suspense shell.
   const [next, setNext] = useState("");
   useEffect(() => {
-    setNext(safeNext(new URLSearchParams(window.location.search).get("next")) ?? "");
+    const params = new URLSearchParams(window.location.search);
+    setNext(safeNext(params.get("next")) ?? "");
+    const back = params.get("next") ?? "";
+    if (params.get("reset") === "1") setReset(true);
+    if (params.get("with") === "email" || back.startsWith("/vendor") || back.startsWith("/admin")) {
+      setMethod("email");
+    }
   }, []);
 
   return (
     <div className="grid min-h-[calc(100vh-13rem)] lg:grid-cols-2">
       {/* ── The form ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center px-4 py-12 sm:px-8">
+      <div className="flex min-w-0 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-ocean-950">
             Welcome back
@@ -45,7 +69,14 @@ export default function LoginPage() {
             where you left off.
           </p>
 
-          <form action={formAction} className="mt-8 space-y-4">
+          <MethodTabs value={method} onChange={setMethod} label="Sign in with" className="mt-8" />
+
+          {method === "phone" ? (
+            <div className="mt-6">
+              <PhonePasswordLogin key={String(reset)} next={next || undefined} startInReset={reset} />
+            </div>
+          ) : (
+          <form action={formAction} className="mt-6 space-y-4">
             {next && <input type="hidden" name="next" value={next} />}
             <div>
               <label htmlFor="email" className="label">
@@ -58,6 +89,8 @@ export default function LoginPage() {
                 required
                 autoComplete="email"
                 autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="input"
               />
@@ -82,6 +115,8 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 required
                 autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input"
               />
@@ -105,13 +140,14 @@ export default function LoginPage() {
             </button>
             <p className="text-center text-sm">
               <Link
-                href="/forgot-password"
+                href="/forgot-password?with=email"
                 className="font-semibold text-ocean-700 transition hover:text-mango-600"
               >
                 Forgot your password?
               </Link>
             </p>
           </form>
+          )}
 
           <p className="mt-6 text-center text-sm text-slate-500">
             New to Banaadir Mall?{" "}
@@ -176,7 +212,7 @@ export default function LoginPage() {
           </ul>
 
           <div className="mt-10 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-ocean-100/70">
-            {["EVC Plus", "Zaad", "eDahab", "Cash on delivery"].map((method) => (
+            {["EVC Plus", "eDahab", "Premier Wallet"].map((method) => (
               <span key={method} className="rounded-full bg-white/10 px-2.5 py-1">
                 {method}
               </span>

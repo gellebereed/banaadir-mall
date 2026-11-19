@@ -15,8 +15,8 @@ import type { MarketingCopyField, MarketingSettings } from "./types";
  */
 const SHIPPED: Record<MarketingCopyField, { en: string; so: string }> = {
   announcement: {
-    en: "Free delivery in Mogadishu on orders over $25 · Pay with EVC Plus, Zaad & eDahab",
-    so: "Keenis bilaash ah Muqdisho dalabyada ka badan $25 · Ku bixi EVC Plus, Zaad & eDahab",
+    en: "Free delivery in Mogadishu on orders over $25 · Pay with EVC Plus, eDahab & Premier Wallet",
+    so: "Keenis bilaash ah Muqdisho dalabyada ka badan $25 · Ku bixi EVC Plus, eDahab & Premier Wallet",
   },
   heroBadge: {
     en: "🇸🇴 Proudly Somali · 8 categories · Trusted local stores",
@@ -25,8 +25,8 @@ const SHIPPED: Record<MarketingCopyField, { en: string; so: string }> = {
   heroTitleTop: { en: "The whole market,", so: "Suuqa oo dhan," },
   heroTitleHighlight: { en: "in your pocket.", so: "jeebkaaga ayuu ku jiraa." },
   heroSubtitle: {
-    en: "Shop electronics, fashion, beauty and more from Somalia's best stores. Pay with EVC Plus, Zaad, eDahab or cash on delivery.",
-    so: "Ka iibso elektaroonig, dhar, qurxin iyo wax ka badan dukaamada ugu fiican Soomaaliya. Ku bixi EVC Plus, Zaad, eDahab ama lacag caddaan ah marka laguu keeno.",
+    en: "Shop electronics, fashion, beauty and more from Somalia's best stores. Pay with EVC Plus, eDahab or Premier Wallet.",
+    so: "Ka iibso elektaroonig, dhar, qurxin iyo wax ka badan dukaamada ugu fiican Soomaaliya. Ku bixi EVC Plus, eDahab ama Premier Wallet.",
   },
 };
 

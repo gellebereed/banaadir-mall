@@ -116,10 +116,17 @@ export async function upsertProductWithError(
     // Same rule: only a product that IS a pre-order writes the column, so
     // an import never clears one and a database without it is untouched.
     if (product.preorder !== undefined) row.preorder = product.preorder;
+    // And again: an import builds products without labels.
+    if (product.labels !== undefined) row.labels = product.labels;
 
     let { error } = await supabase.from("products").upsert(row, { onConflict: "id" });
 
     if (error && isMissingPreorderColumn(error)) throw new PreorderColumnError();
+    if (error && isMissingLabelsColumn(error)) {
+      if (product.labels?.length) throw new LabelsColumnError();
+      delete row.labels;
+      ({ error } = await supabase.from("products").upsert(row, { onConflict: "id" }));
+    }
 
     if (error && isMissingAttributesColumn(error)) {
       delete row.attributes;
@@ -144,7 +151,11 @@ export async function upsertProductWithError(
   } catch (err) {
     // A duplicate code is the seller's to fix — let the message reach them
     // instead of being flattened into "could not save".
-    if (err instanceof CatalogCodeError || err instanceof PreorderColumnError) throw err;
+    if (
+      err instanceof CatalogCodeError ||
+      err instanceof PreorderColumnError ||
+      err instanceof LabelsColumnError
+    ) throw err;
     console.error("[Supabase Mutations] upsertProduct exception:", err);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -252,6 +263,27 @@ export class PreorderColumnError extends Error {
     );
     this.name = "PreorderColumnError";
   }
+}
+
+/**
+ * products.labels or promotions.include_labels/exclude_labels
+ * (migration-product-labels.sql) is missing.
+ *
+ * Not quietly dropped either: a promotion meant for "Clearance" saved
+ * without its label rule would discount the WHOLE store.
+ */
+export class LabelsColumnError extends Error {
+  constructor() {
+    super(
+      "Labels need one database update first: run supabase/migration-product-labels.sql " +
+        "in the Supabase SQL editor, then save again. Nothing was changed.",
+    );
+    this.name = "LabelsColumnError";
+  }
+}
+
+function isMissingLabelsColumn(error: { code?: string; message?: string }): boolean {
+  return isMissingColumnError(error) && /labels/.test(error.message ?? "");
 }
 
 function isMissingPreorderColumn(error: { code?: string; message?: string }): boolean {
@@ -375,6 +407,7 @@ export async function updateProductFields(
     // explicit undefined and has to clear the column.
     const touchesPreorder = "preorder" in fields;
     if (touchesPreorder) row.preorder = fields.preorder ?? null;
+    if (fields.labels !== undefined) row.labels = fields.labels;
 
     if (Object.keys(row).length === 0) return true;
 
@@ -400,6 +433,13 @@ export async function updateProductFields(
       // must not be dropped silently (see PreorderColumnError).
       if (fields.preorder) throw new PreorderColumnError();
       delete row.preorder;
+      if (Object.keys(row).length === 0) return true;
+      ({ data, error } = await runUpdate(row));
+    }
+
+    if (error && "labels" in row && isMissingLabelsColumn(error)) {
+      if (fields.labels?.length) throw new LabelsColumnError();
+      delete row.labels;
       if (Object.keys(row).length === 0) return true;
       ({ data, error } = await runUpdate(row));
     }
@@ -433,7 +473,11 @@ export async function updateProductFields(
     }
     return true;
   } catch (err) {
-    if (err instanceof CatalogCodeError || err instanceof PreorderColumnError) throw err;
+    if (
+      err instanceof CatalogCodeError ||
+      err instanceof PreorderColumnError ||
+      err instanceof LabelsColumnError
+    ) throw err;
     console.error("[Supabase Mutations] updateProductFields exception:", err);
     return false;
   }
@@ -888,6 +932,15 @@ export async function deleteFlashRequestFromSupabase(id: string): Promise<FlashW
 // ── Promotions ─────────────────────────────────────────────────────────
 // Actual columns: id, store, name, pct, code, active, product_ids, created_at
 
+/** migration-product-labels.sql. Empty lists are written as [] so an edit can clear them. */
+function promotionLabelColumns(promo: Promotion): Record<string, unknown> {
+  return { include_labels: promo.includeLabels ?? [], exclude_labels: promo.excludeLabels ?? [] };
+}
+
+function usesLabels(promo: Promotion): boolean {
+  return Boolean(promo.includeLabels?.length || promo.excludeLabels?.length);
+}
+
 export async function insertPromotion(promo: Promotion): Promise<boolean> {
   if (!useSupabaseMutations()) return false;
   try {
@@ -901,9 +954,16 @@ export async function insertPromotion(promo: Promotion): Promise<boolean> {
       product_ids: promo.productIds ?? [],
       starts_at: promo.startsAt ?? null,
       ends_at: promo.endsAt ?? null,
+      ...promotionLabelColumns(promo),
     };
 
     let { error } = await supabase.from("promotions").insert(row);
+    if (error && isMissingLabelsColumn(error)) {
+      if (usesLabels(promo)) throw new LabelsColumnError();
+      delete row.include_labels;
+      delete row.exclude_labels;
+      ({ error } = await supabase.from("promotions").insert(row));
+    }
 
     // The schedule columns arrived later — retry without them so creating a
     // promotion still works on a database that hasn't been migrated.
@@ -923,6 +983,7 @@ export async function insertPromotion(promo: Promotion): Promise<boolean> {
     }
     return true;
   } catch (err) {
+    if (err instanceof LabelsColumnError) throw err;
     console.error("[Supabase Mutations] insertPromotion exception:", err);
     return false;
   }
@@ -961,8 +1022,15 @@ export async function updatePromotionInSupabase(promo: Promotion): Promise<boole
       product_ids: promo.productIds ?? [],
       starts_at: promo.startsAt ?? null,
       ends_at: promo.endsAt ?? null,
+      ...promotionLabelColumns(promo),
     };
     let { error } = await supabase.from("promotions").update(row).eq("id", promo.id);
+    if (error && isMissingLabelsColumn(error)) {
+      if (usesLabels(promo)) throw new LabelsColumnError();
+      delete row.include_labels;
+      delete row.exclude_labels;
+      ({ error } = await supabase.from("promotions").update(row).eq("id", promo.id));
+    }
     if (error && isMissingColumnError(error)) {
       delete row.starts_at;
       delete row.ends_at;
@@ -974,6 +1042,7 @@ export async function updatePromotionInSupabase(promo: Promotion): Promise<boole
     }
     return true;
   } catch (err) {
+    if (err instanceof LabelsColumnError) throw err;
     console.error("[Supabase Mutations] updatePromotion exception:", err);
     return false;
   }

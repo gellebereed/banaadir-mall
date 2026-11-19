@@ -28,7 +28,7 @@ function columns(session: Session | null, t: T) {
           ]
         : [
             { label: t("footer.openStore"), href: "/sell" },
-            { label: t("footer.sellerSignIn"), href: "/login" },
+            { label: t("footer.sellerSignIn"), href: "/login?with=email" },
           ];
 
   return [
@@ -48,6 +48,8 @@ function columns(session: Session | null, t: T) {
         { label: t("footer.track"), href: "/track" },
         { label: t("footer.faq"), href: "/help" },
         { label: session ? t("footer.myAccount") : t("nav.signIn"), href: session ? "/account" : "/login" },
+        { label: t("footer.terms"), href: "/terms" },
+        { label: t("footer.privacy"), href: "/privacy" },
       ],
     },
   ];
@@ -175,7 +177,7 @@ export default async function Footer({ session }: { session: Session | null }) {
             © 2026 Banaadir Mall. {t("footer.rights")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {["EVC Plus", "Zaad", "eDahab", "Visa", "Mastercard", "Cash on Delivery"].map(
+            {["EVC Plus", "eDahab", "Premier Wallet", "eBesa"].map(
               (m) => (
                 <span
                   key={m}

@@ -57,6 +57,7 @@ import { markInviteAccepted, sessionForEmployee } from "./employees";
 import { createClient } from "./supabase/server";
 import { getServiceClient, hasServiceRole } from "./supabase/service";
 import { isSupabaseConfigured } from "./supabase/storage";
+import { isPhoneLoginEmail, phoneLoginEmail } from "./phone-auth";
 
 /** Shortest password the admin page or the reset page will accept. */
 export const MIN_PASSWORD_LENGTH = 8;
@@ -133,6 +134,27 @@ function storeOfAuthUser(user: User | null): string | undefined {
  * store application, and a customer is what is left.
  */
 export async function resolveSession(email: string, authUser: User | null): Promise<ResolveResult> {
+  const result = await resolveSessionFor(email, authUser);
+  const verified = verifiedPhoneOf(authUser);
+  if ("error" in result || !verified) return result;
+  return { session: { ...result.session, verifiedPhone: verified, phone: result.session.phone ?? verified } };
+}
+
+/** The account's SMS-verified number, as +E.164, if it has one. */
+export function verifiedPhoneOf(user: User | null | undefined): string | undefined {
+  return user?.phone && user.phone_confirmed_at ? `+${user.phone.replace(/\D/g, "")}` : undefined;
+}
+
+/**
+ * The account that has proved this number, if any. Unconfirmed numbers
+ * don't count: a sign-up abandoned before the code is nobody's yet.
+ */
+export async function findAuthUserByPhone(e164: string): Promise<User | null> {
+  const digits = e164.replace(/\D/g, "");
+  return (await listAuthUsers()).find((u) => u.phone === digits && Boolean(u.phone_confirmed_at)) ?? null;
+}
+
+async function resolveSessionFor(email: string, authUser: User | null): Promise<ResolveResult> {
   const clean = email.trim().toLowerCase();
 
   if (isAdminEmail(clean)) {
@@ -234,6 +256,9 @@ function displayName(email: string, user: User | null): string {
 export async function isReservedEmail(email: string): Promise<boolean> {
   const clean = email.trim().toLowerCase();
   if (isAdminEmail(clean) || clean.endsWith(SELLER_EMAIL_SUFFIX)) return true;
+  // The stand-in addresses of phone sign-ups: registering one with a
+  // password would hand over that shopper's orders.
+  if (isPhoneLoginEmail(clean)) return true;
   return (await getEmployeeMemberships(clean)).length > 0;
 }
 
@@ -360,6 +385,12 @@ export async function listAccounts(): Promise<AccountRow[]> {
 
   for (const user of users) {
     if (user.email) rows.set(user.email.toLowerCase(), describe(user.email, user));
+    // Shoppers who signed up by SMS have a phone and no email — listed
+    // under their stand-in address (lib/phone-auth.ts) so the admin sees them.
+    else if (user.phone) {
+      const email = phoneLoginEmail(`+${user.phone}`);
+      rows.set(email, { ...describe(email, user), label: "Customer · phone" });
+    }
   }
 
   // The generated `<store>@seller…` logins are retired on a live site

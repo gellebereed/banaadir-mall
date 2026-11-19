@@ -492,7 +492,7 @@ export default async function VendorDashboardPage({
               <p className="p-5 text-sm text-slate-400">No orders yet.</p>
             ) : (
               <div className="max-h-[30rem] overflow-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
+                <table className="table-stack w-full min-w-[640px] text-left text-sm">
                   <thead className="sticky top-0 bg-sand-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-5 py-3">Order</th>
@@ -524,13 +524,13 @@ export default async function VendorDashboardPage({
                               </span>
                             )}
                           </td>
-                          <td className="px-5 py-3 text-slate-600">{order.customer}</td>
-                          <td className="px-5 py-3 text-slate-500">{order.city}</td>
-                          <td className="px-5 py-3 text-slate-500">{shortDate(order.date)}</td>
-                          <td className="px-5 py-3 text-right font-semibold">
+                          <td data-label="Customer" className="px-5 py-3 text-slate-600">{order.customer}</td>
+                          <td data-label="City" className="px-5 py-3 text-slate-500">{order.city}</td>
+                          <td data-label="Date" className="px-5 py-3 text-slate-500">{shortDate(order.date)}</td>
+                          <td data-label="Total" className="px-5 py-3 text-right font-semibold">
                             {money(order.total)}
                           </td>
-                          <td className="px-5 py-3">
+                          <td data-label="Status" className="px-5 py-3">
                             <StatusBadge status={order.status} />
                           </td>
                         </tr>

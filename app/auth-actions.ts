@@ -70,6 +70,9 @@ const RESERVED_EMAIL_ERROR =
   "This email already belongs to an admin, staff or store login. Please sign in instead, or ask the marketplace admin to send you a password reset link.";
 
 /** Customer registration action */
+const EMAIL_TAKEN =
+  "This email is already registered. Sign in with it, or use “Forgot password” if you don't remember the password.";
+
 export async function signUpCustomer(
   _prev: AuthActionState,
   formData: FormData
@@ -92,10 +95,20 @@ export async function signUpCustomer(
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
+      /*
+       * Where the confirmation link lands: our callback, which signs them
+       * in and carries on to where they were going. Without this Supabase
+       * fell back to its "Site URL" setting — which on the live project had
+       * been set to a redirect pattern (".../api/auth/**"), so the link
+       * opened a "Not Found" page.
+       */
+      const { requestOrigin } = await import("@/lib/request-origin");
+      const after = safeNext(formData.get("next")) ?? "/account";
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: `${await requestOrigin()}/api/auth/callback?signin=1&next=${encodeURIComponent(after)}`,
           data: {
             name,
             phone,
@@ -105,7 +118,14 @@ export async function signUpCustomer(
       });
 
       if (error) {
-        return { error: error.message };
+        return {
+          error: /already|registered|exists/i.test(error.message) ? EMAIL_TAKEN : error.message,
+        };
+      }
+      // Supabase answers an existing address with a user that has no
+      // identities (and sends nothing). One email, one account: say so.
+      if (data.user && (data.user.identities?.length ?? 0) === 0) {
+        return { error: EMAIL_TAKEN };
       }
 
       /*
@@ -226,7 +246,11 @@ export async function signUpSeller(
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { name: ownerName, phone } },
+        options: {
+          data: { name: ownerName, phone },
+          // See signUpCustomer: never let the link fall back to Supabase's Site URL.
+          emailRedirectTo: `${await (await import("@/lib/request-origin")).requestOrigin()}/api/auth/callback?next=%2Flogin%3Fwith%3Demail`,
+        },
       });
 
       let user = authErr ? null : authData.user;

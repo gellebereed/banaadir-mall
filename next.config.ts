@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/product/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
     "/store/[slug]/opengraph-image": ["./assets/fonts/**", "./public/banaadir-bag.png"],
+    "/api/order-slip/[id]": ["./assets/fonts/**", "./public/banaadir-logo.png"],
+    "/email-logo.png": ["./public/banaadir-logo.png"],
   },
   images: {
     /*

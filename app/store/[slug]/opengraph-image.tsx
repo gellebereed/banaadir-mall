@@ -162,7 +162,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
               ))}
               {shown.length === 0 && (
                 <div style={{ display: "flex", fontSize: 24, color: BRAND.muted }}>
-                  EVC Plus · Zaad · eDahab · Cash on delivery
+                  EVC Plus · eDahab · Premier Wallet
                 </div>
               )}
             </div>

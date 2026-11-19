@@ -1,5 +1,9 @@
+import { readFile } from "fs/promises";
+import path from "path";
 import { ImageResponse } from "next/og";
 import { getBaseProducts, getOrder } from "@/lib/api";
+import { BRAND, clip, ogFonts } from "@/lib/og";
+import { PUBLIC_SITE_URL } from "@/lib/public-site";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -30,7 +34,6 @@ import { getBaseProducts, getOrder } from "@/lib/api";
 export const runtime = "nodejs";
 
 const WIDTH = 1000;
-const HEIGHT = 1414; // A4-ish portrait, reads well in a chat thread.
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -50,6 +53,24 @@ function stamp(iso: string): string {
 
 /** Long orders get truncated rather than overflowing off the canvas. */
 const MAX_ROWS = 14;
+/** Characters of a product name that fit on one line of a row. */
+const NAME_LINE = 40;
+
+let logo: Promise<string | null> | null = null;
+
+/** The wordmark (public/banaadir-logo.png) as a data URL, for the header. */
+function slipLogo(): Promise<string | null> {
+  logo ??= readFile(path.join(process.cwd(), "public/banaadir-logo.png"))
+    .then((png) => `data:image/png;base64,${png.toString("base64")}`)
+    .catch(() => {
+      logo = null;
+      return null;
+    });
+  return logo;
+}
+
+const LINE = BRAND.line;
+const site = PUBLIC_SITE_URL.replace(/^https?:\/\//, "");
 
 export async function GET(
   _request: Request,
@@ -103,208 +124,303 @@ export async function GET(
     )
     .join(", ");
 
+  const [fonts, logoSrc] = await Promise.all([ogFonts(), slipLogo()]);
+
+  /*
+   * The canvas is as tall as the order, not a fixed A4: a two-item slip
+   * used to end in a large empty band above the totals.
+   */
+  const rows = shown.map((item) => {
+    const name = clip(item.name ?? item.productId, NAME_LINE * 2);
+    const options = [item.selectedColor, item.selectedSize].filter(Boolean) as string[];
+    const nameLines = name.length > NAME_LINE ? 2 : 1;
+    return { item, name, options, height: 52 + nameLines * 38 + (options.length ? 48 : 0) };
+  });
+  const height =
+    150 + // logo bar
+    250 + // order band
+    96 + // section title
+    rows.reduce((sum, row) => sum + row.height, 0) +
+    (hidden > 0 ? 56 : 0) +
+    (order.phone ? 516 : 470); // totals, delivery, footer
+
+  const label = { display: "flex", fontSize: 20, letterSpacing: 3, color: BRAND.muted, fontFamily: "Outfit", fontWeight: 700 } as const;
+
   return new ImageResponse(
     (
       <div
         style={{
           width: WIDTH,
-          height: HEIGHT,
+          height,
           display: "flex",
           flexDirection: "column",
-          backgroundColor: "#faf8f4",
-          fontFamily: "sans-serif",
-          color: "#0c2b34",
+          backgroundColor: BRAND.sand,
+          fontFamily: "Inter",
+          color: BRAND.ink,
         }}
       >
-        {/* ── Header ─────────────────────────────────────────────── */}
+        {/* ── Brand bar ──────────────────────────────────────────── */}
+        <div
+          style={{
+            display: "flex",
+            height: 150,
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 56px",
+            backgroundColor: "#ffffff",
+            borderBottom: `6px solid ${BRAND.mango}`,
+          }}
+        >
+          {logoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoSrc} width={250} height={100} alt="" />
+          ) : (
+            <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 800, fontSize: 40 }}>Banaadir Mall</div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                padding: "10px 22px",
+                borderRadius: 999,
+                backgroundColor: BRAND.ink,
+                color: "#ffffff",
+                fontFamily: "Outfit",
+                fontWeight: 700,
+                fontSize: 22,
+                letterSpacing: 3,
+              }}
+            >
+              PICKING SLIP
+            </div>
+            <div style={{ display: "flex", marginTop: 10, fontSize: 20, color: BRAND.muted }}>{site}</div>
+          </div>
+        </div>
+
+        {/* ── Order ──────────────────────────────────────────────── */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            backgroundColor: "#0c2b34",
+            height: 250,
+            justifyContent: "center",
+            padding: "0 56px",
+            backgroundColor: BRAND.ink,
             color: "#ffffff",
-            padding: "44px 56px 36px",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", fontSize: 26, letterSpacing: 4, opacity: 0.7 }}>
-              BANAADIR MALL
-            </div>
-            <div style={{ display: "flex", fontSize: 26, letterSpacing: 4, opacity: 0.7 }}>
-              PICKING SLIP
-            </div>
+          <div style={{ display: "flex", fontSize: 20, letterSpacing: 3, opacity: 0.6, fontFamily: "Outfit", fontWeight: 700 }}>
+            ORDER
           </div>
-
-          <div style={{ display: "flex", fontSize: 76, fontWeight: 800, marginTop: 18 }}>
+          <div style={{ display: "flex", marginTop: 6, fontFamily: "Outfit", fontWeight: 800, fontSize: 58, letterSpacing: 1 }}>
             {order.id}
           </div>
-
-          <div style={{ display: "flex", marginTop: 10, fontSize: 30, opacity: 0.85 }}>
-            {storeName}
-          </div>
-
-          <div style={{ display: "flex", marginTop: 26, gap: 44, fontSize: 26, opacity: 0.75 }}>
-            <div style={{ display: "flex" }}>Placed {stamp(order.date)}</div>
-            <div style={{ display: "flex" }}>
-              {lines.length} item{lines.length === 1 ? "" : "s"} · {units} unit
-              {units === 1 ? "" : "s"}
-            </div>
+          <div style={{ display: "flex", marginTop: 18, gap: 14 }}>
+            {[storeName, `Placed ${stamp(order.date)}`, `${lines.length} item${lines.length === 1 ? "" : "s"} · ${units} unit${units === 1 ? "" : "s"}`].map(
+              (chip, index) => (
+                <div
+                  key={chip}
+                  style={{
+                    display: "flex",
+                    padding: "8px 18px",
+                    borderRadius: 999,
+                    fontSize: 22,
+                    backgroundColor: index === 0 ? BRAND.mango : "rgba(255,255,255,0.12)",
+                    color: "#ffffff",
+                    fontFamily: index === 0 ? "Outfit" : "Inter",
+                    fontWeight: index === 0 ? 700 : 400,
+                  }}
+                >
+                  {chip}
+                </div>
+              ),
+            )}
           </div>
         </div>
 
         {/* ── Items ──────────────────────────────────────────────── */}
-        <div style={{ display: "flex", flexDirection: "column", padding: "34px 56px 0", flex: 1 }}>
-          <div
-            style={{
-              display: "flex",
-              fontSize: 22,
-              letterSpacing: 3,
-              color: "#64748b",
-              paddingBottom: 14,
-              borderBottom: "3px solid #e8e1d3",
-            }}
-          >
-            ITEMS TO PACK
-          </div>
-
-          {shown.map((item, index) => {
-            const options = [item.selectedColor, item.selectedSize].filter(Boolean).join("  ·  ");
-            return (
-              <div
-                key={index}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                  borderBottom: "1px solid #e8e1d3",
-                }}
-              >
-                {/* Quantity first and large — the number a picker must not
-                    misread while holding a phone in one hand. */}
-                <div
-                  style={{
-                    display: "flex",
-                    width: 96,
-                    height: 72,
-                    marginRight: 26,
-                    backgroundColor: "#0c2b34",
-                    color: "#ffffff",
-                    borderRadius: 16,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 40,
-                    fontWeight: 800,
-                  }}
-                >
-                  {item.qty}×
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                  <div style={{ display: "flex", fontSize: 30, fontWeight: 700, lineHeight: 1.25 }}>
-                    {(item.name ?? item.productId).slice(0, 58)}
-                  </div>
-                  {options && (
-                    <div style={{ display: "flex", marginTop: 6, fontSize: 25, color: "#475569" }}>
-                      {options}
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-end",
-                    marginLeft: 20,
-                  }}
-                >
-                  <div style={{ display: "flex", fontSize: 30, fontWeight: 800 }}>
-                    {money(item.price * (item.qty || 0))}
-                  </div>
-                  <div style={{ display: "flex", fontSize: 22, color: "#94a3b8", marginTop: 4 }}>
-                    {money(item.price)} each
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {hidden > 0 && (
-            <div style={{ display: "flex", paddingTop: 18, fontSize: 25, color: "#64748b" }}>
-              + {hidden} more item{hidden === 1 ? "" : "s"} — see the dashboard
-            </div>
-          )}
-        </div>
-
-        {/* ── Totals + delivery ──────────────────────────────────── */}
-        <div style={{ display: "flex", flexDirection: "column", padding: "0 56px 44px" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "26px 32px",
-              backgroundColor: "#0c2b34",
-              color: "#ffffff",
-              borderRadius: 20,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", fontSize: 24, opacity: 0.7, letterSpacing: 2 }}>
-                YOUR SUBTOTAL
-              </div>
-              <div style={{ display: "flex", fontSize: 21, opacity: 0.6, marginTop: 4 }}>
-                Your items only — delivery is settled by Banaadir Mall
-              </div>
-            </div>
-            <div style={{ display: "flex", fontSize: 56, fontWeight: 800 }}>{money(subtotal)}</div>
+        <div style={{ display: "flex", flexDirection: "column", padding: "40px 56px 0", flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 18 }}>
+            <div style={label}>ITEMS TO PACK</div>
+            <div style={label}>PRICE</div>
           </div>
 
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              marginTop: 24,
-              padding: "26px 32px",
               backgroundColor: "#ffffff",
-              border: "3px solid #e8e1d3",
-              borderRadius: 20,
+              border: `2px solid ${LINE}`,
+              borderRadius: 24,
+              padding: "0 28px",
             }}
           >
-            <div style={{ display: "flex", fontSize: 22, letterSpacing: 3, color: "#64748b" }}>
-              DELIVER TO
-            </div>
-            <div style={{ display: "flex", fontSize: 34, fontWeight: 700, marginTop: 10 }}>
-              {order.customer}
-            </div>
-            {order.phone && (
-              <div style={{ display: "flex", fontSize: 32, fontWeight: 600, marginTop: 6 }}>
-                {order.phone}
+            {rows.map(({ item, name, options }, index) => (
+              <div
+                key={index}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  padding: "26px 0",
+                  borderTop: index === 0 ? "none" : `2px solid ${LINE}`,
+                }}
+              >
+                {/* A box to tick while packing. */}
+                <div
+                  style={{
+                    display: "flex",
+                    width: 34,
+                    height: 34,
+                    marginTop: 8,
+                    marginRight: 20,
+                    border: `3px solid ${BRAND.ocean}`,
+                    borderRadius: 8,
+                  }}
+                />
+                {/* Quantity first and large — the number a picker must not
+                    misread while holding a phone in one hand. */}
+                <div
+                  style={{
+                    display: "flex",
+                    width: 84,
+                    height: 52,
+                    marginRight: 24,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#fff1df",
+                    color: "#bd5507",
+                    fontFamily: "Outfit",
+                    fontWeight: 800,
+                    fontSize: 32,
+                  }}
+                >
+                  {item.qty}×
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                  <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 700, fontSize: 30, lineHeight: 1.25 }}>
+                    {name}
+                  </div>
+                  {options.length > 0 && (
+                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                      {options.map((option) => (
+                        <div
+                          key={option}
+                          style={{
+                            display: "flex",
+                            padding: "4px 14px",
+                            borderRadius: 10,
+                            backgroundColor: "#effafa",
+                            color: BRAND.ocean,
+                            fontSize: 22,
+                          }}
+                        >
+                          {option}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginLeft: 20 }}>
+                  <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 800, fontSize: 30 }}>
+                    {money(item.price * (item.qty || 0))}
+                  </div>
+                  {(item.qty || 0) > 1 && (
+                    <div style={{ display: "flex", fontSize: 20, color: BRAND.muted, marginTop: 4 }}>
+                      {money(item.price)} each
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-            <div style={{ display: "flex", fontSize: 27, color: "#334155", marginTop: 8 }}>
-              {destination.slice(0, 90)}
+            ))}
+          </div>
+
+          {hidden > 0 && (
+            <div style={{ display: "flex", paddingTop: 18, fontSize: 24, color: BRAND.muted }}>
+              + {hidden} more item{hidden === 1 ? "" : "s"} — see the dashboard
+            </div>
+          )}
+        </div>
+
+        {/* ── Totals + delivery ──────────────────────────────────── */}
+        <div style={{ display: "flex", flexDirection: "column", padding: "28px 56px 40px" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "26px 32px",
+              backgroundColor: BRAND.ink,
+              color: "#ffffff",
+              borderRadius: 24,
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 700, fontSize: 22, letterSpacing: 3, opacity: 0.75 }}>
+                YOUR SUBTOTAL
+              </div>
+              <div style={{ display: "flex", fontSize: 20, opacity: 0.6, marginTop: 6 }}>
+                Your items only. Delivery is settled by Banaadir Mall.
+              </div>
+            </div>
+            <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 800, fontSize: 56, color: BRAND.mango }}>
+              {money(subtotal)}
             </div>
           </div>
 
           <div
             style={{
               display: "flex",
-              justifyContent: "center",
               marginTop: 22,
-              fontSize: 24,
-              color: "#64748b",
+              padding: "26px 32px",
+              backgroundColor: "#ffffff",
+              border: `2px solid ${LINE}`,
+              borderLeft: `8px solid ${BRAND.ocean}`,
+              borderRadius: 24,
             }}
           >
-            Reply CONFIRM to accept · banaadirmall.com/vendor/orders
+            <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              <div style={label}>DELIVER TO</div>
+              <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 700, fontSize: 34, marginTop: 10 }}>
+                {clip(order.customer, 40)}
+              </div>
+              {order.phone && (
+                <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 700, fontSize: 30, marginTop: 6, color: BRAND.ocean }}>
+                  {order.phone}
+                </div>
+              )}
+              <div style={{ display: "flex", fontSize: 26, color: "#334155", marginTop: 8 }}>
+                {clip(destination, 80)}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 26,
+              paddingTop: 22,
+              borderTop: `2px dashed ${LINE}`,
+              fontSize: 22,
+              color: BRAND.muted,
+            }}
+          >
+            <div style={{ display: "flex" }}>
+              Reply <span style={{ fontFamily: "Outfit", fontWeight: 700, color: BRAND.ink, margin: "0 8px" }}>CONFIRM</span> to accept
+            </div>
+            <div style={{ display: "flex" }}>{site}/vendor/orders</div>
           </div>
         </div>
       </div>
     ),
     {
       width: WIDTH,
-      height: HEIGHT,
+      height,
+      fonts,
       headers: {
         // An order slip is personal and mutable — never let a CDN keep it.
         "Cache-Control": "no-store, max-age=0",

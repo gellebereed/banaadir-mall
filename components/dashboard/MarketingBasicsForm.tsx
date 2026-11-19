@@ -51,7 +51,7 @@ export default function MarketingBasicsForm({ marketing }: { marketing: Marketin
               name="announcement"
               required
               defaultValue={marketing.announcement}
-              placeholder="e.g. **FREE DELIVERY** in Mogadishu on orders over $25 · Pay with *EVC Plus, Zaad & eDahab*"
+              placeholder="e.g. **FREE DELIVERY** in Mogadishu on orders over $25 · Pay with *EVC Plus, eDahab & Premier Wallet*"
               className="input"
             />
             {/* Shown to shoppers who switch to Somali — lib/marketing-copy.ts. */}

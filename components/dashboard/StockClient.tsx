@@ -331,38 +331,85 @@ function HandPanel({ lines }: { lines: StockLine[] }) {
   const [filter, setFilter] = useState<"all" | "low" | "out">("all");
   const [edits, setEdits] = useState<Record<string, number>>({});
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  // Keys of the lines a scanned code opened — shown on their own until the
+  // search text changes.
+  const [matched, setMatched] = useState<string[] | null>(null);
+  const search = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; message: string } | null>(null);
   const [pending, start] = useTransition();
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  // Every code → the lines it belongs to. A product's own barcode is shared
+  // by all its sizes/colours, so one code can open several lines.
   const byCode = useMemo(() => {
-    const map = new Map<string, StockLine>();
-    for (const line of lines) for (const code of line.codes) map.set(normaliseCode(code), line);
+    const map = new Map<string, StockLine[]>();
+    const add = (code: string, line: StockLine) => {
+      const list = map.get(code) ?? [];
+      if (!list.includes(line)) list.push(line);
+      map.set(code, list);
+    };
+    for (const line of lines)
+      for (const raw of line.codes) {
+        const code = normaliseCode(raw);
+        if (!code) continue;
+        add(code, line);
+        // Scanners often add or drop leading zeros (UPC-A vs EAN-13).
+        const bare = code.replace(/^0+(?=.)/, "");
+        if (bare !== code) add(bare, line);
+      }
     return map;
   }, [lines]);
 
+  const lookup = (code: string): StockLine[] => {
+    const c = normaliseCode(code);
+    if (!c) return [];
+    return byCode.get(c) ?? byCode.get(c.replace(/^0+(?=.)/, "")) ?? [];
+  };
+
   const current = (l: StockLine) => edits[l.key] ?? l.stock;
   const q = query.trim().toLowerCase();
-  const visible = lines
-    .filter((l) => (filter === "out" ? current(l) <= 0 : filter === "low" ? current(l) > 0 && current(l) <= 3 : true))
-    .filter((l) => !q || l.name.toLowerCase().includes(q) || (l.label ?? "").toLowerCase().includes(q) || l.codes.some((c) => c.toLowerCase().includes(q)))
-    .slice(0, 150);
+  const visible = matched
+    ? lines.filter((l) => matched.includes(l.key))
+    : lines
+        .filter((l) => (filter === "out" ? current(l) <= 0 : filter === "low" ? current(l) > 0 && current(l) <= 3 : true))
+        .filter((l) => !q || l.name.toLowerCase().includes(q) || (l.label ?? "").toLowerCase().includes(q) || l.codes.some((c) => c.toLowerCase().includes(q)))
+        .slice(0, 150);
 
   const changed = lines.filter((l) => edits[l.key] !== undefined && edits[l.key] !== l.stock);
 
-  /** A scanned or typed code: jump to its line and put the cursor in it. */
+  /**
+   * A scanned or typed code: show just the product(s) with that code, keep
+   * the code in the box, and put the cursor in the count so it can be typed
+   * straight away. Returns false when nothing has that code.
+   */
   const goTo = (code: string) => {
-    const line = byCode.get(normaliseCode(code));
-    if (!line) {
+    const found = lookup(code);
+    setQuery(code);
+    if (!found.length) {
+      setMatched(null);
+      setFocusKey(null);
       setMessage({ ok: false, message: `No product has the code ${code}. Add it on the product's page to scan it next time.` });
       return false;
     }
-    setQuery("");
-    setFilter("all");
-    setFocusKey(line.key);
-    setMessage(null);
+    setMatched(found.map((l) => l.key));
+    setFocusKey(found[0].key);
+    setFocusTick((t) => t + 1);
+    setMessage({
+      ok: true,
+      message:
+        found.length === 1
+          ? `Found ${found[0].name}${found[0].label ? ` (${found[0].label})` : ""}. Type the new count, then press Enter to scan the next one.`
+          : `Found ${found[0].name} in ${found.length} options. Update the one you counted, then press Enter to scan the next one.`,
+    });
     return true;
+  };
+
+  /** Back to the search box with its text selected, so the next scan replaces it. */
+  const backToSearch = () => {
+    search.current?.focus();
+    search.current?.select();
   };
 
   useEffect(() => {
@@ -371,7 +418,7 @@ function HandPanel({ lines }: { lines: StockLine[] }) {
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     el?.focus();
     el?.select();
-  }, [focusKey]);
+  }, [focusKey, focusTick]);
 
   const set = (key: string, value: number) => setEdits((e) => ({ ...e, [key]: Math.max(0, Math.floor(value || 0)) }));
 
@@ -379,13 +426,23 @@ function HandPanel({ lines }: { lines: StockLine[] }) {
     <section className="card p-4 sm:p-6">
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
+          ref={search}
           type="search"
+          enterKeyHint="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setMatched(null);
+          }}
+          onFocus={(e) => e.target.select()}
           onKeyDown={(e) => {
             // A USB / Bluetooth barcode scanner "types" the code and presses
-            // Enter — so scanning into this box jumps straight to the item.
-            if (e.key === "Enter" && query.trim() && goTo(query.trim())) e.preventDefault();
+            // Enter — so scanning into this box opens that item, ready to
+            // count. Enter never clears the box.
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            const code = e.currentTarget.value.trim();
+            if (code) goTo(code);
           }}
           placeholder="🔍 Search name or scan / type a barcode…"
           aria-label="Search products or scan a barcode"
@@ -412,7 +469,10 @@ function HandPanel({ lines }: { lines: StockLine[] }) {
           <button
             key={key}
             type="button"
-            onClick={() => setFilter(key)}
+            onClick={() => {
+              setFilter(key);
+              setMatched(null);
+            }}
             className={`rounded-full px-3 py-1.5 text-xs font-bold ${filter === key ? "bg-ocean-800 text-white" : "bg-sand-100 text-slate-600"}`}
           >
             {label}
@@ -455,6 +515,12 @@ function HandPanel({ lines }: { lines: StockLine[] }) {
                   min={0}
                   value={value}
                   onChange={(e) => set(line.key, Number(e.target.value))}
+                  onKeyDown={(e) => {
+                    // Enter after typing a count → ready for the next scan.
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    backToSearch();
+                  }}
                   aria-label={`Stock for ${line.name}`}
                   className={`h-9 w-16 rounded-lg border text-center text-sm font-bold tabular-nums ${
                     isChanged ? "border-ocean-500 bg-ocean-50" : value <= 0 ? "border-coral-300 text-coral-600" : "border-sand-200"
